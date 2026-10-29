@@ -20,3 +20,13 @@
 - Fix: `monthBounds` subtracts the fixed UTC+3 offset. The group id is now a hash of (merchant, year, month); before insert the script checks the group does not exist, under a transaction advisory lock so two parallel runs cannot both post. Legs follow ADR-0002. `reconcile_march.test.ts` asserted the UTC window (`getUTCMonth() === 2`); it now asserts the Bahrain bounds.
 - Follow-up (not done here): the groups already posted by earlier real runs stay in the ledger (append-only). Finance must reverse them with new correcting entries.
 - Test: `scripts/reconcile_march.fix.test.ts`
+
+### E3 Hold expiry job deletes holds (and can delete every hold)
+- Severity: High
+- Ticket: E3 (FP-219)
+- Where: `scripts/expire_holds.ts` (old lines 25-46), `scripts/lib/sqlFilter.ts:27`
+- What is wrong: The nightly job DELETEd expired holds. The handover says "Holds are never deleted"; the schema has an `expired` status for this. Worse: (1) it SELECTed the ids first and DELETEd later by id with no status check, so a hold captured or released between the two statements was deleted too; (2) on a night with no expired holds, `buildWhere` skips the empty id list and `buildDelete` returns `DELETE FROM holds` with no WHERE, which deletes every hold, active ones included.
+- Why it happens: FP-219 changed the job to "keep the table small" with a generic filter builder that drops empty filters. The test asserted the DELETE text, so it locked the bug in.
+- What it breaks: Lost hold history (audit, disputes). On a quiet night all active holds vanish, so open authorizations lose their hold and the merchant's available balance is wrong.
+- Fix: One atomic statement: `UPDATE holds SET status = 'expired' WHERE status = 'active' AND expires_at < now()`. The status re-check is in the same statement, so no race. Removed the now-unused `scripts/lib/sqlFilter.ts` (its unscoped DELETE is a trap). `expire_holds.test.ts` asserted DELETE; it now asserts the UPDATE. (The stale comment in migration 0005 is left as is, because applied migrations are not edited.)
+- Test: `scripts/expire_holds.fix.test.ts`
