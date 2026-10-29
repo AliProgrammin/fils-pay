@@ -13,6 +13,12 @@ docker compose -f ops/docker-compose.yml run --rm seed
 docker compose -f ops/docker-compose.yml up api settlement reporting
 ```
 
+Or all at once: `docker compose -f ops/docker-compose.yml up`. Startup is
+ordered postgres -> migrate -> seed -> api/settlement/reporting.
+
+If something else on the host already listens on 5432 (e.g. a Homebrew
+Postgres), publish on another port: `export FILSPAY_PG_HOST_PORT=5442`.
+
 apps/web and apps/admin aren't part of this compose file — they're plain
 Vite dev servers that talk to apps/api over HTTP (`npm run dev` inside
 each package), not services with their own database connection.
@@ -23,7 +29,7 @@ each package), not services with their own database connection.
 |---|---|
 | `docker-compose.yml` | the stack |
 | `.env.docker` | shared service settings, loaded by compose for every service |
-| `Dockerfile.node` | image for api, reporting, migrate and seed (`node:20`, full install) |
+| `Dockerfile.node` | image for api, reporting, migrate and seed (`node:22`, `npm ci` inside the image) |
 | `Dockerfile.go` | multi-stage build of `apps/settlement` |
 
 > **AM (July):** the two Dockerfiles aren't in the repo for me. built my own

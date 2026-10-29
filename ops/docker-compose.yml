@@ -22,7 +22,8 @@ services:
       POSTGRES_PASSWORD: filspay_dev_password
       POSTGRES_DB: filspay
     ports:
-      - "5432:5432"
+      # Host port is overridable for machines that already run Postgres on 5432.
+      - "${FILSPAY_PG_HOST_PORT:-5432}:5432"
     volumes:
       - filspay_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -62,9 +63,13 @@ services:
     command: ["npm", "run", "seed"]
     environment:
       DATABASE_URL: postgres://filspay:filspay_dev_password@postgres:5432/filspay?sslmode=disable
+      # Dev-only key; must match the api's so seeded webhook secrets decrypt.
+      WEBHOOK_SECRET_ENCRYPTION_KEY: veGCKTzIzRtJWhHhvIvvNBCvIjFj5CjbriK7xrZCOzU=
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   api:
     build:
@@ -84,9 +89,15 @@ services:
       DATABASE_URL: postgres://filspay:filspay_dev_password@postgres:5432/filspay?sslmode=disable
       # TODO(YA, Jan): give the api its own role before anything is hosted.
       SETTLEMENT_INTERNAL_URL: http://settlement:8091
+      # Dev-only values. The built-in dev fallback key in apps/api/src/config.ts
+      # decodes to 34 bytes, not 32, so loadConfig rejects it; set one here.
+      WEBHOOK_SECRET_ENCRYPTION_KEY: veGCKTzIzRtJWhHhvIvvNBCvIjFj5CjbriK7xrZCOzU=
+      SETTLEMENT_INTERNAL_TOKEN: dev-settlement-token
     depends_on:
       postgres:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
 
   settlement:
     build:
@@ -97,6 +108,8 @@ services:
     # FH: it exits at boot without the token for me. set it.
     command: ["./settlement", "daemon"]
     environment:
+      # Required: `daemon` exits at boot without it. Must match the api's.
+      SETTLEMENT_INTERNAL_TOKEN: dev-settlement-token
       DATABASE_URL: postgres://filspay:filspay_dev_password@postgres:5432/filspay?sslmode=disable
       # Batch close and scheme export get their own pool so a long close
       # can't starve the API's connections.
@@ -106,6 +119,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
 
   reporting:
     build:
@@ -118,6 +133,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
 
 volumes:
   filspay_pgdata:
