@@ -39,3 +39,11 @@
 - What it breaks: a receiver that already processed the event cannot see the replay is the same event, so it processes it twice (for example double-credits a capture). A bulk replay of `succeeded` rows sends every merchant events they already handled.
 - Fix: a replay copies the original envelope unchanged and reuses its id (header and body). Batch replay rejects any status other than `failed`/`exhausted` with 400. Two existing tests locked the old behaviour (expected a new id; expected `statuses: ["succeeded"]` to be accepted) and are updated.
 - Test: apps/api/src/webhooks/replay.fix.test.ts.
+
+### D12 Dev fallback webhook encryption key is 34 bytes, so the API cannot boot in dev
+- Severity: Medium. Ticket: none. Where: apps/api/src/config.ts:153
+- What is wrong: `DEV_FALLBACK_WEBHOOK_KEY_B64` decodes to "test-key-for-dev-only-not-for-prod", which is 34 bytes. AES-256 needs exactly 32.
+- Why it happens: the fallback string was never checked against the 32-byte rule that `loadConfig` itself enforces.
+- What it breaks: `loadConfig` throws in development and test whenever WEBHOOK_SECRET_ENCRYPTION_KEY is not set, so the dev fallback never works.
+- Fix: replace it with a 32-byte dev key. Production is unchanged: it still has no fallback and still fails boot without the env var.
+- Test: apps/api/src/config.fix.test.ts.
