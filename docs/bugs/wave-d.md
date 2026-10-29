@@ -71,3 +71,13 @@
 - What it breaks: merchants get two (or more) settlement.paid webhooks for one payout, and every consumer of the outbox sees the payout twice. The test reproduced 6 events for one batch with 8 concurrent scans.
 - Fix: migration 0075 renames existing duplicates to 'settlement.paid.duplicate' (keeps the lowest id; rows are referenced by webhook_deliveries so they are not deleted) and adds a partial unique index on outbox_events(event_type, aggregate_id) WHERE event_type = 'settlement.paid'. The insert uses ON CONFLICT DO NOTHING and counts only rows really inserted.
 - Test: apps/settlement/internal/settlement/payout_notify_fix_test.go.
+
+### D10 Reporting consumer is stopped by poison events (null merchant_id, missing rollup row)
+- Severity: Medium. Ticket: none. Where: apps/api/src/webhooks/archiveReplay.test.ts:62 (fixture), apps/reporting/src/consumer/applyEvent.ts:147
+- What is wrong: two different things stop every reporting pass.
+  1. archiveReplay.test.ts inserted real `transaction.captured` / `transaction.voided` outbox rows with an empty `{}` payload into the shared database. The reporting consumer reads them, inserts merchant_id NULL into merchant_daily_volume, the pass rolls back, and the cursor never moves again. (The producers capture.ts, void.ts and the Go CloseBatch all send `merchantId`; there is no field name mismatch. routes/admin.test.ts already uses an inert event type for the same reason.)
+  2. applyBatchClosed's parity check read `rollupResult.rows[0].captured_count` with no null check. When a day has real captures but no rollup row yet (consumer lag, the exact case the check exists to report), it throws instead of warning, and again the whole pass rolls back.
+- Why it happens: one bad row blocks the consumer by design (exactly-once, all-or-nothing pass), so any malformed row or crash in an applier stops reporting for every merchant.
+- What it breaks: dashboards and reports stop updating. A fresh database passes the reporting tests (11/11); the database after the API test suite failed 4.
+- Fix: the fixture now writes an inert, already-processed event type (`archive.test.fixture`). The parity check treats a missing rollup row as 0 and warns. Existing shared test DBs keep old poison rows; clean them once with: `UPDATE outbox_events oe SET event_type='archive.test.fixture' WHERE event_type IN ('transaction.captured','transaction.voided') AND payload::text='{}' AND EXISTS (SELECT 1 FROM webhook_deliveries wd WHERE wd.outbox_event_id = oe.id);`
+- Test: apps/api/src/webhooks/archiveReplay.test.ts ("fixtures never enqueue a rollup-eligible outbox event"), apps/reporting/src/consumer/applyEvent.fix.test.ts.
