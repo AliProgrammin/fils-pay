@@ -42,6 +42,8 @@ type batchRow struct {
 	grossFils     money.Fils
 	feeFils       money.Fils
 	netPayoutFils money.Fils
+	// Refunds the batch claimed (0083); unchanged by a fee recalculation.
+	refundNetFils money.Fils
 }
 
 // RecalculateMDR re-derives the fee on a merchant's closed batches in
@@ -73,7 +75,8 @@ func RecalculateMDR(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID,
 	tierBonusBps := VolumeTierMdrBonusBps(platformProcessedFils)
 
 	rows, err := tx.Query(ctx, `
-		SELECT id, batch_date, status, gross_fils, fee_fils, net_payout_fils
+		SELECT id, batch_date, status, gross_fils, fee_fils, net_payout_fils,
+		       refund_fils - refund_fee_reversed_fils
 		  FROM settlement_batches
 		 WHERE merchant_id = $1 AND batch_date >= $2 AND batch_date < $3
 		   AND status = 'closed' -- never rewrite a paid batch: that money already left
@@ -86,14 +89,15 @@ func RecalculateMDR(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID,
 	var batches []batchRow
 	for rows.Next() {
 		var b batchRow
-		var gross, fee, net int64
-		if err := rows.Scan(&b.id, &b.batchDate, &b.status, &gross, &fee, &net); err != nil {
+		var gross, fee, net, refundNet int64
+		if err := rows.Scan(&b.id, &b.batchDate, &b.status, &gross, &fee, &net, &refundNet); err != nil {
 			rows.Close()
 			return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: scan batch: %w", err)
 		}
 		b.grossFils = money.Fils(gross)
 		b.feeFils = money.Fils(fee)
 		b.netPayoutFils = money.Fils(net)
+		b.refundNetFils = money.Fils(refundNet)
 		batches = append(batches, b)
 	}
 	if err := rows.Err(); err != nil {
@@ -112,7 +116,7 @@ func RecalculateMDR(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID,
 		if diff == 0 {
 			continue
 		}
-		newNetPayout := b.grossFils - newFee
+		newNetPayout := b.grossFils - newFee - b.refundNetFils
 		// am: posts against the OLD batch id so it never lands in a new payout?? fixed in FP-244 i think
 		if err := postMdrAdjustment(ctx, tx, merchantID, b.id, diff); err != nil {
 			return RecalcResult{}, err

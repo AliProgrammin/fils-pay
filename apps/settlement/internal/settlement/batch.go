@@ -31,8 +31,11 @@ type BatchResult struct {
 	GrossFils     money.Fils
 	FeeFils       money.Fils
 	NetPayoutFils money.Fils
-	EventCount    int
-	LineCount     int
+	// Refunds claimed by this batch, and the fee they reversed.
+	RefundFils            money.Fils
+	RefundFeeReversedFils money.Fils
+	EventCount            int
+	LineCount             int
 }
 
 // PayoutResult is PayoutBatch's return value.
@@ -93,21 +96,24 @@ func CloseBatch(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID, bus
 	// Step 4: already closed/paid -> idempotent no-op, nothing to undo.
 	if status != "open" {
 		tx.Rollback(ctx) //nolint:errcheck
-		var gross, fee, net int64
+		var gross, fee, net, refund, refundFeeRev int64
 		err = db.QueryRow(ctx, `
-			SELECT gross_fils, fee_fils, net_payout_fils FROM settlement_batches WHERE id = $1
-		`, batchID).Scan(&gross, &fee, &net)
+			SELECT gross_fils, fee_fils, net_payout_fils, refund_fils, refund_fee_reversed_fils
+			  FROM settlement_batches WHERE id = $1
+		`, batchID).Scan(&gross, &fee, &net, &refund, &refundFeeRev)
 		if err != nil {
 			return BatchResult{}, fmt.Errorf("settlement: CloseBatch: read already-closed batch: %w", err)
 		}
 		return BatchResult{
-			BatchID:       batchID,
-			MerchantID:    merchantID,
-			BatchDate:     batchDateOnly,
-			AlreadyClosed: true,
-			GrossFils:     money.Fils(gross),
-			FeeFils:       money.Fils(fee),
-			NetPayoutFils: money.Fils(net),
+			BatchID:               batchID,
+			MerchantID:            merchantID,
+			BatchDate:             batchDateOnly,
+			AlreadyClosed:         true,
+			GrossFils:             money.Fils(gross),
+			FeeFils:               money.Fils(fee),
+			NetPayoutFils:         money.Fils(net),
+			RefundFils:            money.Fils(refund),
+			RefundFeeReversedFils: money.Fils(refundFeeRev),
 		}, nil
 	}
 
@@ -218,6 +224,58 @@ func CloseBatch(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID, bus
 	}
 	netPayout := NetPayableFils(batchGross, batchFee)
 
+	// Step 9: claim refunds. A refund already took the money out of
+	// merchant_payable in the ledger when it happened; the batch now pays out
+	// that much less. Oldest first, every unbatched refund up to the end of
+	// this window (so one a past day could not absorb is carried forward),
+	// and only while the payout stays >= 0: a payout is never negative, and a
+	// refund that does not fit waits for the next batch.
+	refundRows, err := tx.Query(ctx, `
+		SELECT id, amount_fils, fee_reversed_fils
+		  FROM refunds
+		 WHERE merchant_id = $1
+		   AND status = 'succeeded'
+		   AND settlement_batch_id IS NULL
+		   AND occurred_at < $2
+		 ORDER BY occurred_at, id
+		 FOR UPDATE
+	`, merchantID, end)
+	if err != nil {
+		return BatchResult{}, fmt.Errorf("settlement: CloseBatch: select refunds: %w", err)
+	}
+	type pendingRefund struct {
+		id                 uuid.UUID
+		amount, feeReverse money.Fils
+	}
+	var pendingRefunds []pendingRefund
+	for refundRows.Next() {
+		var r pendingRefund
+		var amount, feeRev int64
+		if err := refundRows.Scan(&r.id, &amount, &feeRev); err != nil {
+			refundRows.Close()
+			return BatchResult{}, fmt.Errorf("settlement: CloseBatch: scan refund: %w", err)
+		}
+		r.amount, r.feeReverse = money.Fils(amount), money.Fils(feeRev)
+		pendingRefunds = append(pendingRefunds, r)
+	}
+	if err := refundRows.Err(); err != nil {
+		return BatchResult{}, fmt.Errorf("settlement: CloseBatch: iterate refunds: %w", err)
+	}
+	refundRows.Close()
+
+	var batchRefund, batchFeeReversed money.Fils
+	var refundIDs []uuid.UUID
+	for _, r := range pendingRefunds {
+		cost := r.amount - r.feeReverse
+		if netPayout-cost < 0 {
+			break // FIFO: later refunds wait behind this one
+		}
+		netPayout -= cost
+		batchRefund += r.amount
+		batchFeeReversed += r.feeReverse
+		refundIDs = append(refundIDs, r.id)
+	}
+
 	// Record this batch's contribution to the platform-wide lifetime
 	// processed-volume counter, in the same transaction that freezes this
 	// batch's own totals — so the counter and the batch it describes
@@ -229,9 +287,10 @@ func CloseBatch(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID, bus
 	// Step 10: freeze the batch totals.
 	_, err = tx.Exec(ctx, `
 		UPDATE settlement_batches
-		   SET status = 'closed', gross_fils = $2, fee_fils = $3, net_payout_fils = $4, closed_at = now()
+		   SET status = 'closed', gross_fils = $2, fee_fils = $3, net_payout_fils = $4,
+		       refund_fils = $5, refund_fee_reversed_fils = $6, closed_at = now()
 		 WHERE id = $1
-	`, batchID, int64(batchGross), int64(batchFee), int64(netPayout))
+	`, batchID, int64(batchGross), int64(batchFee), int64(netPayout), int64(batchRefund), int64(batchFeeReversed))
 	if err != nil {
 		return BatchResult{}, fmt.Errorf("settlement: CloseBatch: freeze batch totals: %w", err)
 	}
@@ -244,6 +303,15 @@ func CloseBatch(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID, bus
 		`, eventIDs, batchID)
 		if err != nil {
 			return BatchResult{}, fmt.Errorf("settlement: CloseBatch: mark events batched: %w", err)
+		}
+	}
+
+	if len(refundIDs) > 0 {
+		_, err = tx.Exec(ctx, `
+			UPDATE refunds SET settlement_batch_id = $2 WHERE id = ANY($1)
+		`, refundIDs, batchID)
+		if err != nil {
+			return BatchResult{}, fmt.Errorf("settlement: CloseBatch: mark refunds batched: %w", err)
 		}
 	}
 
@@ -300,15 +368,17 @@ func CloseBatch(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID, bus
 	}
 
 	return BatchResult{
-		BatchID:       batchID,
-		MerchantID:    merchantID,
-		BatchDate:     batchDateOnly,
-		AlreadyClosed: false,
-		GrossFils:     batchGross,
-		FeeFils:       batchFee,
-		NetPayoutFils: netPayout,
-		EventCount:    len(eventIDs),
-		LineCount:     len(lines),
+		BatchID:               batchID,
+		MerchantID:            merchantID,
+		BatchDate:             batchDateOnly,
+		AlreadyClosed:         false,
+		GrossFils:             batchGross,
+		FeeFils:               batchFee,
+		NetPayoutFils:         netPayout,
+		RefundFils:            batchRefund,
+		RefundFeeReversedFils: batchFeeReversed,
+		EventCount:            len(eventIDs),
+		LineCount:             len(lines),
 	}, nil
 }
 
