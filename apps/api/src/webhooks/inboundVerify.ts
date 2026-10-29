@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 
 /** Verifies the signature on an inbound acquirer callback. */
 
@@ -29,8 +29,13 @@ function parseAcquirerSignatureHeader(header: string): ParsedAcquirerSignatureHe
   return { timestamp, signature };
 }
 
-/** There is no timestamp reason: freshness is not checked for inbound callbacks. */
-export type VerifyAcquirerCallbackFailureReason = "malformed_header" | "signature_mismatch";
+export type VerifyAcquirerCallbackFailureReason =
+  | "malformed_header"
+  | "signature_mismatch"
+  | "timestamp_out_of_tolerance";
+
+/** Max difference between the acquirer's `t=` and our clock (replay window). */
+const TIMESTAMP_TOLERANCE_SECONDS = 300;
 
 export interface VerifyAcquirerCallbackResult {
   valid: boolean;
@@ -38,16 +43,21 @@ export interface VerifyAcquirerCallbackResult {
 }
 
 function constantTimeEquals(a: string, b: string): boolean {
-  return Buffer.from(a).length === Buffer.from(b).length &&
-    Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0;
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  return bufA.length === bufB.length && timingSafeEqual(bufA, bufB);
 }
 
-/** Verifies the acquirer callback signature when present and required. */
+/**
+ * Verifies the acquirer callback signature over the exact raw request body
+ * (`<t>.<rawBody>`) and checks that `t` is within ±5 minutes of now.
+ */
 export function verifyAcquirerCallbackSignature(
-  payload: unknown,
+  rawBody: string,
   header: string | undefined,
   secret: string,
-  requireSignature = false,
+  requireSignature = true,
+  nowSeconds = Math.floor(Date.now() / 1000),
 ): VerifyAcquirerCallbackResult {
   if (!header) {
     return requireSignature
@@ -59,11 +69,15 @@ export function verifyAcquirerCallbackSignature(
   if (!parsed) return { valid: false, reason: "malformed_header" };
 
   const expected = createHmac("sha256", secret)
-    .update(`${parsed.timestamp}.${JSON.stringify(payload)}`)
+    .update(`${parsed.timestamp}.${rawBody}`)
     .digest("hex");
 
   if (!constantTimeEquals(expected, parsed.signature)) {
     return { valid: false, reason: "signature_mismatch" };
+  }
+
+  if (Math.abs(nowSeconds - parsed.timestamp) > TIMESTAMP_TOLERANCE_SECONDS) {
+    return { valid: false, reason: "timestamp_out_of_tolerance" };
   }
 
   return { valid: true };

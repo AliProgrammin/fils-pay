@@ -120,7 +120,8 @@ export interface Config {
    *  unlike webhookSecretEncryptionKey, there is exactly one acquirer
    *  relationship, not one secret per registered endpoint. */
   acquirerCallbackSigningSecret: string;
-  /** Set true once the sandbox signs everything. */
+  /** Default true: unsigned callbacks are rejected (FP-240). Set false only
+   *  for the acquirer sandbox's pre-signing tooling in local dev. */
   acquirerCallbackRequireSignature: boolean;
 }
 
@@ -262,6 +263,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     webhookAllowPrivateTargets: nodeEnv !== "production" && parseBoolEnv(env.WEBHOOK_ALLOW_PRIVATE_TARGETS, false),
 
     acquirerCallbackSigningSecret,
-    acquirerCallbackRequireSignature: parseBoolEnv(env.ACQUIRER_CALLBACK_REQUIRE_SIGNATURE, false),
+    acquirerCallbackRequireSignature: parseBoolEnv(env.ACQUIRER_CALLBACK_REQUIRE_SIGNATURE, true),
   };
 }
