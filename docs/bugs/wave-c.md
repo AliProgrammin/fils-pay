@@ -15,3 +15,11 @@
 - What it breaks: net 100 fils over 3333/3333/3334 pays 33+33+33 = 99. One fils stays in `merchant_payable` forever. Net 1001 fils pays 334+334+334 = 1002, one fils more than the batch. Weights of 5000+4000 pay out only 90% and mark the batch paid.
 - Fix: new `money.AllocateRemainder` (the Go port of `allocateRemainder` in `packages/money`, largest remainder method). `ChildShares` and `PayoutSplitBatch` use it, so shares sum to net exactly. `PayoutSplitBatch` returns an error, and leaves the batch closed, when weights do not sum to 10000.
 - Test: `TestChildShares_SumToNetWithRemainders_Fix`, `TestPayoutSplitBatch_PaysExactNet_Fix`, `TestPayoutSplitBatch_RejectsWeightsNotSummingTo10000_Fix` in `internal/splits/shares_fix_test.go`.
+
+### C3 Scheme file amount is rounded from gross, not the truncated fils
+- Severity: Critical. Ticket: ADR-0002 / ADR-0001. Where: `apps/settlement/internal/settlement/batch.go:255`, `apps/settlement/internal/settlement/scheme_export.go:29`.
+- What is wrong: `amount_fils` stored the gross truncated to 10 fils. But `amount` stored `SchemeAmountBD(gross) = float64(gross)/1000`. Postgres rounds that into `NUMERIC(10,2)`. The export file reads `amount`.
+- Why it happens: two columns for one value, built from different inputs (truncated vs gross) and with a float. The 0050 comment said "same truncation". It is not: NUMERIC(10,2) rounds.
+- What it breaks: 4.747 BD is sent to the scheme as 4.75, but `amount_fils` says 4740. 1.239 goes as 1.24, 1.005 goes as 1.01 (float). The scheme file is up to 9 fils per line over the ledger figure. The file and the fils column never agree, so residue (C9) and reconciliation are wrong.
+- Fix: `amount` is computed in SQL from the same truncated integer: `$3::bigint::numeric / 1000`. No float. `SchemeAmountBD` is removed. Rows already exported are not rewritten, because they match what the scheme received.
+- Test: `TestSchemeExportAmountMatchesTruncatedFils_Fix` in `internal/settlement/scheme_export_fix_test.go`.
