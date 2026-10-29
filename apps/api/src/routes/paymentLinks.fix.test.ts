@@ -182,3 +182,21 @@ test("2026-05-14: a payer who lost the reservation during a slow authorize is vo
   ]);
   assert.equal(row.rows[0]!.transaction_id, (second.body as { transactionId: string }).transactionId);
 });
+
+// ---- B5: cross-merchant cancel (IDOR) ----
+
+test("B5: merchant B cannot cancel merchant A's payment link (404, link stays active)", async () => {
+  const a = await merchantWithKey("idor-victim");
+  const b = await merchantWithKey("idor-attacker");
+  const link = await createLink(a.rawKey, a.merchantId);
+
+  const res = await app.inject({
+    method: "DELETE",
+    url: `/v1/merchants/${b.merchantId}/payment-links/${link.id}`,
+    headers: { authorization: `Bearer ${b.rawKey}` },
+  });
+
+  assert.equal(res.statusCode, 404, res.body);
+  const row = await pool.query<{ status: string }>(`SELECT status FROM payment_links WHERE id = $1`, [link.id]);
+  assert.equal(row.rows[0]!.status, "active");
+});

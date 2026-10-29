@@ -41,3 +41,11 @@
   - public read shows `processing` while a bound payment is in flight.
   Void is done before capture on purpose: `voidTransaction` only works on `authorized`, and refunds are another team's area. Trade-off: if the process crashes after the bind, the link stays `processing` until support voids that authorization; this is safe (no double charge) instead of self-healing into a second charge.
 - Test: apps/api/src/routes/paymentLinks.fix.test.ts "2026-05-14: a slow capture past the reservation timeout cannot be overtaken by a second payer" and "2026-05-14: a payer who lost the reservation during a slow authorize is voided and gets 409, not 200" (both captured twice and returned 200 before the fix).
+
+### B5 Merchant A can cancel merchant B's payment link (IDOR)
+- Severity: High / Ticket: none / Where: apps/api/src/paymentLinks/cancel.ts:13-28, apps/api/src/routes/paymentLinks.ts:96-106
+- What is wrong: `DELETE /v1/merchants/:merchantId/payment-links/:id` cancels any link with that id, from any merchant.
+- Why it happens: `assertOwnMerchant` only checks that the caller owns the merchant id in the path. `cancelPaymentLink` then runs `UPDATE ... WHERE id = $1` with no `merchant_id` filter. So a caller puts their own merchant id in the path and another merchant's link id at the end.
+- What it breaks: any merchant (or a leaked API key of any merchant) can cancel a competitor's open invoices. Customers then see "canceled" and cannot pay. Link ids leak through logs, support tickets and webhooks.
+- Fix: the route passes the path merchant (already checked to be the caller) to `cancelPaymentLink`, and both the UPDATE and the error lookup add `AND merchant_id = $2`. Another merchant's link is now 404, same as a missing link (does not reveal that it exists).
+- Test: apps/api/src/routes/paymentLinks.fix.test.ts "B5: merchant B cannot cancel merchant A's payment link (404, link stays active)" (was 204 and the link was canceled).
