@@ -58,10 +58,13 @@ async function insertDelivery(
   endpointId: string,
   opts: { eventType: string; createdAt: string },
 ): Promise<string> {
+  // An inert outbox event_type (same approach as routes/admin.test.ts): the
+  // delivery row carries the real type; the outbox row only has to exist.
+  // A real rollup type with an empty payload poisons apps/reporting (D10).
   const outbox = await pool.query<{ id: string }>(
-    `INSERT INTO outbox_events (event_type, aggregate_type, aggregate_id, payload)
-     VALUES ($1, 'transaction', $2, '{}'::jsonb) RETURNING id`,
-    [opts.eventType, randomUUID()],
+    `INSERT INTO outbox_events (event_type, aggregate_type, aggregate_id, payload, processed_at)
+     VALUES ('archive.test.fixture', 'transaction', $1, '{}'::jsonb, now()) RETURNING id`,
+    [randomUUID()],
   );
   const outboxEventId = outbox.rows[0]!.id;
 
@@ -228,5 +231,23 @@ test("replay 404s on an archive/merchant mismatch and conflicts on a disabled ta
       adminUserId,
     }),
     (err: unknown) => err instanceof ConflictError && err.code === "endpoint_disabled",
+  );
+});
+
+// D10: this file shares one Postgres with apps/reporting. A fixture outbox row
+// with a real rollup type (transaction.captured/voided) and an empty payload
+// is a poison event for the reporting consumer: it inserts merchant_id NULL,
+// the whole pass rolls back, and reporting stops for good.
+test("fixtures never enqueue a rollup-eligible outbox event", async () => {
+  const merchantId = await createMerchant();
+  const endpointId = await createEndpoint(merchantId);
+  const deliveryId = await insertDelivery(endpointId, { eventType: "transaction.captured", createdAt: "2026-05-02T00:00:00Z" });
+  const outbox = await pool.query<{ event_type: string }>(
+    `SELECT oe.event_type FROM outbox_events oe JOIN webhook_deliveries wd ON wd.outbox_event_id = oe.id WHERE wd.id = $1`,
+    [deliveryId],
+  );
+  assert.ok(
+    !["transaction.captured", "transaction.voided", "settlement.batch_closed"].includes(outbox.rows[0]!.event_type),
+    `fixture outbox row has rollup-eligible type ${outbox.rows[0]!.event_type}`,
   );
 });

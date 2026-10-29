@@ -19,10 +19,12 @@ export interface PaymentLinkStatusInput {
   status: string;
   expiresAt: Date;
   reservedAt: Date | null;
+  /** A bound, non-voided authorization (pending_transaction_id): the link
+   *  stays "processing" past the timeout, matching pay.ts's claim rule. */
+  paymentInFlight?: boolean;
 }
 
-// FH: uses Date.now() not the client time — should this use expiryReferenceTime too?
-// MK: no. public status is server time. (and yes that means read/pay can disagree, known)
+// Server time, same as pay.ts (FP-187: pay no longer trusts a client time).
 export function derivePublicStatus(
   row: PaymentLinkStatusInput,
   reservationTimeoutSeconds: number,
@@ -35,6 +37,7 @@ export function derivePublicStatus(
   }
 
   // row.status === 'reserved'
+  if (row.paymentInFlight) return "processing";
   const reservedAtMs = row.reservedAt?.getTime() ?? 0;
   const stillReserved = reservedAtMs > Date.now() - reservationTimeoutSeconds * 1000;
   return stillReserved ? "processing" : "active";

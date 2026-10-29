@@ -126,9 +126,7 @@ test("zero registered endpoints: an outbox event creates no delivery rows", asyn
   assert.equal(rows.rows.length, 0);
 });
 
-// YA: the receiver here re-parses and re-canonicalizes before verifying. a real receiver verifies the raw bytes,
-// so this can't catch a byte mismatch.
-// FH: it verifies the signature end-to-end, so signing is proven correct
+// The receiver verifies the raw bytes it got (FP-240), like a real receiver.
 test("one active endpoint, 2xx response: exact headers/body sent, delivery marked succeeded, signature verifies with the raw secret", async () => {
   const merchantId = await createMerchant("happy-path");
   // A unique URL per test run, not shared with any other test — this file's
@@ -168,7 +166,7 @@ test("one active endpoint, 2xx response: exact headers/body sent, delivery marke
   // Verify the signature using the raw secret createWebhookEndpoint returned
   // — proving signPayload/verifySignature agree end-to-end, not just that
   // some signature-shaped string was sent.
-  const verifyResult = verifySignature(body, req.headers[WEBHOOK_SIGNATURE_HEADER]!, endpoint.secret);
+  const verifyResult = verifySignature(req.body, req.headers[WEBHOOK_SIGNATURE_HEADER]!, endpoint.secret);
   assert.deepEqual(verifyResult, { valid: true });
 
   const delivery = await getDelivery(String(outboxEvent.id), endpoint.id);
@@ -192,7 +190,7 @@ test("failing endpoint: backoff/exhaustion sequence across repeated runDispatchP
   assert.equal(delivery.status, "pending");
   assert.equal(delivery.attempt_count, 1);
   assert.equal(delivery.response_status_code, 500);
-  const expectedDelay1 = backoffDelayMs(1, config);
+  const expectedDelay1 = backoffDelayMs(1, config, () => 0.5); // no-jitter midpoint; the real delay is checked within a window below
   assert.equal(expectedDelay1, 1000);
   const actualDelay1 = delivery.next_attempt_at.getTime() - Date.now();
   assert.ok(Math.abs(actualDelay1 - expectedDelay1) < 3000, `expected ~${expectedDelay1}ms, got ${actualDelay1}ms`);
@@ -212,7 +210,7 @@ test("failing endpoint: backoff/exhaustion sequence across repeated runDispatchP
   delivery = await getDelivery(String(outboxEvent.id), endpoint.id);
   assert.equal(delivery.status, "pending");
   assert.equal(delivery.attempt_count, 2);
-  const expectedDelay2 = backoffDelayMs(2, config);
+  const expectedDelay2 = backoffDelayMs(2, config, () => 0.5);
   assert.equal(expectedDelay2, 2000);
   const actualDelay2 = delivery.next_attempt_at.getTime() - Date.now();
   assert.ok(Math.abs(actualDelay2 - expectedDelay2) < 3000, `expected ~${expectedDelay2}ms, got ${actualDelay2}ms`);

@@ -184,7 +184,7 @@ test("declined authorize releases the reservation (not burned); retry with an ap
   assert.equal(readAfterRetry.json().status, "paid");
 });
 
-/** Amount comes from the link row; the body has only card (+ optional submittedAt). */
+/** Amount comes from the link row; the body has only card. */
 test("pay charges exactly the link's own amount — the request body carries no amount field", async () => {
   const { rawKey, merchantId } = await createApprovedMerchantWithApiKey("own-amount");
   const link = await createLink(rawKey, merchantId, { amountFils: 9_999 });
@@ -201,7 +201,7 @@ test("pay charges exactly the link's own amount — the request body carries no 
   assert.equal(Number(txnRow.rows[0]!.captured_fils), 9_999);
 });
 
-// only without submittedAt. with a past submittedAt it pays — that's the terminal case (FH)
+// Expiry uses server time only; a client submittedAt is ignored (FP-187, see paymentLinks.fix.test.ts).
 test("expired link is rejected: read reports 'expired', pay is rejected 410", async () => {
   const { rawKey, merchantId } = await createApprovedMerchantWithApiKey("expired");
   const link = await createLink(rawKey, merchantId, {

@@ -10,6 +10,7 @@ interface PublicPaymentLinkRow {
   status: string;
   expires_at: Date;
   reserved_at: Date | null;
+  payment_in_flight: boolean;
   merchant_display_name: string;
   merchant_public_key: string | null;
   integration_id: string | null;
@@ -39,7 +40,10 @@ export async function getPublicPaymentLink(
   // am: one row, it's an index lookup. ignore
   const result = await pool.query<PublicPaymentLinkRow>(
     `SELECT pl.token, pl.amount_fils, pl.currency, pl.reference, pl.description,
-            pl.status, pl.expires_at, pl.reserved_at, m.display_name AS merchant_display_name,
+            pl.status, pl.expires_at, pl.reserved_at,
+            EXISTS (SELECT 1 FROM transactions t
+                     WHERE t.id = pl.pending_transaction_id AND t.status <> 'voided') AS payment_in_flight,
+            m.display_name AS merchant_display_name,
             ak.key_prefix AS merchant_public_key,
             ak.key_hash AS integration_id
        FROM payment_links pl
@@ -66,7 +70,12 @@ export async function getPublicPaymentLink(
     description: row.description,
     // YA: same helper as pay.ts so the two never disagree. correct
     status: derivePublicStatus(
-      { status: row.status, expiresAt: row.expires_at, reservedAt: row.reserved_at },
+      {
+        status: row.status,
+        expiresAt: row.expires_at,
+        reservedAt: row.reserved_at,
+        paymentInFlight: row.payment_in_flight,
+      },
       reservationTimeoutSeconds,
     ),
     expiresAt: row.expires_at.toISOString(),
