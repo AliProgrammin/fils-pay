@@ -15,3 +15,11 @@
 - What it breaks: the suite fails at random, so a real dispatcher regression is hidden in noise.
 - Fix: the test passes a fixed jitter (`() => 0.5`, the midpoint) when it computes the expected value. The real delay is still checked inside a time window.
 - Test: the same test, now stable (ran 3 times, all pass).
+
+### D3 Webhook dispatcher does not claim rows, so two passes send the same delivery
+- Severity: High. Ticket: none. Where: apps/api/src/webhooks/dispatcher.ts:219-228 (attemptDueDeliveries)
+- What is wrong: Step B did a plain SELECT of due 'pending' rows, then sent each one. Nothing marked a row as "taken".
+- Why it happens: two passes running at the same time (two API replicas, or a NOTIFY pass and a poll pass on different processes) read the same due rows before either writes the outcome. A comment said "only ever run one replica", but staging runs two.
+- What it breaks: merchants get the same webhook two or more times, and attempt_count / backoff is wrong.
+- Fix: claim one row at a time with `SELECT ... FOR UPDATE SKIP LOCKED` inside an `UPDATE ... RETURNING` that pushes next_attempt_at forward by a lease (request timeout + 30 s). Other passes skip the row while it is sent. If the process dies, the row is due again after the lease.
+- Test: apps/api/src/webhooks/dispatcher.claim.fix.test.ts (two concurrent passes, slow receiver, exactly one send).
