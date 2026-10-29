@@ -40,3 +40,13 @@
 - What it breaks: ARCHITECTURE says the ledger is the record of money and corrections are new entries; `settlement rebuild-balances` reads only the ledger. Anyone with DB write access (or a bad script) could silently change history and the rebuild would trust it.
 - Fix: New migration `0076_ledger_entries_append_only.sql` adds BEFORE UPDATE/DELETE (row) and BEFORE TRUNCATE (statement) triggers that raise "ledger_entries is append-only". I checked TS, Go, scripts, seed and tests: no code updates or deletes ledger rows. The only TRUNCATE is the dev seed (`db/seed/generate.ts`, also via CASCADE from `merchants`); it now runs `SET LOCAL filspay.allow_ledger_reset = 'on'` inside its own transaction. UPDATE and DELETE have no exception. Seed re-run verified ("all REAL assertions passed").
 - Test: `apps/api/src/db/ledgerAppendOnly.fix.test.ts`
+
+### E5 "Adjust balance" changes only the cached balance, not the ledger
+- Severity: Medium
+- Ticket: E5
+- Where: `apps/api/src/routes/adminBalanceAdjustments.ts:67`, `apps/api/src/admin/balanceAdjustments.ts:25`
+- What is wrong: The admin endpoint called `applyBalanceCorrection`, which only runs `UPDATE merchant_balances SET cached_payable_fils = ...`. No ledger legs were posted. Example: +50.000 BD shows on the dashboard (100.000 -> 150.000 BD), but the ledger still says 100.000 BD.
+- Why it happens: Two functions exist side by side. The route was wired to the cache-only one; the journaled one (`adjustMerchantBalanceJournaled`) was never used. ADMIN.md says "The adjustment is journaled to the ledger".
+- What it breaks: The cache and the ledger drift. The next `settlement rebuild-balances` (reads only the ledger) silently wipes the 50.000 BD, and payouts and reconciliation do not see it. No ledger trail for the money.
+- Fix: The route now calls `adjustMerchantBalanceJournaled`, which posts a balanced group (merchant_payable vs manual_balance_adjustment_contra) and moves the cache in the same transaction, with an audit row that holds the entry group id. Response shape is the same. Removed a test comment that claimed "the ledger is untouched by this endpoint".
+- Test: new test "an adjustment posts a balanced ledger group, not just a cache edit" in `apps/api/src/routes/adminBalanceAdjustments.test.ts`
