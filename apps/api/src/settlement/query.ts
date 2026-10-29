@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import { estimateFeeFils } from "../fees/estimate.js";
+import { getVolumeTierBonusBps } from "../fees/platformVolumeTier.js";
 
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
@@ -296,7 +297,7 @@ export async function getReconciliationReport(
   const windowStart = bahrainLocalMidnightUtc(input.from);
   const windowEnd = bahrainLocalMidnightUtc(input.to);
 
-  const [ledgerResult, settlementResult, pendingResult, merchantResult, pendingRefundResult] = await Promise.all([
+  const [ledgerResult, settlementResult, pendingResult, volumeTierBonusBps, pendingRefundResult] = await Promise.all([
     // Payout legs (merchant_payable -> platform_cash, posted by PayoutBatch
     // and split payouts) are the batch being paid, not earnings: the batch
     // side already counts them as settlementNetPayoutFils.
@@ -319,19 +320,28 @@ export async function getReconciliationReport(
           AND status IN ('closed', 'paid')`,
       [input.merchantId, input.from, input.to],
     ),
-    pool.query<{ amount_fils: string | number }>(
-      `SELECT te.amount_fils
+    // Rate per capture = the fee_schedules row in effect at the capture
+    // instant, else merchants.mdr_bps: the same rule as
+    // fees/feeSchedule.ts getEffectiveMdrBps, which capture.ts bills with.
+    pool.query<{ amount_fils: string | number; mdr_bps: number; negotiated_discount_bps: number }>(
+      `SELECT te.amount_fils,
+              COALESCE(fs.mdr_bps, m.mdr_bps) AS mdr_bps,
+              m.negotiated_discount_bps
          FROM transaction_events te
          JOIN transactions t ON t.id = te.transaction_id
+         JOIN merchants m ON m.id = t.merchant_id
+         LEFT JOIN LATERAL (
+           SELECT mdr_bps FROM fee_schedules
+            WHERE merchant_id = t.merchant_id AND effective_from <= te.occurred_at
+            ORDER BY effective_from DESC, created_at DESC
+            LIMIT 1
+         ) fs ON true
         WHERE t.merchant_id = $1 AND te.event_type IN ('captured', 'partially_captured')
           AND te.settlement_batch_id IS NULL
           AND te.occurred_at >= $2 AND te.occurred_at < $3`,
       [input.merchantId, windowStart, windowEnd],
     ),
-    pool.query<{ mdr_bps: number; negotiated_discount_bps: number }>(
-      `SELECT mdr_bps, negotiated_discount_bps FROM merchants WHERE id = $1`,
-      [input.merchantId],
-    ),
+    getVolumeTierBonusBps(pool),
     // Exact, not estimated: the refund row stores the fee it reversed.
     pool.query<{ net: string }>(
       `SELECT COALESCE(SUM(amount_fils - fee_reversed_fils), 0) AS net
@@ -342,16 +352,13 @@ export async function getReconciliationReport(
     ),
   ]);
 
-  // MK: merchants.mdr_bps is kept in sync with the current fee_schedules row by the 0046 trigger,
-  // so reading it here is the same as resolving the schedule
-  const merchant = merchantResult.rows[0];
-  const mdrBps = merchant?.mdr_bps ?? 0;
-  const discountBps = merchant?.negotiated_discount_bps ?? 0;
-
+  // merchants.mdr_bps is NOT kept in sync with fee_schedules (no such
+  // trigger exists), so the rate is resolved per capture above.
   let pendingUnbatchedFils = 0;
   for (const row of pendingResult.rows) {
     const amountFils = Number(row.amount_fils);
-    const feeFils = estimateFeeFils(amountFils, mdrBps, discountBps);
+    const rateBps = Math.max(0, row.mdr_bps - volumeTierBonusBps);
+    const feeFils = estimateFeeFils(amountFils, rateBps, row.negotiated_discount_bps);
     pendingUnbatchedFils += amountFils - feeFils;
   }
 

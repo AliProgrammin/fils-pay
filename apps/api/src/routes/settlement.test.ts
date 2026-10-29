@@ -344,7 +344,7 @@ test("GET /v1/settlement/batches/:id/transactions returns the truncated scheme-e
   assert.equal(line.authorizedFils, 4_747);
 });
 
-/** Fully batched = pending is 0, so this never exercises the float pending path. */
+/** Fully batched = pending is 0, so this never exercises the pending estimate. */
 test("GET /v1/settlement/reconciliation reports gapFils === 0 for a fully-batched period", async () => {
   const { merchantId, rawKey } = await createApprovedMerchantWithApiKey("reconciliation", 250);
   const txn1 = await authorize(rawKey, 10_000);
@@ -414,7 +414,7 @@ test("GET /v1/settlement/reconciliation stays at gap 0 when the window also cove
   assert.equal(report.explained, true);
 });
 
-// merchant in this fixture has no discount and no schedule row, so the float path is exact here — MK
+// No discount and no schedule row here; the schedule case is the D16 test below.
 test("GET /v1/settlement/reconciliation with an unbatched capture reports it as pendingUnbatchedFils, not an unexplained gap", async () => {
   const { rawKey } = await createApprovedMerchantWithApiKey("reconciliation-pending", 250);
   const txn = await authorize(rawKey, 2_000);
@@ -438,6 +438,32 @@ test("GET /v1/settlement/reconciliation with an unbatched capture reports it as 
   assert.equal(report.settlementNetPayoutFils, 0, "nothing has been closed/paid yet");
   assert.equal(report.pendingUnbatchedFils, expectedPending);
   assert.equal(report.gapFils, 0, "the ledger movement is fully attributed to pendingUnbatchedFils, so the gap is still zero");
+  assert.equal(report.explained, true);
+});
+
+// D16: capture bills at the effective fee_schedules rate, not merchants.mdr_bps.
+// The pending estimate must use the same rate, or the difference shows as a gap.
+test("GET /v1/settlement/reconciliation prices pending captures at the effective fee schedule rate", async () => {
+  const { merchantId, rawKey } = await createApprovedMerchantWithApiKey("reconciliation-schedule", 250);
+  await pool.query(
+    `INSERT INTO fee_schedules (merchant_id, mdr_bps, effective_from) VALUES ($1, 225, now() - interval '1 day')`,
+    [merchantId],
+  );
+  const txn = await authorize(rawKey, 36_000);
+  await capture(rawKey, txn.id);
+
+  const businessDate = todayBahrainDateString();
+  const nextDay = addOneCalendarDay(businessDate);
+  const res = await app.inject({
+    method: "GET",
+    url: `/v1/settlement/reconciliation?from=${businessDate}&to=${nextDay}`,
+    headers: authHeader(rawKey),
+  });
+  assert.equal(res.statusCode, 200, res.body);
+  const report = res.json() as { gapFils: number; explained: boolean; pendingUnbatchedFils: number };
+
+  assert.equal(report.pendingUnbatchedFils, 36_000 - Number(applyRateFils(toFils(36_000), 225)));
+  assert.equal(report.gapFils, 0);
   assert.equal(report.explained, true);
 });
 

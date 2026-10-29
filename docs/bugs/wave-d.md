@@ -127,3 +127,13 @@
 - What it breaks: finance sees an unexplained gap for every paid batch, so the report cannot be used to find real gaps.
 - Fix: the ledger side leaves out payout legs (entries whose entry group has a `platform_cash` leg). It now counts what the merchant earned, which is what the batch and pending figures explain.
 - Test: apps/api/src/routes/settlement.test.ts ("GET /v1/settlement/reconciliation stays at gap 0 when the window also covers the batch payout").
+
+### D16 Reconciliation estimates pending fees at the wrong rate, with float rounding
+- Severity: Medium
+- Ticket: none
+- Where: apps/api/src/settlement/query.ts (pending estimate), apps/api/src/fees/estimate.ts
+- What is wrong: before settlement, a merchant on a negotiated rate shows a gap (e.g. 90 fils on a 36.000 BD capture at 225 bps against a 250 bps merchant rate).
+- Why it happens: the pending estimate reads `merchants.mdr_bps`. Capture bills at the `fee_schedules` row in effect at the capture time (fees/feeSchedule.ts), less the platform volume tier. A code comment said a "0046 trigger" keeps the two in sync; no such trigger exists (0046 is settlement splits). The estimate also used float rates and `Math.round` (half up), while capture uses `applyRateFils` (integer, half to even), so a 0.5 fil fee could differ by 1.
+- What it breaks: the report shows false gaps for every merchant with a rate change, so finance cannot trust `explained`.
+- Fix: the pending query resolves the rate per capture with the same rule as getEffectiveMdrBps (effective_from <= capture time, newest first, created_at as tie-break, else merchants.mdr_bps) and takes off the volume tier bonus, as capture does. estimateFeeFils now uses applyRateFils for the fee and for the negotiated discount.
+- Test: apps/api/src/routes/settlement.test.ts ("GET /v1/settlement/reconciliation prices pending captures at the effective fee schedule rate"), apps/api/src/fees/estimate.test.ts ("estimateFeeFils rounds an exact half to even, the same as capture").
