@@ -63,3 +63,11 @@
 - What it breaks: any merchant can read the full transactions report of any marketplace sub-merchant on the platform (cross-tenant data leak). ARCHITECTURE.md says merchant-scoped queries take the merchant from the authenticated context.
 - Fix: also require `parent_merchant_id = caller`. Otherwise the report falls back to the caller's own data, as before.
 - Test: apps/api/src/reporting/scope.fix.test.ts.
+
+### D2 Duplicate settlement.paid payout notifications (incident 2026-08-21)
+- Severity: High. Ticket: incident 2026-08-21. Where: apps/settlement/internal/settlement/payout_notify.go:32-94, db/migrations/0009_outbox_events.sql
+- What is wrong: EnqueuePayoutNotifications selects paid batches that have no settlement.paid event (NOT EXISTS), then inserts one. There is no lock and no unique index. A comment said "outbox_events has a unique index on (event_type, aggregate_id)"; it does not.
+- Why it happens: check-then-insert race. The daemon tick and a manual `run-batch` run at the same time; both see "no event yet" and both insert.
+- What it breaks: merchants get two (or more) settlement.paid webhooks for one payout, and every consumer of the outbox sees the payout twice. The test reproduced 6 events for one batch with 8 concurrent scans.
+- Fix: migration 0075 renames existing duplicates to 'settlement.paid.duplicate' (keeps the lowest id; rows are referenced by webhook_deliveries so they are not deleted) and adds a partial unique index on outbox_events(event_type, aggregate_id) WHERE event_type = 'settlement.paid'. The insert uses ON CONFLICT DO NOTHING and counts only rows really inserted.
+- Test: apps/settlement/internal/settlement/payout_notify_fix_test.go.
