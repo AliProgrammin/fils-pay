@@ -11,6 +11,7 @@ import { validateRefundRequest } from "./refundValidation.js";
 import { ConflictError, UnprocessableEntityError } from "../lib/errors.js";
 
 const ENDPOINT = "refunds.create";
+const REASON_UNSPECIFIED = "unspecified";
 
 export interface ProcessRefundInput {
   transactionId: string;
@@ -36,20 +37,26 @@ interface RefundTransactionRow {
   acquirer_reference: string;
 }
 
-/** Refund business logic: validate, call the acquirer, then journal the reversal. */
+/** Refund business logic: lock, validate, call the acquirer, journal the reversal. One DB transaction. */
 export async function processRefund(
   pool: Pool,
   acquirer: AcquirerSimulator,
   input: ProcessRefundInput,
 ): Promise<ProcessRefundResult> {
+  // Migration 0070: every refund row carries a reason, and its default is
+  // 'unspecified'. Supply that default here; never pass NULL to the column.
+  const reason = input.reason?.trim() || REASON_UNSPECIFIED;
   const requestHash = hashRequest({
     transactionId: input.transactionId,
     amountFils: input.amountFils ?? null,
-    reason: input.reason ?? null,
+    reason,
   });
 
-  // 1 validate
-  const prepared = await withTransaction(pool, async (client) => {
+  // One database transaction from claim to journal, like capture.ts: the
+  // row lock is taken before validation and held across the acquirer call,
+  // so a second refund on the same transaction waits here and is then
+  // validated against the refunded total the first one wrote.
+  return withTransaction(pool, async (client) => {
     const claim = await claimIdempotencyKey(client, {
       merchantId: input.merchantId,
       endpoint: ENDPOINT,
@@ -64,30 +71,33 @@ export async function processRefund(
       throw new ConflictError("request_in_progress");
     }
     if (claim.outcome === "replay") {
-      return {
-        kind: "settled" as const,
-        result: { statusCode: claim.row.responseStatusCode ?? 200, body: claim.row.responseBody },
-      };
+      return { statusCode: claim.row.responseStatusCode ?? 200, body: claim.row.responseBody };
     }
 
     const txnResult = await client.query<RefundTransactionRow>(
       `SELECT id, merchant_id, status, amount_fils, captured_fils, refunded_fils, acquirer_reference
          FROM transactions
-        WHERE id = $1`,
-      [input.transactionId],
+        WHERE id = $1 AND merchant_id = $2
+        FOR UPDATE`,
+      // Scoped by the authenticated merchant: another merchant's
+      // transaction is simply not found (404, never 403).
+      [input.transactionId, input.merchantId],
     );
     const txn = txnResult.rows[0];
     if (!txn) {
       const body = { error: "transaction_not_found" };
       await completeIdempotencyKey(client, claim.row.id, { statusCode: 404, body });
-      return { kind: "settled" as const, result: { statusCode: 404, body } };
+      return { statusCode: 404, body };
     }
 
     const amountAuthorized = toFils(Number(txn.amount_fils));
     const capturedFils = toFils(Number(txn.captured_fils));
     const refundedFils = toFils(Number(txn.refunded_fils));
 
-    const refundableFils = subtractFils(amountAuthorized, refundedFils);
+    // What may still go back is what was captured less what was already
+    // refunded. The authorized amount is never refundable: uncaptured
+    // authorization was never taken from the cardholder.
+    const refundableFils = subtractFils(capturedFils, refundedFils);
 
     const validation = validateRefundRequest(
       {
@@ -103,19 +113,23 @@ export async function processRefund(
     if (!validation.ok) {
       const statusCode = validation.code === "transaction_not_refundable" ? 409 : 422;
       await completeIdempotencyKey(client, claim.row.id, { statusCode, body: validation });
-      return { kind: "settled" as const, result: { statusCode, body: validation } };
+      return { statusCode, body: validation };
     }
 
-    // The fee this transaction was actually charged at capture, read from
-    // the ledger rather than recomputed from the merchant's current
-    // mdr_bps, so a rate change after capture can never retroactively alter
-    // what a refund reverses.
-    const feeResult = await client.query<{ fee_fils: string }>(
-      `SELECT COALESCE(SUM(amount_fils), 0)::text AS fee_fils
-         FROM ledger_entries
-        WHERE transaction_id = $1
-          AND account_id = 'platform_fee_revenue'
-          AND direction = 'credit'`,
+    // The NET fee this transaction was charged, read from the ledger (never
+    // recomputed from today's mdr_bps): capture fee credits less the
+    // negotiated-discount debits on platform_fee_revenue. Earlier refund
+    // reversals are left out here and counted separately below.
+    const feeResult = await client.query<{ fee_fils: string; reversed_fils: string }>(
+      `SELECT
+         (SELECT COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount_fils ELSE -amount_fils END), 0)
+            FROM ledger_entries
+           WHERE transaction_id = $1
+             AND account_id = 'platform_fee_revenue'
+             AND description NOT LIKE 'refund:%')::text AS fee_fils,
+         (SELECT COALESCE(SUM(fee_reversed_fils), 0)
+            FROM refunds
+           WHERE transaction_id = $1 AND status = 'succeeded')::text AS reversed_fils`,
       [txn.id],
     );
     const feeRow = feeResult.rows[0];
@@ -123,34 +137,25 @@ export async function processRefund(
       throw new Error("processRefund: fee aggregate returned no row");
     }
 
-    return {
-      kind: "proceed" as const,
+    const prepared = {
       claimId: claim.row.id,
-      attemptCount: claim.row.attemptCount,
       transactionId: txn.id,
       merchantId: txn.merchant_id,
-      acquirerReference: txn.acquirer_reference,
       amountAuthorized,
       capturedFils,
       refundedFils,
       feeChargedFils: toFils(Number(feeRow.fee_fils)),
+      feeReversedBeforeFils: toFils(Number(feeRow.reversed_fils)),
       requestedAmount: validation.amountFils,
     };
-  });
 
-  if (prepared.kind === "settled") {
-    return prepared.result;
-  }
+    // Acquirer call, with the row lock above still held.
+    const acquirerResult = await acquirer.refund({
+      acquirerReference: txn.acquirer_reference,
+      amountFils: prepared.requestedAmount,
+      idempotencyKey: `${claim.row.id}:${claim.row.attemptCount}`,
+    });
 
-  // 2 acquirer
-  const acquirerResult = await acquirer.refund({
-    acquirerReference: prepared.acquirerReference,
-    amountFils: prepared.requestedAmount,
-    idempotencyKey: `${prepared.claimId}:${prepared.attemptCount}`,
-  });
-
-  // 3 journal
-  return withTransaction(pool, async (client) => {
     if (acquirerResult.outcome === "declined") {
       const body = { error: "refund_declined" };
       await completeIdempotencyKey(client, prepared.claimId, { statusCode: 402, body });
@@ -168,11 +173,15 @@ export async function processRefund(
       capturedFils: prepared.capturedFils,
       refundedTotalFils: newRefundedTotal,
     });
-    const feeReversedFils = calculateRefundFee(
-      prepared.capturedFils,
-      prepared.feeChargedFils,
-      prepared.requestedAmount,
-    );
+    // Cumulative: all refunds of this capture together reverse exactly the
+    // net fee charged, to the fil (see calculateRefundFee).
+    const feeReversedFils = calculateRefundFee({
+      capturedFils: prepared.capturedFils,
+      feeChargedFils: prepared.feeChargedFils,
+      refundedBeforeFils: prepared.refundedFils,
+      feeReversedBeforeFils: prepared.feeReversedBeforeFils,
+      refundAmountFils: prepared.requestedAmount,
+    });
 
     const refundResult = await client.query<{ id: string; occurred_at: Date }>(
       `INSERT INTO refunds
@@ -186,7 +195,7 @@ export async function processRefund(
         prepared.requestedAmount,
         feeReversedFils,
         acquirerResult.acquirerReference,
-        input.reason ?? null,
+        reason,
         input.actor.type,
         input.actor.id,
       ],
@@ -200,6 +209,13 @@ export async function processRefund(
       prepared.transactionId,
       newRefundedTotal,
       newStatus,
+    ]);
+
+    // A refunded transaction can no longer be captured (capture accepts only
+    // authorized / partially_captured), so any uncaptured authorization is
+    // finished: release its hold, as capture does when nothing is left.
+    await client.query(`UPDATE holds SET status = 'released' WHERE transaction_id = $1 AND status = 'active'`, [
+      prepared.transactionId,
     ]);
 
     // Double-entry reversal, mirroring capture's legs with the directions
@@ -248,6 +264,7 @@ export async function processRefund(
       aggregateId: prepared.transactionId,
       payload: {
         merchantId: prepared.merchantId,
+        transactionId: prepared.transactionId,
         refundId: refund.id,
         amountFils: prepared.requestedAmount,
         feeReversedFils,

@@ -67,3 +67,27 @@ test("a partially captured transaction with nothing refunded stays partially_cap
     "partially_captured",
   );
 });
+
+// R6: Huda's finance rule — a transaction is refunded when every fils that
+// was captured went back, even if less than the authorized amount was captured.
+test("a partial capture refunded in full is refunded", () => {
+  assert.equal(
+    nextStatusAfterRefund({
+      amountFils: toFils(10_000),
+      capturedFils: toFils(4_000),
+      refundedTotalFils: toFils(4_000),
+    }),
+    "refunded",
+  );
+});
+
+test("a partial capture refunded in part is partially_refunded", () => {
+  assert.equal(
+    nextStatusAfterRefund({
+      amountFils: toFils(10_000),
+      capturedFils: toFils(4_000),
+      refundedTotalFils: toFils(1_000),
+    }),
+    "partially_refunded",
+  );
+});

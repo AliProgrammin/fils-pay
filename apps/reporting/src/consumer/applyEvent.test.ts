@@ -245,3 +245,41 @@ test("applyBatchClosed (via applyEvent) is idempotent: applying the identical ev
   assert.equal(Number(result.rows[0].fee_fils), 125);
   assert.equal(Number(result.rows[0].net_payout_fils), 4_875);
 });
+
+// FP-300: one refund.succeeded per refund adds to the refund columns of the
+// merchant's Asia/Bahrain day. 22:30 UTC on 5 Jan is 01:30 on 6 Jan in
+// Bahrain, so the row is 2026-01-06, not the UTC date.
+test("refund.succeeded (via applyEvent): adds to refund_count/refund_gross_fils on the Asia/Bahrain date", async () => {
+  const merchantId = await createMerchant("refund");
+  const createdAt = new Date("2026-01-05T22:30:00Z");
+  for (const amountFils of [4_000, 6_000]) {
+    await withTransaction(pool, (client) =>
+      applyEvent(
+        client,
+        makeRow({
+          event_type: "refund.succeeded",
+          created_at: createdAt,
+          payload: {
+            merchantId,
+            transactionId: randomUUID(),
+            refundId: randomUUID(),
+            amountFils,
+            feeReversedFils: 100,
+            refundedTotalFils: amountFils,
+            newStatus: "partially_refunded",
+          },
+        }),
+      ),
+    );
+  }
+  const result = await pool.query(
+    `SELECT volume_date::text AS d, refund_count, refund_gross_fils, captured_count
+       FROM merchant_daily_volume WHERE merchant_id = $1`,
+    [merchantId],
+  );
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.rows[0].d, "2026-01-06");
+  assert.equal(result.rows[0].refund_count, 2);
+  assert.equal(Number(result.rows[0].refund_gross_fils), 10_000);
+  assert.equal(result.rows[0].captured_count, 0);
+});

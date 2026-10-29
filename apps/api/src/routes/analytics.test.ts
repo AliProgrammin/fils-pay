@@ -174,6 +174,26 @@ test("GET /v1/analytics/volumes: readModelAsOf/live present, date-range filters,
   assert.equal(otherBody.points[0]!.capturedCount, 42);
 });
 
+// FP-300: the daily volume report carries the refunds apps/reporting rolled up.
+test("GET /v1/analytics/volumes: each point shows refundCount and refundGrossFils", async () => {
+  await ensureReportingCursor();
+  const { merchantId, rawKey } = await createApprovedMerchantWithApiKey("volumes-refunds");
+  await insertVolumeRow(merchantId, "2026-01-12", { capturedCount: 2, capturedGrossFils: 10_000 });
+  await pool.query(
+    `UPDATE merchant_daily_volume SET refund_count = 2, refund_gross_fils = 7_500 WHERE merchant_id = $1`,
+    [merchantId],
+  );
+  const res = await app.inject({
+    method: "GET",
+    url: "/v1/analytics/volumes?from=2026-01-01&to=2026-02-01",
+    headers: authHeader(rawKey),
+  });
+  assert.equal(res.statusCode, 200, res.body);
+  const point = (res.json() as { points: Array<{ refundCount: number; refundGrossFils: number }> }).points[0]!;
+  assert.equal(point.refundCount, 2);
+  assert.equal(point.refundGrossFils, 7_500);
+});
+
 test("GET /v1/analytics/volumes: invalid date query params are rejected 400", async () => {
   const { rawKey } = await createApprovedMerchantWithApiKey("volumes-invalid-date");
 

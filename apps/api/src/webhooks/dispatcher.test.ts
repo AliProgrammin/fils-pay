@@ -406,3 +406,51 @@ test("a disabled endpoint gets no delivery row for a new event", async () => {
   ]);
   assert.equal(rows.rows.length, 0);
 });
+
+// FP-300: a refund.succeeded outbox event reaches the merchant's endpoint as
+// a signed refund.succeeded webhook.
+test("refund.succeeded is delivered to the merchant's endpoint, signed over the raw body", async () => {
+  const merchantId = await createMerchant("refund-succeeded");
+  const endpointUrl = `http://fake-receiver.test/webhook-${randomUUID()}`;
+  const endpoint = await createEndpoint(merchantId, endpointUrl);
+  const transactionId = randomUUID();
+  const refundId = randomUUID();
+  const outboxEvent = await enqueueEvent(pool, {
+    eventType: "refund.succeeded",
+    aggregateType: "transaction",
+    aggregateId: transactionId,
+    payload: {
+      merchantId,
+      transactionId,
+      refundId,
+      amountFils: 4_000,
+      feeReversedFils: 100,
+      refundedTotalFils: 4_000,
+      newStatus: "partially_refunded",
+    },
+  });
+
+  const captured: WebhookTransportRequest[] = [];
+  const transport: WebhookTransport = async (req) => {
+    if (req.url === endpointUrl) captured.push(req);
+    return { statusCode: 200, body: "ok" };
+  };
+  await runDispatchPass(pool, transport, config);
+
+  assert.equal(captured.length, 1);
+  const req = captured[0]!;
+  const body = JSON.parse(req.body) as { type: string; data: Record<string, unknown> };
+  assert.equal(body.type, "refund.succeeded");
+  assert.deepEqual(body.data, {
+    refundId,
+    transactionId,
+    merchantId,
+    amountFils: 4_000,
+    feeReversedFils: 100,
+    refundedTotalFils: 4_000,
+    status: "partially_refunded",
+  });
+  assert.deepEqual(verifySignature(req.body, req.headers[WEBHOOK_SIGNATURE_HEADER]!, endpoint.secret), { valid: true });
+  const delivery = await getDelivery(String(outboxEvent.id), endpoint.id);
+  assert.equal(delivery.status, "succeeded");
+});

@@ -84,14 +84,14 @@ export type TransactionStatus =
 
 /** serializeTransaction() also returns `merchantId` — kept here so the type
  *  matches the wire shape exactly rather than a convenient subset of it. */
-// FH: no refundedFils on this DTO, so the drawer can't compute what's still refundable
-// refundedFils is there, a few lines down — am
 export interface TransactionDto {
   id: string;
   merchantId: string;
   status: TransactionStatus;
   amountFils: number;
   capturedFils: number;
+  /** Cumulative refunded amount. Still refundable = capturedFils - refundedFils. */
+  refundedFils: number;
   currency: string;
   reference: string | null;
   acquirerReference: string;
@@ -124,6 +124,20 @@ export interface TransactionEventDto {
  *  it from, and a repeat void is indistinguishable from a first one on the
  *  wire. That is fine: both mean "now voided". */
 export type CaptureResponse = TransactionDto;
+
+/** `POST /v1/merchants/:merchantId/refunds` success body (payments/processRefund.ts). */
+export interface RefundResponse {
+  id: string;
+  transactionId: string;
+  merchantId: string;
+  amountFils: number;
+  feeReversedFils: number;
+  status: "succeeded";
+  transactionStatus: TransactionStatus;
+  refundedTotalFils: number;
+  acquirerReference: string;
+  occurredAt: string;
+}
 export type VoidResponse = TransactionDto;
 
 // --- payment links ---
@@ -215,13 +229,15 @@ export interface ReplayResponse {
 // --- settlement / reconciliation ---
 export type SettlementBatchStatus = "open" | "closed" | "paid";
 
-/** @property netPayoutFils Always exactly grossFils - feeFils. */
+/** @property netPayoutFils Always exactly grossFils - feeFils - refundFils + refundFeeReversedFils. */
 export interface SettlementBatchDto {
   id: string;
   batchDate: string;
   status: SettlementBatchStatus;
   grossFils: number;
   feeFils: number;
+  refundFils: number;
+  refundFeeReversedFils: number;
   netPayoutFils: number;
   closedAt: string | null;
   paidAt: string | null;
@@ -272,6 +288,8 @@ export interface VolumePointDto {
   capturedCount: number;
   capturedGrossFils: number;
   voidedCount: number;
+  refundCount: number;
+  refundGrossFils: number;
 }
 
 /** `readModelAsOf` is nullable on the two lagged widgets: it reads

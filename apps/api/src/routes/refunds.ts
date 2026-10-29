@@ -1,26 +1,97 @@
-import type { FastifyInstance } from "fastify";
-import { requireMerchantAuth } from "../auth/requireMerchantAuth.js";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { toFils } from "@filspay/money";
+import {
+  requireMerchantAuth,
+  requireMerchantRole,
+  requireMerchantWriterActor,
+} from "../auth/requireMerchantAuth.js";
+import { assertRefundRequestScope, initiateMerchantRefund } from "../refunds/initiateMerchantRefund.js";
+import { UUID_RE } from "../admin/merchants.js";
+import { BadRequestError } from "../lib/errors.js";
+
+interface RefundBody {
+  transactionId?: unknown;
+  amountFils?: unknown;
+  reason?: unknown;
+}
+
+interface MerchantIdParams {
+  merchantId: string;
+}
+
+const MAX_REASON_LENGTH = 500;
+
+/** Same rule as capture: the header is required, never generated server-side. */
+function getIdempotencyKey(request: FastifyRequest): string {
+  const header = request.headers["idempotency-key"];
+  const key = Array.isArray(header) ? header[0] : header;
+  if (!key) {
+    throw new BadRequestError("idempotency_key_required", "Idempotency-Key header is required");
+  }
+  return key;
+}
+
+function parseBody(body: RefundBody | undefined): { transactionId: string; amountFils: number; reason: string } {
+  const { transactionId, amountFils, reason } = body ?? {};
+  if (typeof transactionId !== "string" || !UUID_RE.test(transactionId)) {
+    throw new BadRequestError("invalid_request", "transactionId must be a transaction id");
+  }
+  if (typeof amountFils !== "number" || !Number.isSafeInteger(amountFils) || amountFils <= 0) {
+    throw new BadRequestError("invalid_amount", "amountFils must be a positive integer number of fils");
+  }
+  if (typeof reason !== "string" || reason.trim() === "" || reason.length > MAX_REASON_LENGTH) {
+    throw new BadRequestError("reason_required", `reason is required (1-${MAX_REASON_LENGTH} characters)`);
+  }
+  return { transactionId, amountFils, reason: reason.trim() };
+}
+
+async function handleRefund(
+  app: FastifyInstance,
+  request: FastifyRequest<{ Body: RefundBody }>,
+  reply: FastifyReply,
+): Promise<void> {
+  // Impersonation is refused for every non-GET route in requireMerchantAuth;
+  // the writer role gate (owner/finance) is in the preHandler.
+  const auth = request.merchantAuth!;
+  const idempotencyKey = getIdempotencyKey(request);
+  const { transactionId, amountFils, reason } = parseBody(request.body);
+
+  const result = await initiateMerchantRefund(app.db, app.acquirer, {
+    // Always the authenticated merchant, never a value from the body.
+    merchantId: auth.merchantId,
+    transactionId,
+    amountFils: toFils(amountFils),
+    idempotencyKey,
+    actor: requireMerchantWriterActor(auth),
+    reason,
+  });
+  reply.code(result.statusCode).send(result.body);
+}
+
+const writerPreHandler = [requireMerchantAuth, requireMerchantRole("owner", "finance")];
 
 /**
- * Refunds — full and partial, including the settlement adjustment — aren't
- * built yet. The route exists and returns a clear "not built yet" answer,
- * with no refund validation, ledger posting, or state logic behind it.
+ * `POST /v1/merchants/:merchantId/refunds` — the path RefundDrawer and
+ * initiateMerchantRefund use. Registered under the `/v1/merchants` prefix.
+ * Body: `{ transactionId, amountFils (integer fils > 0), reason }`.
  */
-// FP-212. stub until refunds land. transactions.test.ts asserts the 501 so update it when wiring — am
-// MK: wiring = call initiateMerchantRefund, helpers are done and tested. half a day yalla
-// FH: Claude drafted the handler for me:
-//   app.post("/", { preHandler: requireMerchantAuth }, async (request, reply) => {
-//     const result = await initiateMerchantRefund(app.db, app.acquirer, {
-//       merchantId: request.merchantAuth.merchantId,
-//       ...(request.body as any),
-//       idempotencyKey: crypto.randomUUID(),
-//     });
-//     reply.code(result.statusCode).send(result.body);
-//   });
-// YA (left a note in Mar): don't just wire it, the helpers were written before the capture
-// discount and tier existed
+export async function merchantRefundRoutes(app: FastifyInstance): Promise<void> {
+  app.post<{ Params: MerchantIdParams; Body: RefundBody }>(
+    "/:merchantId/refunds",
+    { preHandler: writerPreHandler },
+    async (request, reply) => {
+      assertRefundRequestScope(request.merchantAuth!, request.params.merchantId);
+      await handleRefund(app, request, reply);
+    },
+  );
+}
+
+/**
+ * `POST /v1/refunds` — the path HANDOVER/ONBOARDING document for API-key
+ * integrations. Same handler; the merchant comes only from the credential.
+ */
 export async function refundRoutes(app: FastifyInstance): Promise<void> {
-  app.post("/", { preHandler: requireMerchantAuth }, async (_request, reply) => {
-    reply.code(501).send({ error: "not_implemented" });
+  app.post<{ Body: RefundBody }>("/", { preHandler: writerPreHandler }, async (request, reply) => {
+    await handleRefund(app, request, reply);
   });
 }

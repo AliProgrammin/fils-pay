@@ -412,6 +412,38 @@ test("GET /v1/settlement/reconciliation with an unbatched capture reports it as 
   assert.equal(report.explained, true);
 });
 
+// FP-300: an unbatched refund already moved merchant_payable in the ledger,
+// so it must be in the pending figure too, or every refund shows as a gap.
+test("GET /v1/settlement/reconciliation counts an unbatched refund in pending, so the gap stays 0", async () => {
+  const { merchantId, rawKey } = await createApprovedMerchantWithApiKey("reconciliation-refund", 250);
+  await pool.query(`UPDATE merchants SET refunds_enabled = true WHERE id = $1`, [merchantId]);
+  const txn = await authorize(rawKey, 2_000);
+  await capture(rawKey, txn.id);
+  const refundRes = await app.inject({
+    method: "POST",
+    url: `/v1/merchants/${merchantId}/refunds`,
+    headers: { ...authHeader(rawKey), "idempotency-key": randomUUID() },
+    payload: { transactionId: txn.id, amountFils: 500, reason: "x" },
+  });
+  assert.equal(refundRes.statusCode, 200, refundRes.body);
+  const feeReversed = (refundRes.json() as { feeReversedFils: number }).feeReversedFils;
+
+  const businessDate = todayBahrainDateString();
+  const nextDay = addOneCalendarDay(businessDate);
+  const res = await app.inject({
+    method: "GET",
+    url: `/v1/settlement/reconciliation?from=${businessDate}&to=${nextDay}`,
+    headers: authHeader(rawKey),
+  });
+  assert.equal(res.statusCode, 200, res.body);
+  const report = res.json() as { gapFils: number; explained: boolean; pendingUnbatchedFils: number };
+
+  const expectedFee = Number(applyRateFils(toFils(2_000), 250));
+  assert.equal(report.pendingUnbatchedFils, 2_000 - expectedFee - 500 + feeReversed);
+  assert.equal(report.gapFils, 0);
+  assert.equal(report.explained, true);
+});
+
 test("GET /v1/settlement/summary sums captured amounts for transactions with a single capture event", async () => {
   const { rawKey } = await createApprovedMerchantWithApiKey("summary-single-event", 250);
   const txn1 = await authorize(rawKey, 10_000);

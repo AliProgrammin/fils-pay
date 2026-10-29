@@ -36,19 +36,19 @@ export interface InitiateMerchantRefundInput {
 }
 
 /**
- * Refunds can be put on hold per merchant — e.g. while a chargeback-rate
- * spike is under review, or during a compliance hold — via
- * `merchants.refunds_enabled`. A merchant with no hold in place (the
- * default, unset state) is unaffected by this check.
+ * Refunds are off per merchant until support turns them on
+ * (`merchants.refunds_enabled`, migration 0052): NULL means "not enabled
+ * yet", false means "on hold" (a chargeback review, a compliance hold).
+ * Only an explicit true lets a refund through, so nothing refunds by
+ * accident.
  */
-async function assertRefundsNotOnHold(pool: Pool, merchantId: string): Promise<void> {
+async function assertRefundsEnabled(pool: Pool, merchantId: string): Promise<void> {
   const result = await pool.query<{ refunds_enabled: boolean | null }>(
     `SELECT refunds_enabled FROM merchants WHERE id = $1`,
     [merchantId],
   );
-  const merchant = result.rows[0];
-  if (merchant && merchant.refunds_enabled === false) {
-    throw new ForbiddenError("refunds_on_hold");
+  if (result.rows[0]?.refunds_enabled !== true) {
+    throw new ForbiddenError("refunds_not_enabled");
   }
 }
 
@@ -57,11 +57,13 @@ export async function initiateMerchantRefund(
   acquirer: AcquirerSimulator,
   input: InitiateMerchantRefundInput,
 ): Promise<ProcessRefundResult> {
-  await assertRefundsNotOnHold(pool, input.merchantId);
+  await assertRefundsEnabled(pool, input.merchantId);
 
-  const result = await pool.query<{ id: string; merchant_id: string }>(
-    `SELECT id, merchant_id FROM transactions WHERE id = $1`,
-    [input.transactionId],
+  // Scoped by the authenticated merchant (input.merchantId comes from the
+  // auth context, never the body): another merchant's id is not found.
+  const result = await pool.query<{ id: string }>(
+    `SELECT id FROM transactions WHERE id = $1 AND merchant_id = $2`,
+    [input.transactionId, input.merchantId],
   );
   const txn = result.rows[0];
   if (!txn) {
@@ -70,7 +72,7 @@ export async function initiateMerchantRefund(
 
   return processRefund(pool, acquirer, {
     transactionId: txn.id,
-    merchantId: txn.merchant_id,
+    merchantId: input.merchantId,
     amountFils: input.amountFils,
     idempotencyKey: input.idempotencyKey,
     actor: input.actor,

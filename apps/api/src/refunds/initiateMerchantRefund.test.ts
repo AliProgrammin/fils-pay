@@ -75,6 +75,9 @@ async function createApprovedMerchantWithApiKey(label: string) {
   const ownerUserId = userResult.rows[0]!.id;
 
   await recordKycReview(pool, { merchantId, outcome: "approved", reviewerIdentifier: "test" });
+  // Migration 0052: NULL means refunds are not enabled yet. Support turns
+  // them on per merchant; these tests start from an enabled merchant.
+  await pool.query(`UPDATE merchants SET refunds_enabled = true WHERE id = $1`, [merchantId]);
   const issued = await issueApiKey(pool, config, { merchantId, createdBy: ownerUserId, label });
 
   const keyResult = await pool.query<{ id: string }>(
@@ -167,8 +170,30 @@ test("a partial refund of the caller's own transaction succeeds", async () => {
   assert.equal(Number(row.rows[0]!.refunded_fils), 2_500);
 });
 
-// TODO: another merchant's existing transactionId should also 404. currently refunds it — am
-// FH: Claude wrote a test for this but it passed?? so it's fine. deleted it as redundant
+// R3: merchant B naming merchant A's real transaction id gets a 404, and
+// A's transaction is untouched.
+test("another merchant's existing transactionId is a 404 and is not refunded", async () => {
+  const owner = await createApprovedMerchantWithApiKey("cross-owner");
+  const attacker = await createApprovedMerchantWithApiKey("cross-attacker");
+  const transactionId = await capturedTransaction(owner.rawKey, 5_000);
+
+  await assert.rejects(
+    () =>
+      initiateMerchantRefund(pool, approvingAcquirer, {
+        merchantId: attacker.merchantId,
+        transactionId,
+        idempotencyKey: randomUUID(),
+        actor: attacker.actor,
+      }),
+    NotFoundError,
+  );
+
+  const refunds = await pool.query<{ c: number }>(`SELECT COUNT(*)::int AS c FROM refunds WHERE transaction_id = $1`, [
+    transactionId,
+  ]);
+  assert.equal(refunds.rows[0]!.c, 0);
+});
+
 test("a transactionId that does not exist is a 404, not a 500", async () => {
   const merchant = await createApprovedMerchantWithApiKey("missing-txn");
 
@@ -253,6 +278,30 @@ test("a refund is refused when refunds_enabled is explicitly false", async () =>
   const merchant = await createApprovedMerchantWithApiKey("refunds-enabled-false");
   const transactionId = await capturedTransaction(merchant.rawKey, 3_000);
   await pool.query(`UPDATE merchants SET refunds_enabled = false WHERE id = $1`, [merchant.merchantId]);
+
+  await assert.rejects(
+    () =>
+      initiateMerchantRefund(pool, approvingAcquirer, {
+        merchantId: merchant.merchantId,
+        transactionId,
+        idempotencyKey: randomUUID(),
+        actor: merchant.actor,
+      }),
+    ForbiddenError,
+  );
+
+  const refunds = await pool.query<{ c: number }>(
+    `SELECT COUNT(*)::int AS c FROM refunds WHERE transaction_id = $1`,
+    [transactionId],
+  );
+  assert.equal(refunds.rows[0]!.c, 0);
+});
+
+// R4: migration 0052 says NULL means disabled until support enables refunds.
+test("a refund is refused when refunds_enabled is NULL (never enabled)", async () => {
+  const merchant = await createApprovedMerchantWithApiKey("refunds-enabled-null");
+  const transactionId = await capturedTransaction(merchant.rawKey, 3_000);
+  await pool.query(`UPDATE merchants SET refunds_enabled = NULL WHERE id = $1`, [merchant.merchantId]);
 
   await assert.rejects(
     () =>

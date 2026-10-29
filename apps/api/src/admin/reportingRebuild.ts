@@ -20,18 +20,23 @@ export async function refreshAnalyticsRollups(client: PoolClient): Promise<Rebui
        FROM settlement_batches`,
   );
 
+  // Refund events carry a negative delta (0044); the report shows the
+  // refunded amount as a positive gross, like apps/reporting's consumer.
   const volumeResult = await client.query(
     `INSERT INTO merchant_daily_volume
-        (merchant_id, volume_date, captured_count, captured_gross_fils, voided_count, last_updated_at)
+        (merchant_id, volume_date, captured_count, captured_gross_fils, voided_count,
+         refund_count, refund_gross_fils, last_updated_at)
      SELECT t.merchant_id,
             (te.occurred_at AT TIME ZONE 'Asia/Bahrain')::date,
             COUNT(*) FILTER (WHERE te.event_type IN ('captured', 'partially_captured')),
             COALESCE(SUM(te.amount_fils) FILTER (WHERE te.event_type IN ('captured', 'partially_captured')), 0),
             COUNT(*) FILTER (WHERE te.event_type = 'voided'),
+            COUNT(*) FILTER (WHERE te.event_type IN ('refund_partial', 'refunded')),
+            COALESCE(-SUM(te.amount_fils) FILTER (WHERE te.event_type IN ('refund_partial', 'refunded')), 0),
             now()
        FROM transaction_events te
        JOIN transactions t ON t.id = te.transaction_id
-      WHERE te.event_type IN ('captured', 'partially_captured', 'voided')
+      WHERE te.event_type IN ('captured', 'partially_captured', 'voided', 'refund_partial', 'refunded')
       GROUP BY t.merchant_id, (te.occurred_at AT TIME ZONE 'Asia/Bahrain')::date`,
   );
 
