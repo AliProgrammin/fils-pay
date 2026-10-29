@@ -31,3 +31,11 @@
 - What it breaks: `card_scheme_clearing` is debited the full gross at capture but the scheme pays only the truncated amount. Captures of 4.747 and 1.239 BD leave 16 fils in clearing with no record. Over a month this is a few BD per busy merchant. Ledger, report and scheme statement cannot agree.
 - Fix: inside CloseBatch, in the same transaction as the export line, post one balanced group per line with residue > 0: credit `card_scheme_clearing`, debit `scheme_rounding_residue`, with merchant, transaction and batch ids.
 - Test: `TestCloseBatch_JournalsSchemeRoundingResidue_Fix` in `internal/settlement/residue_fix_test.go`.
+
+### C4 Platform volume counter overflows at 2,147,483,647 fils
+- Severity: Critical. Ticket: platform volume tier (HANDOVER). Where: `db/migrations/0049_platform_stats.sql`, `apps/settlement/internal/settlement/platform_volume.go:13-27`.
+- What is wrong: `platform_stats.total_processed_fils` is INTEGER. Go reads it as `int32`, adds the batch gross in Go, and writes it back.
+- Why it happens: INTEGER and int32 max is 2,147,483,647 fils (2,147,483.647 BD). The tier threshold is 2,000,000,000 fils, only 7% below. The Go add wraps silently.
+- What it breaks: at 2,147,000,000 fils, one 1,000.000 BD batch writes -2,146,967,296. The tier bonus (15 bps) turns off for every merchant, and fees jump back up. The counter is wrong forever after.
+- Fix: migration `0074_platform_stats_total_bigint.sql` makes the column BIGINT. Go uses `int64`. The increment is done in SQL (`SET total = total + $1`). The existing `TestRecordPlatformProcessedVolume_SmallValuesExact` is changed only for the new signature (no `current` argument) and to scan `int64`. The TS reader (`apps/api/src/fees/platformVolumeTier.ts`) gets BIGINT as a string from `pg`; JS `>=` coerces it, so its tests still pass, but its type says `number`. Not changed (out of scope), call out.
+- Test: `TestRecordPlatformProcessedVolume_PastInt32Max_Fix` in `internal/settlement/platform_volume_fix_test.go`.
