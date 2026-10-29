@@ -478,3 +478,35 @@ test("unknown transaction ids answer 404", async () => {
   assert.equal(result.statusCode, 404);
   assert.deepEqual(result.body, { error: "transaction_not_found" });
 });
+
+// R7: migration 0070 forbids a NULL reason. The code supplies 'unspecified'
+// when the caller gives none, and stores the caller's reason otherwise.
+test("a refund without a reason stores 'unspecified'; a given reason is stored as is", async () => {
+  const merchant = await createApprovedMerchantWithApiKey("refund-reason");
+  const txn = await capturedTransaction(merchant.rawKey, 4_000);
+  const actor = await apiKeyActor(merchant.merchantId);
+
+  const first = await processRefund(pool, approvingAcquirer, {
+    transactionId: txn.id,
+    merchantId: merchant.merchantId,
+    amountFils: toFils(1_000),
+    idempotencyKey: randomUUID(),
+    actor,
+  });
+  assert.equal(first.statusCode, 200, JSON.stringify(first.body));
+  const second = await processRefund(pool, approvingAcquirer, {
+    transactionId: txn.id,
+    merchantId: merchant.merchantId,
+    amountFils: toFils(1_000),
+    idempotencyKey: randomUUID(),
+    actor,
+    reason: "customer_request",
+  });
+  assert.equal(second.statusCode, 200, JSON.stringify(second.body));
+
+  const rows = await pool.query<{ reason: string }>(
+    `SELECT reason FROM refunds WHERE transaction_id = $1 ORDER BY occurred_at, id`,
+    [txn.id],
+  );
+  assert.deepEqual(rows.rows.map((r) => r.reason).sort(), ["customer_request", "unspecified"]);
+});

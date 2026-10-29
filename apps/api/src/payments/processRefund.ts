@@ -11,6 +11,7 @@ import { validateRefundRequest } from "./refundValidation.js";
 import { ConflictError, UnprocessableEntityError } from "../lib/errors.js";
 
 const ENDPOINT = "refunds.create";
+const REASON_UNSPECIFIED = "unspecified";
 
 export interface ProcessRefundInput {
   transactionId: string;
@@ -42,10 +43,13 @@ export async function processRefund(
   acquirer: AcquirerSimulator,
   input: ProcessRefundInput,
 ): Promise<ProcessRefundResult> {
+  // Migration 0070: every refund row carries a reason, and its default is
+  // 'unspecified'. Supply that default here; never pass NULL to the column.
+  const reason = input.reason?.trim() || REASON_UNSPECIFIED;
   const requestHash = hashRequest({
     transactionId: input.transactionId,
     amountFils: input.amountFils ?? null,
-    reason: input.reason ?? null,
+    reason,
   });
 
   // 1 validate
@@ -186,7 +190,7 @@ export async function processRefund(
         prepared.requestedAmount,
         feeReversedFils,
         acquirerResult.acquirerReference,
-        input.reason ?? null,
+        reason,
         input.actor.type,
         input.actor.id,
       ],
