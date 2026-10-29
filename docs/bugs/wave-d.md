@@ -137,3 +137,13 @@
 - What it breaks: the report shows false gaps for every merchant with a rate change, so finance cannot trust `explained`.
 - Fix: the pending query resolves the rate per capture with the same rule as getEffectiveMdrBps (effective_from <= capture time, newest first, created_at as tie-break, else merchants.mdr_bps) and takes off the volume tier bonus, as capture does. estimateFeeFils now uses applyRateFils for the fee and for the negotiated discount.
 - Test: apps/api/src/routes/settlement.test.ts ("GET /v1/settlement/reconciliation prices pending captures at the effective fee schedule rate"), apps/api/src/fees/estimate.test.ts ("estimateFeeFils rounds an exact half to even, the same as capture").
+
+### D17 Reports show gross only and leave out refunds
+- Severity: Medium
+- Ticket: FP-300 (refunds) follow-up
+- Where: apps/api/src/reporting/transactionsReportQuery.ts, apps/api/src/routes/reporting.ts (GET /export-summary)
+- What is wrong: `/v1/reporting/transactions` rows show amount and captured, but not what was refunded. `/v1/reporting/export-summary` returns `grossFils` only.
+- Why it happens: both were written before refunds existed. Refunds later added `transactions.refunded_fils` (0043) and `merchant_daily_volume.refund_gross_fils` (0084), but nobody added them to the reports.
+- What it breaks: a merchant reading a report sees more money than they kept. A fully refunded sale looks like a normal sale.
+- Fix: each report row now has `refundedBhd` (same BD string format as `capturedBhd`). The export summary now has `refundedFils` (sum of `refund_gross_fils`). Existing fields are unchanged; the transactions CSV export is not touched.
+- Test: apps/api/src/reporting/transactionsReportQuery.test.ts ("each row carries the refunded amount next to the captured amount"), apps/api/src/routes/reportingExportSummary.fix.test.ts ("export-summary reports the refunded total next to gross").

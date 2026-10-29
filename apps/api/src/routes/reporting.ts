@@ -78,10 +78,14 @@ export async function reportingRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/export-summary", { preHandler: requireMerchantAuth }, async (request) => {
     const result = await app.db.query(
-      `SELECT COUNT(*) AS total, SUM(captured_gross_fils) AS gross
+      `SELECT COUNT(*) AS total, SUM(captured_gross_fils) AS gross, SUM(refund_gross_fils) AS refunded
          FROM merchant_daily_volume WHERE merchant_id = $1`,
       [request.merchantAuth!.merchantId],
     );
-    return { totalDays: Number(result.rows[0]?.total ?? 0), grossFils: Number(result.rows[0]?.gross ?? 0) };
+    return {
+      totalDays: Number(result.rows[0]?.total ?? 0),
+      grossFils: Number(result.rows[0]?.gross ?? 0),
+      refundedFils: Number(result.rows[0]?.refunded ?? 0),
+    };
   });
 }

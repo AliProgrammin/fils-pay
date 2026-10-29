@@ -131,3 +131,21 @@ test("reports nothing for a merchant with no transactions", async () => {
 
   assert.deepEqual(rows, []);
 });
+
+// D17: a report that shows only gross hides money that went back to the card.
+test("each row carries the refunded amount next to the captured amount", async () => {
+  const merchantId = await createMerchant();
+  const id = await insertTransaction(merchantId, {
+    status: "captured",
+    amountFils: 12500,
+    capturedFils: 12500,
+    reference: "refunded",
+    occurredAt: "2026-06-03T10:00:00Z",
+  });
+  await pool.query(`UPDATE transactions SET refunded_fils = 2500 WHERE id = $1`, [id]);
+
+  const rows = await runTransactionsReport(pool, { merchantId });
+
+  assert.equal(rows[0]!.capturedBhd, "12.500");
+  assert.equal(rows[0]!.refundedBhd, "2.500");
+});

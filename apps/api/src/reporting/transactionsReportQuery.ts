@@ -20,6 +20,8 @@ export interface TransactionReportRow {
   status: string;
   amountBhd: string;
   capturedBhd: string;
+  /** transactions.refunded_fils: money already sent back from this capture. */
+  refundedBhd: string;
   reference: string | null;
   occurredAt: string;
 }
@@ -30,6 +32,7 @@ interface TransactionReportQueryRow {
   status: string;
   amount_fils: string | number;
   captured_fils: string | number;
+  refunded_fils: string | number;
   reference: string | null;
   occurred_at: Date;
 }
@@ -54,7 +57,7 @@ export async function runTransactionsReport(
   }
 
   const result = await pool.query<TransactionReportQueryRow>(
-    `SELECT id, merchant_id, status, amount_fils, captured_fils, reference, occurred_at
+    `SELECT id, merchant_id, status, amount_fils, captured_fils, refunded_fils, reference, occurred_at
        FROM transactions
       WHERE ${conditions.join(" AND ")}
       ORDER BY occurred_at DESC
@@ -67,6 +70,7 @@ export async function runTransactionsReport(
     status: row.status,
     amountBhd: formatBhd(toFils(Number(row.amount_fils))),
     capturedBhd: formatBhd(toFils(Number(row.captured_fils))),
+    refundedBhd: formatBhd(toFils(Number(row.refunded_fils))),
     reference: row.reference,
     occurredAt: row.occurred_at.toISOString(),
   }));
