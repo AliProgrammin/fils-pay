@@ -30,3 +30,13 @@
 - What it breaks: Lost hold history (audit, disputes). On a quiet night all active holds vanish, so open authorizations lose their hold and the merchant's available balance is wrong.
 - Fix: One atomic statement: `UPDATE holds SET status = 'expired' WHERE status = 'active' AND expires_at < now()`. The status re-check is in the same statement, so no race. Removed the now-unused `scripts/lib/sqlFilter.ts` (its unscoped DELETE is a trap). `expire_holds.test.ts` asserted DELETE; it now asserts the UPDATE. (The stale comment in migration 0005 is left as is, because applied migrations are not edited.)
 - Test: `scripts/expire_holds.fix.test.ts`
+
+### E4 Ledger can be edited or wiped without error
+- Severity: Medium
+- Ticket: E4
+- Where: `db/migrations/0007_ledger_double_entry.sql:66-74`
+- What is wrong: The only guard on `ledger_entries` is the balance trigger. It checks that each group still nets to zero. So: an UPDATE that changes both legs of a group (1000 -> 5 fils on each side) passes; a DELETE of a whole group passes (net of an empty group is 0); TRUNCATE fires no row trigger and passes. The 0007 comment says "no separate reject trigger is needed", which is false.
+- Why it happens: "balanced" was taken to mean "immutable". Balance is a weaker rule than append-only.
+- What it breaks: ARCHITECTURE says the ledger is the record of money and corrections are new entries; `settlement rebuild-balances` reads only the ledger. Anyone with DB write access (or a bad script) could silently change history and the rebuild would trust it.
+- Fix: New migration `0076_ledger_entries_append_only.sql` adds BEFORE UPDATE/DELETE (row) and BEFORE TRUNCATE (statement) triggers that raise "ledger_entries is append-only". I checked TS, Go, scripts, seed and tests: no code updates or deletes ledger rows. The only TRUNCATE is the dev seed (`db/seed/generate.ts`, also via CASCADE from `merchants`); it now runs `SET LOCAL filspay.allow_ledger_reset = 'on'` inside its own transaction. UPDATE and DELETE have no exception. Seed re-run verified ("all REAL assertions passed").
+- Test: `apps/api/src/db/ledgerAppendOnly.fix.test.ts`

@@ -209,6 +209,9 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
     try {
       // AM: only touches the fixture tables listed in TABLES_TO_RESET, so it's
       // safe to run against a shared/staging database. (see RUNBOOK)
+      // ledger_entries is append-only (migration 0076); the seed is the one
+      // caller allowed to TRUNCATE it, for this transaction only.
+      await client.query(`SET LOCAL filspay.allow_ledger_reset = 'on'`);
       await client.query(`TRUNCATE TABLE ${TABLES_TO_RESET.join(", ")} RESTART IDENTITY CASCADE`);
 
       // Admin staff fixtures. Ids come from the database's own
