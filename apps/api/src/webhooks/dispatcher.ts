@@ -230,6 +230,7 @@ async function claimDueDelivery(pool: Pool, config: DispatcherConfig): Promise<D
     `WITH claimed AS (
        SELECT id FROM webhook_deliveries
         WHERE status = 'pending' AND next_attempt_at <= now()
+          AND endpoint_id IS NOT NULL -- endpoint deleted: nothing to send to (0085)
         ORDER BY next_attempt_at ASC
         LIMIT 1
         FOR UPDATE SKIP LOCKED

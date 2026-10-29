@@ -107,3 +107,13 @@
 - What it breaks: every call crashes with a 500; one small change away from leaking data.
 - Fix: add `preHandler: requireMerchantAuth`.
 - Test: apps/api/src/routes/reportingExportSummary.fix.test.ts
+
+### D14 Deleting a webhook endpoint with history crashes with a 500
+- Severity: Medium
+- Ticket: none
+- Where: apps/api/src/webhooks/cancel.ts, db/migrations/0022 and 0068 (endpoint_id foreign keys)
+- What is wrong: `DELETE .../webhook-endpoints/:id` fails with a foreign-key error once the endpoint has any deliveries.
+- Why it happens: `endpoint_id` is NOT NULL with a plain foreign key. Two code comments claim "ON DELETE SET NULL (0029)" and "ON DELETE CASCADE (0047)". Neither migration does that.
+- What it breaks: a merchant cannot remove an old or leaked webhook URL; support has to touch the database.
+- Fix: migration 0085 makes the column nullable with ON DELETE SET NULL, so the delivery log stays as an audit trail. The dispatcher skips pending rows whose endpoint is gone, so one deleted endpoint cannot block the queue.
+- Test: apps/api/src/webhooks/cancel.fix.test.ts
