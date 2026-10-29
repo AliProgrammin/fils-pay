@@ -55,3 +55,11 @@
 - What it breaks: a merchant can make the API POST to internal services (127.0.0.1, 10.x, the cloud metadata service 169.254.169.254, the settlement internal server) and read the response in the delivery log.
 - Fix: the real transport now uses node:http(s) with a `lookup` hook that rejects loopback, private, CGNAT, link-local, multicast and reserved addresses on the exact IP the socket connects to (so DNS rebinding cannot bypass it); IP literals are checked directly. Redirects are never followed (a 3xx is a failed attempt). The response read is capped at 64 KB. Production registration also rejects localhost and internal IP literals early. A local receiver still works behind the explicit dev flag `WEBHOOK_ALLOW_PRIVATE_TARGETS=true`, which is ignored in production; the end-to-end route tests pass that flag.
 - Test: apps/api/src/webhooks/transport.fix.test.ts.
+
+### D7 Transactions report can be scoped to another merchant's split child
+- Severity: High. Ticket: none. Where: apps/api/src/reporting/scope.ts:12-15
+- What is wrong: when a caller passes a `merchantId` filter, the code only checks that the id is a split child of *some* parent, not of the caller.
+- Why it happens: the query filters on `child_merchant_id` only and forgets `parent_merchant_id`.
+- What it breaks: any merchant can read the full transactions report of any marketplace sub-merchant on the platform (cross-tenant data leak). ARCHITECTURE.md says merchant-scoped queries take the merchant from the authenticated context.
+- Fix: also require `parent_merchant_id = caller`. Otherwise the report falls back to the caller's own data, as before.
+- Test: apps/api/src/reporting/scope.fix.test.ts.
