@@ -126,9 +126,7 @@ test("zero registered endpoints: an outbox event creates no delivery rows", asyn
   assert.equal(rows.rows.length, 0);
 });
 
-// YA: the receiver here re-parses and re-canonicalizes before verifying. a real receiver verifies the raw bytes,
-// so this can't catch a byte mismatch.
-// FH: it verifies the signature end-to-end, so signing is proven correct
+// The receiver verifies the raw bytes it got (FP-240), like a real receiver.
 test("one active endpoint, 2xx response: exact headers/body sent, delivery marked succeeded, signature verifies with the raw secret", async () => {
   const merchantId = await createMerchant("happy-path");
   // A unique URL per test run, not shared with any other test — this file's
@@ -168,7 +166,7 @@ test("one active endpoint, 2xx response: exact headers/body sent, delivery marke
   // Verify the signature using the raw secret createWebhookEndpoint returned
   // — proving signPayload/verifySignature agree end-to-end, not just that
   // some signature-shaped string was sent.
-  const verifyResult = verifySignature(body, req.headers[WEBHOOK_SIGNATURE_HEADER]!, endpoint.secret);
+  const verifyResult = verifySignature(req.body, req.headers[WEBHOOK_SIGNATURE_HEADER]!, endpoint.secret);
   assert.deepEqual(verifyResult, { valid: true });
 
   const delivery = await getDelivery(String(outboxEvent.id), endpoint.id);

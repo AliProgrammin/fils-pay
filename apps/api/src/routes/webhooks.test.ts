@@ -304,7 +304,7 @@ test(
       // raw secret createEndpointViaRoute's response returned — proving
       // encrypt-then-decrypt-then-sign matches what a merchant would
       // verify against the secret they were shown.
-      const verifyResult = verifySignature(parsedBody, signatureHeader, created.secret);
+      const verifyResult = verifySignature(received.body, signatureHeader, created.secret);
       assert.deepEqual(verifyResult, { valid: true });
 
       const deliveryRow = await pool.query<{ status: string; attempt_count: number }>(
@@ -514,9 +514,8 @@ test("secret encryption round-trips correctly: a delivery verifies using the SAM
     assert.equal(receiver.received.length, 1);
     const received = receiver.received[0]!;
     const signatureHeader = received.headers["webhook-signature"] as string;
-    const parsedBody = JSON.parse(received.body) as Record<string, unknown>;
 
-    const result = verifySignature(parsedBody, signatureHeader, created.secret);
+    const result = verifySignature(received.body, signatureHeader, created.secret);
     assert.deepEqual(result, { valid: true });
   } finally {
     await receiver.close();
