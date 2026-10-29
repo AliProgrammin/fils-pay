@@ -97,3 +97,13 @@
 - What it breaks: silent, permanent loss of captures, voids and batch-closed events from merchant reports, with no error.
 - Fix: migration 0080 adds `outbox_events.txid xid8 DEFAULT pg_current_xact_id()` (the inserting transaction), an index on (txid, id), and `last_processed_txid` on the cursor. The consumer only reads rows with `txid < pg_snapshot_xmin(pg_current_snapshot())` (every such transaction has finished, so the set cannot grow), in (txid, id) order, and stores (txid, id) as its cursor (forward-only). Existing rows and the existing cursor are moved to the migration's txid, so the consumer resumes exactly where it was. Trade-off: a very long open transaction anywhere in the database delays reporting until it ends (delay, never loss).
 - Test: apps/reporting/src/consumer/commitOrder.fix.test.ts (a lower id held open while a higher id is consumed; both must be applied).
+
+### D13 Report export summary had no login check
+- Severity: Low
+- Ticket: none
+- Where: apps/api/src/routes/reporting.ts (GET /export-summary)
+- What is wrong: the route had no `requireMerchantAuth` hook, unlike every other reporting route.
+- Why it happens: the handler reads `request.merchantAuth!.merchantId`, but nothing sets it, so it is undefined.
+- What it breaks: every call crashes with a 500; one small change away from leaking data.
+- Fix: add `preHandler: requireMerchantAuth`.
+- Test: apps/api/src/routes/reportingExportSummary.fix.test.ts
