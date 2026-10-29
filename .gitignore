@@ -6,3 +6,6 @@ dist/
 npm-debug.log*
 .DS_Store
 .claude/
+
+# Production secrets for ops/docker-compose.prod.yml (see HOSTING.md)
+ops/.env.production

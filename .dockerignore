@@ -8,3 +8,4 @@
 .env.local
 ops/.env.docker
 apps/api/data
+ops/.env.production

@@ -1,8 +1,11 @@
 # ops/
 
 Local development stack for FilsPay: Postgres plus the three services that
-talk to it directly (apps/api, apps/settlement, apps/reporting). The hosted
-demo instance uses the same compose file with a different `.env`.
+talk to it directly (apps/api, apps/settlement, apps/reporting).
+
+For hosting (production mode, both front ends behind nginx on one origin)
+use `docker-compose.prod.yml` with `.env.production`, not this file. See
+`HOSTING.md` at the repo root.
 
 ## Quick start
 
@@ -31,6 +34,9 @@ each package), not services with their own database connection.
 | `.env.docker` | shared service settings, loaded by compose for every service |
 | `Dockerfile.node` | image for api, reporting, migrate and seed (`node:22`, `npm ci` inside the image) |
 | `Dockerfile.go` | multi-stage build of `apps/settlement` |
+| `docker-compose.prod.yml` | hosted stack (adds `web`); see `HOSTING.md` |
+| `.env.production.example` | settings template for the hosted stack; copy to `.env.production` (gitignored) |
+| `Dockerfile.web` + `nginx/filspay.conf` | apps/web at `/`, apps/admin at `/admin/`, `/v1/` proxied to the api |
 
 > **AM (July):** the two Dockerfiles aren't in the repo for me. built my own
 >

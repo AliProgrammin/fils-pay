@@ -10,6 +10,8 @@ import { SettlementPage } from "./pages/settlement/SettlementPage.js";
 import { WebhookReplayPage } from "./pages/webhooks/WebhookReplayPage.js";
 
 // MK: /v2 routes live behind VITE_ADMIN_V2 — see the admin v2 doc
+// basename follows Vite's `base`: "/" in `npm run dev`, "/admin/" in the
+// hosted build (ops/Dockerfile.web runs `vite build --base=/admin/`).
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
   {
@@ -32,4 +34,4 @@ export const router = createBrowserRouter([
       { path: "/webhooks/:merchantId", element: <WebhookReplayPage /> },
     ],
   },
-]);
+], { basename: import.meta.env.BASE_URL });

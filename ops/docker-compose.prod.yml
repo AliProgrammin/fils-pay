@@ -1,0 +1,107 @@
+# Production / hosted-demo stack for FilsPay. See HOSTING.md.
+#
+#   cp ops/.env.production.example ops/.env.production   # then fill it in
+#   docker compose -f ops/docker-compose.prod.yml up -d --build
+#
+# Only the web service (nginx) publishes a port. It serves the merchant app
+# at /, the admin console at /admin/ and proxies /v1/, /healthz and /readyz
+# to the api. Postgres, the api and settlement stay on the internal network.
+#
+# Every service reads its settings and secrets from ops/.env.production
+# (gitignored). ops/.env.docker is a dev file and is NOT used here.
+
+x-node-service: &node-service
+  build:
+    context: ..
+    dockerfile: ops/Dockerfile.node
+  env_file: .env.production
+  environment:
+    NODE_ENV: production
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    env_file: .env.production
+    environment:
+      POSTGRES_USER: filspay
+      POSTGRES_DB: filspay
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U filspay -d filspay"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  # One-off: applies new db/migrations/*.sql, skips applied ones.
+  migrate:
+    <<: *node-service
+    command: ["npm", "run", "migrate"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # One-off: loads the demo data on an empty database only (db/seed/once.ts),
+  # so a restart never wipes what users did. Remove for a real launch.
+  seed:
+    <<: *node-service
+    command: ["npm", "run", "seed:once"]
+    restart: "no"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  api:
+    <<: *node-service
+    command: ["npx", "tsx", "apps/api/src/index.ts"]
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      SETTLEMENT_INTERNAL_URL: http://settlement:8091
+      KYC_UPLOAD_DIR: /app/data/kyc
+    volumes:
+      - kyc:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+
+  settlement:
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile.go
+    command: ["./settlement", "daemon"]
+    env_file: .env.production
+    restart: unless-stopped
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+
+  reporting:
+    <<: *node-service
+    command: ["npx", "tsx", "apps/reporting/src/index.ts"]
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile.web
+    ports:
+      - "${FILSPAY_HTTP_PORT:-80}:80"
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  kyc:
