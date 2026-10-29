@@ -44,6 +44,12 @@ test("bhd formats integer fils via @filspay/money, never float arithmetic", () =
   assert.equal(bhd(1234567), "1234.567 BHD");
 });
 
+// E7: a refund or a reconciliation gap is negative; it must render, not throw.
+test("bhd renders a negative amount instead of throwing", () => {
+  assert.equal(bhd(-4750), "-4.750 BHD");
+  assert.equal(bhd(-1), "-0.001 BHD");
+});
+
 test("dash renders absent values as an em dash but keeps zero", () => {
   assert.equal(dash(null), "—");
   assert.equal(dash(undefined), "—");

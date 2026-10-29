@@ -8,13 +8,28 @@
  *
  * Usage: DATABASE_URL=postgres://... npx tsx scripts/reconcile_march.ts
  */
-import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { Client } from "pg";
 import { formatBhd, toFils } from "@filspay/money";
 
+/** Bahrain is UTC+3 all year (no DST). */
+const BAHRAIN_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+/** The Bahrain calendar month as a UTC half-open window [start, end).
+ *  March 2026 = [2026-02-28T21:00Z, 2026-03-31T21:00Z). */
 export function monthBounds(year: number, month: number): { start: Date; end: Date } {
-  return { start: new Date(Date.UTC(year, month - 1, 1)), end: new Date(Date.UTC(year, month, 1)) };
+  return {
+    start: new Date(Date.UTC(year, month - 1, 1) - BAHRAIN_OFFSET_MS),
+    end: new Date(Date.UTC(year, month, 1) - BAHRAIN_OFFSET_MS),
+  };
+}
+
+/** Same merchant + month always gives the same entry group id, so a re-run
+ *  can see that the correction is already posted. */
+export function residueEntryGroupId(merchantId: string, year: number, month: number): string {
+  const h = createHash("sha256").update(`reconcile_march:${year}-${month}:${merchantId}`).digest("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
 }
 
 export interface ResidueRow {
@@ -29,7 +44,7 @@ export function computeResidueFils(capturedFils: number): number {
   return capturedFils % 10;
 }
 
-interface MerchantResidue {
+export interface MerchantResidue {
   merchantId: string;
   lineCount: number;
   residueFils: number;
@@ -68,17 +83,30 @@ function groupByMerchant(rows: ResidueRow[]): MerchantResidue[] {
   return [...byMerchant.values()];
 }
 
-// am: re-running is safe, entry_group_id dedupes it
-async function postResidueCorrection(client: Client, merchant: MerchantResidue, now: Date): Promise<void> {
-  if (merchant.residueFils <= 0) return;
-  const entryGroupId = randomUUID();
+/**
+ * Posts the residue group per ADR-0002 (debit scheme_rounding_residue,
+ * credit card_scheme_clearing). Idempotent: the group id is deterministic,
+ * and a group that already exists is skipped. Returns true if it posted.
+ */
+export async function postResidueCorrection(
+  client: Client,
+  merchant: MerchantResidue,
+  year: number,
+  month: number,
+  now: Date,
+): Promise<boolean> {
+  if (merchant.residueFils <= 0) return false;
+  const entryGroupId = residueEntryGroupId(merchant.merchantId, year, month);
+  const existing = await client.query(`SELECT 1 FROM ledger_entries WHERE entry_group_id = $1 LIMIT 1`, [entryGroupId]);
+  if (existing.rowCount !== 0) return false;
   const description = "March 2026 scheme rounding residue sweep — manual recon per finance";
   await client.query(
     `INSERT INTO ledger_entries (entry_group_id, merchant_id, account_id, direction, amount_fils, occurred_at, description)
-     VALUES ($1, $2, 'merchant_payable', 'debit', $3, $4, $5),
-            ($1, $2, 'scheme_rounding_residue', 'credit', $3, $4, $5)`,
+     VALUES ($1, $2, 'scheme_rounding_residue', 'debit', $3, $4, $5),
+            ($1, $2, 'card_scheme_clearing', 'credit', $3, $4, $5)`,
     [entryGroupId, merchant.merchantId, merchant.residueFils, now.toISOString(), description],
   );
+  return true;
 }
 
 async function main(): Promise<void> {
@@ -100,15 +128,17 @@ async function main(): Promise<void> {
     const { start, end } = monthBounds(2026, 3);
     console.log("=== March 2026 reconciliation sweep ===");
     console.log(`run at: ${now.toISOString()}`);
-    console.log(`window: ${start.toISOString().slice(0, 10)} .. ${end.toISOString().slice(0, 10)}`);
+    console.log(`window (Bahrain month): ${start.toISOString()} .. ${end.toISOString()}`);
     console.log("");
 
     await client.query("BEGIN");
     try {
+      // One sweep at a time, so two parallel runs cannot both pass the guard.
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext('reconcile_march'))`);
       for (const merchant of merchantResidues) {
-        await postResidueCorrection(client, merchant, now);
+        const posted = await postResidueCorrection(client, merchant, 2026, 3, now);
         console.log(
-          `merchant ${merchant.merchantId}: ${merchant.lineCount} line(s), residue ${formatBhd(toFils(merchant.residueFils))} BD (${merchant.residueFils} fils)`,
+          `merchant ${merchant.merchantId}: ${merchant.lineCount} line(s), residue ${formatBhd(toFils(merchant.residueFils))} BD (${merchant.residueFils} fils)${posted ? "" : " — already posted, skipped"}`,
         );
       }
       await client.query("COMMIT");

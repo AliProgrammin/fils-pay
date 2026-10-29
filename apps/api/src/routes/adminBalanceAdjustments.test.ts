@@ -95,7 +95,7 @@ async function createMerchant(withBalanceFils: number | null): Promise<string> {
 
 const PATH = (merchantId: string) => `/v1/admin/merchants/${merchantId}/balance-adjustments`;
 
-/** before/after are the cached balance; the ledger is untouched by this endpoint (asserted further down). */
+/** before/after are the cached balance. */
 test("a valid adjustment returns 200 with the correct before/after", async () => {
   const admin = await signedInAdmin("finance");
   const merchantId = await createMerchant(100_000);
@@ -227,4 +227,31 @@ test("invalid bodies are rejected with 400", async () => {
     });
     assert.equal(res.statusCode, 400, `${JSON.stringify(payload)} -> ${res.body}`);
   }
+});
+
+// E5: ADMIN.md says "Adjust balance" is journaled. The cache alone must
+// never move: the ledger is the record, and rebuild-balances reads only it.
+test("an adjustment posts a balanced ledger group, not just a cache edit", async () => {
+  const admin = await signedInAdmin("finance");
+  const merchantId = await createMerchant(100_000);
+
+  const res = await app.inject({
+    method: "POST",
+    url: PATH(merchantId),
+    headers: { cookie: admin.cookie },
+    payload: { deltaFils: 50_000, reason: "statement shows 50.000 BD higher" },
+  });
+  assert.equal(res.statusCode, 200, res.body);
+
+  const legs = await pool.query<{ account_id: string; direction: string; amount_fils: string }>(
+    `SELECT account_id, direction, amount_fils::text FROM ledger_entries WHERE merchant_id = $1 ORDER BY account_id`,
+    [merchantId],
+  );
+  assert.deepEqual(
+    legs.rows.map((r) => [r.account_id, r.direction, Number(r.amount_fils)]),
+    [
+      ["manual_balance_adjustment_contra", "debit", 50_000],
+      ["merchant_payable", "credit", 50_000],
+    ],
+  );
 });
