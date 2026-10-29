@@ -2,6 +2,7 @@ import { request } from "./client.js";
 import { buildQuery } from "./query.js";
 import type {
   CaptureResponse,
+  RefundResponse,
   TransactionDto,
   TransactionEventDto,
   TransactionListResponse,
@@ -44,7 +45,6 @@ export function getTransactionEvents(id: string): Promise<TransactionEventDto[]>
 /** Omitting `amountFils` captures everything still outstanding — capture.ts's
  *  own default, so the caller passes nothing rather than computing the
  *  remainder client-side and risking a stale value. */
-// MK: refund client fn moved out of here into RefundDrawer for now
 export function captureTransaction(
   id: string,
   input: { amountFils?: number },
@@ -63,4 +63,21 @@ export function captureTransaction(
 /** Only valid while the transaction is still authorized. */
 export function voidTransaction(id: string): Promise<VoidResponse> {
   return request(`/v1/transactions/${encodeURIComponent(id)}/void`, { method: "POST" });
+}
+
+/**
+ * `POST /v1/merchants/:merchantId/refunds`. `amountFils` is integer fils
+ * (parse BD text with parseBhdToFils first). The caller owns the
+ * Idempotency-Key and must reuse it when retrying the same refund.
+ */
+export function refundTransaction(
+  merchantId: string,
+  input: { transactionId: string; amountFils: number; reason: string },
+  idempotencyKey: string,
+): Promise<RefundResponse> {
+  return request(`/v1/merchants/${encodeURIComponent(merchantId)}/refunds`, {
+    method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify(input),
+  });
 }

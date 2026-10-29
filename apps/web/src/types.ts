@@ -124,6 +124,20 @@ export interface TransactionEventDto {
  *  it from, and a repeat void is indistinguishable from a first one on the
  *  wire. That is fine: both mean "now voided". */
 export type CaptureResponse = TransactionDto;
+
+/** `POST /v1/merchants/:merchantId/refunds` success body (payments/processRefund.ts). */
+export interface RefundResponse {
+  id: string;
+  transactionId: string;
+  merchantId: string;
+  amountFils: number;
+  feeReversedFils: number;
+  status: "succeeded";
+  transactionStatus: TransactionStatus;
+  refundedTotalFils: number;
+  acquirerReference: string;
+  occurredAt: string;
+}
 export type VoidResponse = TransactionDto;
 
 // --- payment links ---
