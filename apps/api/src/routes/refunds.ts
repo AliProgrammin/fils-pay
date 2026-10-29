@@ -4,11 +4,10 @@ import {
   requireMerchantAuth,
   requireMerchantRole,
   requireMerchantWriterActor,
-  type MerchantAuthContext,
 } from "../auth/requireMerchantAuth.js";
 import { assertRefundRequestScope, initiateMerchantRefund } from "../refunds/initiateMerchantRefund.js";
 import { UUID_RE } from "../admin/merchants.js";
-import { BadRequestError, ForbiddenError } from "../lib/errors.js";
+import { BadRequestError } from "../lib/errors.js";
 
 interface RefundBody {
   transactionId?: unknown;
@@ -32,15 +31,6 @@ function getIdempotencyKey(request: FastifyRequest): string {
   return key;
 }
 
-/** Impersonation is read-only. The role gate already refuses it (grants map
- *  to 'support'); this keeps a money-moving route closed even if that
- *  mapping ever changes. */
-function assertNotImpersonating(auth: MerchantAuthContext): void {
-  if (auth.actorType === "admin_impersonation") {
-    throw new ForbiddenError("forbidden");
-  }
-}
-
 function parseBody(body: RefundBody | undefined): { transactionId: string; amountFils: number; reason: string } {
   const { transactionId, amountFils, reason } = body ?? {};
   if (typeof transactionId !== "string" || !UUID_RE.test(transactionId)) {
@@ -60,8 +50,9 @@ async function handleRefund(
   request: FastifyRequest<{ Body: RefundBody }>,
   reply: FastifyReply,
 ): Promise<void> {
+  // Impersonation is refused for every non-GET route in requireMerchantAuth;
+  // the writer role gate (owner/finance) is in the preHandler.
   const auth = request.merchantAuth!;
-  assertNotImpersonating(auth);
   const idempotencyKey = getIdempotencyKey(request);
   const { transactionId, amountFils, reason } = parseBody(request.body);
 
