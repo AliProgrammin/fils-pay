@@ -50,3 +50,13 @@
 - What it breaks: The cache and the ledger drift. The next `settlement rebuild-balances` (reads only the ledger) silently wipes the 50.000 BD, and payouts and reconciliation do not see it. No ledger trail for the money.
 - Fix: The route now calls `adjustMerchantBalanceJournaled`, which posts a balanced group (merchant_payable vs manual_balance_adjustment_contra) and moves the cache in the same transaction, with an audit row that holds the entry group id. Response shape is the same. Removed a test comment that claimed "the ledger is untouched by this endpoint".
 - Test: new test "an adjustment posts a balanced ledger group, not just a cache edit" in `apps/api/src/routes/adminBalanceAdjustments.test.ts`
+
+### E6 Refund summary view joins the wrong column and double counts captures
+- Severity: Medium
+- Ticket: E6
+- Where: `db/migrations/0072_refund_merchant_summary.sql:15` (`JOIN transactions t ON t.id = r.id`) and `:13` (`SUM(t.captured_fils)`)
+- What is wrong: (1) The join compares a refund id with a transaction id. They never match, so the view is always empty: the admin refund dashboard shows no refunds. (2) If the join were right, `SUM(t.captured_fils)` runs once per refund row, so a 10.000 BD capture with two partial refunds (3.000 + 2.000 BD) reports 20.000 BD "original captured".
+- Why it happens: Typo `r.id` for `r.transaction_id`, and the aggregate runs at refund level instead of transaction level.
+- What it breaks: Refund reporting for finance (Huda: "reconciliation still ties out after refunds"). Refund rate (refunded / captured) is either missing or about half the real value for multi-refund transactions.
+- Fix: New migration `0077_refund_merchant_summary_fix_join.sql` (0072 may already be applied, so it is not edited). It drops and recreates the view: join on `r.transaction_id`, and aggregate per transaction first so each captured amount counts once per merchant and business day. Same columns, types and unique index (no code reads the view yet, so nothing else changes).
+- Test: `apps/api/src/db/refundMerchantSummary.fix.test.ts`
