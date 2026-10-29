@@ -92,7 +92,10 @@ export async function processRefund(
     const capturedFils = toFils(Number(txn.captured_fils));
     const refundedFils = toFils(Number(txn.refunded_fils));
 
-    const refundableFils = subtractFils(amountAuthorized, refundedFils);
+    // What may still go back is what was captured less what was already
+    // refunded. The authorized amount is never refundable: uncaptured
+    // authorization was never taken from the cardholder.
+    const refundableFils = subtractFils(capturedFils, refundedFils);
 
     const validation = validateRefundRequest(
       {

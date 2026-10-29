@@ -21,3 +21,13 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 - What it breaks: Double refunds (real money lost), a wrong `refunded_fils`, and a ledger that does not match the transaction row.
 - Fix: One database transaction from the idempotency claim to the journal, same as capture. The transaction row is locked with `SELECT ... FOR UPDATE` before validation and the lock is held across the acquirer call. A second refund waits for the lock, then is validated against the new refunded total and is refused (409 `transaction_not_refundable` once the row is `refunded`, or 422 `refund_exceeds_refundable` if only part is left).
 - Test: `apps/api/src/payments/processRefund.test.ts` ("two concurrent full refunds: exactly one succeeds ...")
+
+### R2 Refund limit uses the authorized amount, not the captured amount
+- Severity: Critical
+- Ticket: FP-300
+- Where: `apps/api/src/payments/processRefund.ts` (`refundableFils`), `apps/api/src/payments/refundValidation.test.ts` (fixture)
+- What is wrong: A merchant could refund more than was captured. Authorize 10.000 BD, capture 4.000 BD, and a refund of up to 10.000 BD was accepted.
+- Why it happens: The code computed `refundable = amount_fils (authorized) - refunded_fils`. Money that was only authorized was never taken from the card, so it cannot go back. The unit test fixture built `refundableFils` with the same wrong formula, so the tests agreed with the bug. Migration 0043 only checked `refunded_fils >= 0`.
+- What it breaks: The platform pays the cardholder money it never collected. The merchant's payable goes negative.
+- Fix: `refundable = captured_fils - refunded_fils`. The test fixture uses the same formula. New migration `0082_transactions_refunded_le_captured.sql` adds `CHECK (refunded_fils <= captured_fils)`, so the database refuses an over-refund from any code path.
+- Test: `apps/api/src/payments/processRefund.test.ts` ("a partially captured transaction cannot refund more than it captured", "the database refuses refunded_fils greater than captured_fils"), `refundValidation.test.ts` ("... cannot refund past what it captured").

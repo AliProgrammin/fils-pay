@@ -563,3 +563,37 @@ test("two concurrent full refunds: exactly one succeeds and refunded_fils never 
   assert.equal(refunds.rows[0]!.c, 1);
   assert.equal(Number(refunds.rows[0]!.total), 10_000);
 });
+
+// R2: the refund ceiling is what was CAPTURED less what was refunded, never
+// the authorized amount. Capture 4,000 of a 10,000 authorization.
+test("a partially captured transaction cannot refund more than it captured", async () => {
+  const merchant = await createApprovedMerchantWithApiKey("refund-over-captured");
+  const txn = await capturedTransaction(merchant.rawKey, 10_000, 4_000);
+  const actor = await apiKeyActor(merchant.merchantId);
+
+  const result = await processRefund(pool, approvingAcquirer, {
+    transactionId: txn.id,
+    merchantId: merchant.merchantId,
+    amountFils: toFils(4_001),
+    idempotencyKey: randomUUID(),
+    actor,
+  });
+  assert.equal(result.statusCode, 422, JSON.stringify(result.body));
+  assert.deepEqual(result.body, { ok: false, code: "refund_exceeds_refundable", refundableFils: 4_000 });
+
+  const row = await pool.query<{ refunded_fils: string }>(`SELECT refunded_fils FROM transactions WHERE id = $1`, [
+    txn.id,
+  ]);
+  assert.equal(Number(row.rows[0]!.refunded_fils), 0);
+});
+
+// R2: the database refuses refunded_fils above captured_fils (migration 0082),
+// so no code path can over-refund even if the application check is wrong.
+test("the database refuses refunded_fils greater than captured_fils", async () => {
+  const merchant = await createApprovedMerchantWithApiKey("refund-db-check");
+  const txn = await capturedTransaction(merchant.rawKey, 10_000, 4_000);
+  await assert.rejects(
+    () => pool.query(`UPDATE transactions SET refunded_fils = 4001 WHERE id = $1`, [txn.id]),
+    /chk_transactions_refunded_le_captured/,
+  );
+});
