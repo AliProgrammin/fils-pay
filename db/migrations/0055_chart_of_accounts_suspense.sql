@@ -1,9 +1,9 @@
--- Additional suspense accounts for future reconciliation lanes.
-
-INSERT INTO chart_of_accounts (code, name, account_type, description)
-VALUES
-  ('fx_rounding_difference', 'FX Rounding Difference', 'suspense',
-   'Captures rounding differences between fils and scheme-file BD amounts.'),
-  ('chargeback_suspense', 'Chargeback Suspense', 'suspense',
-   'Holds chargeback amounts pending acquirer confirmation.')
-ON CONFLICT (code) DO NOTHING;
+-- Intentionally empty.
+--
+-- This file came from an abandoned PR and never applied anywhere. It inserted
+-- two suspense accounts (fx_rounding_difference, chargeback_suspense) using
+-- columns that chart_of_accounts does not have (code, account_type,
+-- description) and a kind ('suspense') that 0007's CHECK does not allow.
+-- No code posts to either account, so the insert is removed. The file stays
+-- so migration numbering and schema_migrations history remain stable.
+SELECT 1;

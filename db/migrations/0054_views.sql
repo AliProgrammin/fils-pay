@@ -1,4 +1,10 @@
--- Convenience views used by the API and admin dashboard.
+-- Convenience views.
+--
+-- This file came from an abandoned PR and never applied anywhere: it also
+-- defined v_unbatched_capture_events (reads settlement_batch_events, a table
+-- that does not exist) and v_active_api_keys. No code reads either view, so
+-- they are removed. merchant_payable_position is kept because
+-- apps/settlement/internal/ledger/refresh.go reads it.
 
 CREATE OR REPLACE VIEW merchant_payable_position AS
 SELECT sb.merchant_id,
@@ -6,26 +12,3 @@ SELECT sb.merchant_id,
   FROM scheme_export_lines sel
   JOIN settlement_batches sb ON sb.id = sel.settlement_batch_id
  GROUP BY sb.merchant_id;
-
-CREATE OR REPLACE VIEW v_unbatched_capture_events AS
-SELECT te.id AS event_id,
-       te.transaction_id,
-       te.event_type,
-       te.amount_fils,
-       te.created_at,
-       t.merchant_id
-  FROM transaction_events te
-  JOIN transactions t ON t.id = te.transaction_id
- WHERE te.event_type = 'captured'
-   AND NOT EXISTS (
-     SELECT 1 FROM settlement_batch_events sbe WHERE sbe.transaction_event_id = te.id
-   );
-
-CREATE OR REPLACE VIEW v_active_api_keys AS
-SELECT ak.id,
-       ak.merchant_id,
-       ak.key_prefix,
-       ak.created_at,
-       ak.label
-  FROM api_keys ak
- WHERE ak.revoked_at IS NULL;
