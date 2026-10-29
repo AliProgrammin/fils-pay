@@ -17,6 +17,8 @@ export interface AdminMerchantSummary {
   kycPassed: boolean;
   mdrBps: number;
   testMode: boolean;
+  /** NULL in the database means off (migration 0052). */
+  refundsEnabled: boolean;
   createdAt: Date;
 }
 
@@ -28,6 +30,7 @@ interface MerchantRow {
   kyc_passed: boolean;
   mdr_bps: number;
   test_mode: boolean;
+  refunds_enabled: boolean | null;
   created_at: Date;
 }
 
@@ -40,6 +43,7 @@ function toSummary(row: MerchantRow): AdminMerchantSummary {
     kycPassed: row.kyc_passed,
     mdrBps: row.mdr_bps,
     testMode: row.test_mode,
+    refundsEnabled: row.refunds_enabled === true,
     createdAt: row.created_at,
   };
 }
@@ -117,7 +121,7 @@ export async function listMerchantsForAdmin(
 
   const result = await pool.query<MerchantRow & { created_at_text: string }>(
     `SELECT m.id, m.display_name, m.status, m.onboarding_status, m.kyc_passed,
-            m.mdr_bps, m.test_mode, m.created_at, m.created_at::text AS created_at_text
+            m.mdr_bps, m.test_mode, m.refunds_enabled, m.created_at, m.created_at::text AS created_at_text
        FROM merchants m
        LEFT JOIN merchant_business_profiles bp ON bp.merchant_id = m.id
       WHERE ($1::text IS NULL
@@ -223,7 +227,7 @@ export async function getMerchantDetailForAdmin(
   merchantId: string,
 ): Promise<AdminMerchantDetail | null> {
   const merchantResult = await pool.query<MerchantRow>(
-    `SELECT id, display_name, status, onboarding_status, kyc_passed, mdr_bps, test_mode, created_at
+    `SELECT id, display_name, status, onboarding_status, kyc_passed, mdr_bps, test_mode, refunds_enabled, created_at
        FROM merchants WHERE id = $1`,
     [merchantId],
   );

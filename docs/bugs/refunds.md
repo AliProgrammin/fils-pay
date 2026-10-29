@@ -71,3 +71,13 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 - What it breaks: Dashboards, filters and reports showed fully refunded payments as open captures. The merchant could even capture more on a payment the customer was already refunded for, and the hold on the unused authorization was never released.
 - Fix: Status now follows the refunded total first: 0 refunded keeps the capture status; `0 < refunded < captured` is `partially_refunded`; `refunded = captured` is `refunded`. When a refund moves a payment out of the capture statuses, `processRefund` releases the active hold, because capture is no longer possible (same rule capture uses when nothing is left).
 - Test: `apps/api/src/payments/refundState.test.ts` ("a partial capture refunded in full is refunded", "... in part is partially_refunded"), `apps/api/src/payments/processRefund.test.ts` ("refunding everything captured on a partial capture lands on refunded and releases the hold").
+
+### R8 No way to turn refunds on, except raw SQL
+- Severity: High
+- Ticket: FP-300 ("works from start to end, through the API")
+- Where: merchants.refunds_enabled (migration 0052), apps/api/src/routes/adminMerchants.ts
+- What is wrong: every merchant starts with refunds off (NULL means off), and no API or console screen could change it.
+- Why it happens: the switch was added to the database, but the admin route and the console button were never built.
+- What it breaks: no merchant can refund until someone edits the production database by hand. Found by our blind judge.
+- Fix: `PUT /v1/admin/merchants/:id/refunds-enabled` for finance and super_admin, with an audit row in the same transaction, a "Turn refunds on/off" button on the admin merchant page, and `refundsEnabled` in the admin merchant data. The demo script now uses it instead of SQL.
+- Test: apps/api/src/routes/adminRefundsEnabled.fix.test.ts

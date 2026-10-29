@@ -19,7 +19,8 @@ export type AdminAuditAction =
   | "balance_adjustment"
   | "balance_adjustment_journaled"
   | "mdr_recalculation"
-  | "adjustment_import_applied";
+  | "adjustment_import_applied"
+  | "merchant_refunds_enabled";
 
 export type AdminAuditTargetType =
   | "merchant"

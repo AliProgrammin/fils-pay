@@ -63,3 +63,15 @@ export function recomputeTransactionStatuses(merchantId: string): Promise<Recomp
     { method: "POST" },
   );
 }
+
+/** `PUT /v1/admin/merchants/:id/refunds-enabled`. Turns refunds on or off for
+ *  one merchant. `finance` / `super_admin`; the change is audited. */
+export function setRefundsEnabled(
+  merchantId: string,
+  enabled: boolean,
+): Promise<{ merchantId: string; refundsEnabled: boolean }> {
+  return request(`/v1/admin/merchants/${encodeURIComponent(merchantId)}/refunds-enabled`, {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+}

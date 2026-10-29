@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { formatBhd, parseBhdToFils, toFils } from "@filspay/money";
-import { getMerchant, recomputeTransactionStatuses, submitKycReview } from "../../api/merchants.js";
+import { getMerchant, recomputeTransactionStatuses, setRefundsEnabled, submitKycReview } from "../../api/merchants.js";
 import { adjustBalance } from "../../api/balanceAdjustments.js";
 import { issueCredit } from "../../api/credits.js";
 import { rotateApiKey } from "../../api/apiKeys.js";
@@ -175,6 +175,22 @@ export function MerchantDetailPage() {
     }
   }
 
+  async function handleRefundsToggle(enabled: boolean): Promise<void> {
+    if (!id) return;
+    setBusy(true);
+    setActionError(null);
+    setNotice(null);
+    try {
+      await setRefundsEnabled(id, enabled);
+      setNotice(enabled ? "Refunds turned on." : "Refunds turned off.");
+      await load();
+    } catch (err) {
+      setActionError(describeError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleRecomputeStatuses(): Promise<void> {
     if (!id) return;
     setBusy(true);
@@ -272,6 +288,15 @@ export function MerchantDetailPage() {
         </dd>
         <dt>Mode</dt>
         <dd>{merchant.testMode ? "test" : "live"}</dd>
+        <dt>Refunds</dt>
+        <dd>
+          {merchant.refundsEnabled ? "on" : "off"}{" "}
+          <RequireRole allow={["finance", "super_admin"]} fallback={null}>
+            <button type="button" disabled={busy} onClick={() => void handleRefundsToggle(!merchant.refundsEnabled)}>
+              {merchant.refundsEnabled ? "Turn refunds off" : "Turn refunds on"}
+            </button>
+          </RequireRole>
+        </dd>
         <dt>Created</dt>
         <dd>{new Date(merchant.createdAt).toLocaleString()}</dd>
         {profile ? (

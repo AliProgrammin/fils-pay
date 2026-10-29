@@ -120,8 +120,15 @@ echo "FilsPay refunds demo (FP-300) against $API_URL"
 step "1. Log in as the merchant owner (password + dev OTP)"
 MERCHANT_ID="$(sql "SELECT id FROM merchants WHERE display_name = '$MERCHANT_NAME'")"
 [ -n "$MERCHANT_ID" ] || { echo "seeded merchant '$MERCHANT_NAME' not found; run npm run seed"; exit 1; }
-# Support switches refunds on per merchant (migration 0052: NULL = off).
-sql "UPDATE merchants SET refunds_enabled = true WHERE id = '$MERCHANT_ID'" >/dev/null
+# Refunds start off for every merchant (migration 0052: NULL = off).
+# A finance admin turns them on from the ops console (audited).
+MERCHANT_JAR="$JAR"; JAR="$WORK/admin-cookies"
+api POST /v1/admin/auth/login '{"email":"finance@filspay.test","password":"FilsPayAdminSeed!2026"}'
+ADMIN_OTP="$(jq -r '.devOtpCode // empty' <<<"$BODY")"
+api POST /v1/admin/auth/otp/verify "{\"code\":\"$ADMIN_OTP\"}"
+api PUT "/v1/admin/merchants/$MERCHANT_ID/refunds-enabled" '{"enabled":true}'
+check "$CODE" "200" "finance admin turned refunds on for $MERCHANT_NAME (audited)"
+JAR="$MERCHANT_JAR"
 api POST /v1/auth/login "{\"merchantId\":\"$MERCHANT_ID\",\"email\":\"$OWNER_EMAIL\",\"password\":\"$PASSWORD\"}"
 OTP="$(jq -r '.devOtpCode // empty' <<<"$BODY")"
 api POST /v1/auth/otp/verify "{\"code\":\"$OTP\"}"

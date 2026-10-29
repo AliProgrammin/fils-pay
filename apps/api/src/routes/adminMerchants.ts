@@ -172,6 +172,42 @@ export async function adminMerchantRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  /**
+   * Turns refunds on or off for one merchant. New merchants start with
+   * refunds_enabled NULL (= off, migration 0052); before this route only raw
+   * SQL could change it. The change and its audit row commit together.
+   */
+  app.put<{ Params: MerchantIdParams; Body: { enabled?: unknown } }>(
+    "/:id/refunds-enabled",
+    { preHandler: [requireAdminSession, requireAdminRole("finance", "super_admin")] },
+    async (request) => {
+      const adminAuth = request.adminAuth;
+      if (!adminAuth) throw new UnauthorizedError("unauthenticated");
+
+      assertUuidParam(request.params.id, "merchant_not_found");
+      const enabled = request.body?.enabled;
+      if (typeof enabled !== "boolean") {
+        throw new BadRequestError("invalid_request", "enabled must be true or false");
+      }
+
+      return withTransaction(app.db, async (client) => {
+        const updated = await client.query(
+          `UPDATE merchants SET refunds_enabled = $2 WHERE id = $1 RETURNING id`,
+          [request.params.id, enabled],
+        );
+        if (updated.rowCount === 0) throw new NotFoundError("merchant_not_found");
+        await insertAdminAuditLog(client, {
+          adminUserId: adminAuth.adminUserId,
+          action: "merchant_refunds_enabled",
+          targetType: "merchant",
+          targetId: request.params.id,
+          metadata: { enabled },
+        });
+        return { merchantId: request.params.id, refundsEnabled: enabled };
+      });
+    },
+  );
+
   /** Atomic rotate: revoke + reissue + audit in one transaction. */
   app.post<{ Params: ApiKeyRotateParams; Body: RotateBody }>(
     "/:id/api-keys/:keyId/rotate",

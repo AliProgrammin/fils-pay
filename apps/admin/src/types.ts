@@ -60,6 +60,8 @@ export interface AdminMerchantSummary {
   kycPassed: boolean;
   mdrBps: number;
   testMode: boolean;
+  /** Off until finance turns it on (NULL in the database means off). */
+  refundsEnabled: boolean;
   createdAt: string;
 }
 
