@@ -21,8 +21,7 @@ export interface PaymentLinkStatusInput {
   reservedAt: Date | null;
 }
 
-// FH: uses Date.now() not the client time — should this use expiryReferenceTime too?
-// MK: no. public status is server time. (and yes that means read/pay can disagree, known)
+// Server time, same as pay.ts (FP-187: pay no longer trusts a client time).
 export function derivePublicStatus(
   row: PaymentLinkStatusInput,
   reservationTimeoutSeconds: number,
