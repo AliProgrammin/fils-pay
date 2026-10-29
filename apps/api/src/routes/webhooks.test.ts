@@ -282,7 +282,7 @@ test(
       const created = await createEndpointViaRoute(rawKey, merchantId, receiver.url);
       const txnId = await authorizeAndCapture(merchantId, 4_750, "e2e");
 
-      await runDispatchPass(pool, createFetchTransport(), config);
+      await runDispatchPass(pool, createFetchTransport({ allowPrivateNetworks: true }), config);
 
       assert.equal(receiver.received.length, 1);
       const received = receiver.received[0]!;
@@ -304,7 +304,7 @@ test(
       // raw secret createEndpointViaRoute's response returned — proving
       // encrypt-then-decrypt-then-sign matches what a merchant would
       // verify against the secret they were shown.
-      const verifyResult = verifySignature(parsedBody, signatureHeader, created.secret);
+      const verifyResult = verifySignature(received.body, signatureHeader, created.secret);
       assert.deepEqual(verifyResult, { valid: true });
 
       const deliveryRow = await pool.query<{ status: string; attempt_count: number }>(
@@ -326,7 +326,7 @@ test("decline path: an endpoint returning 500 leaves the delivery pending with b
     const created = await createEndpointViaRoute(rawKey, merchantId, receiver.url);
     await authorizeAndCapture(merchantId, 2_000, "decline");
 
-    await runDispatchPass(pool, createFetchTransport(), config);
+    await runDispatchPass(pool, createFetchTransport({ allowPrivateNetworks: true }), config);
 
     assert.equal(receiver.received.length, 1);
 
@@ -345,16 +345,15 @@ test("decline path: an endpoint returning 500 leaves the delivery pending with b
   }
 });
 
-// YA: new delivery id on replay is what ARCH §5 asks for
 // am: §5 says stable id?? reading it again later
-test("replay: creates a new row referencing the original, with a new delivery_event_id; original row untouched", async () => {
+test("replay: creates a new row referencing the original, reusing its delivery_event_id; original row untouched", async () => {
   const { rawKey, merchantId } = await createApprovedMerchantWithApiKey("replay-flow");
   const receiver = await startTestReceiver(200);
   try {
     const created = await createEndpointViaRoute(rawKey, merchantId, receiver.url);
     await authorizeAndCapture(merchantId, 3_300, "replay");
 
-    await runDispatchPass(pool, createFetchTransport(), config);
+    await runDispatchPass(pool, createFetchTransport({ allowPrivateNetworks: true }), config);
     assert.equal(receiver.received.length, 1);
 
     const originalRowResult = await pool.query<{
@@ -379,7 +378,7 @@ test("replay: creates a new row referencing the original, with a new delivery_ev
     assert.notEqual(replayBody.deliveryId, original.id);
 
     // Dispatch again so the replay row actually gets attempted.
-    await runDispatchPass(pool, createFetchTransport(), config);
+    await runDispatchPass(pool, createFetchTransport({ allowPrivateNetworks: true }), config);
     assert.equal(receiver.received.length, 2);
 
     const allRows = await pool.query<{
@@ -402,11 +401,12 @@ test("replay: creates a new row referencing the original, with a new delivery_ev
     assert.equal(originalAfter!.replay_of_delivery_id, null);
     assert.equal(originalAfter!.delivery_event_id, original.delivery_event_id);
 
-    // Replay row references the original, has its own new delivery_event_id,
+    // Replay row references the original, keeps the SAME delivery_event_id
+    // (ARCHITECTURE.md: stable across retries, receivers dedupe on it),
     // and describes the same underlying outbox event.
     assert.equal(replayRow!.replay_of_delivery_id, original.id);
     assert.equal(replayRow!.status, "succeeded");
-    assert.notEqual(replayRow!.delivery_event_id, original.delivery_event_id);
+    assert.equal(replayRow!.delivery_event_id, original.delivery_event_id);
     assert.equal(replayRow!.outbox_event_id, originalAfter!.outbox_event_id);
   } finally {
     await receiver.close();
@@ -420,7 +420,7 @@ test("disabled endpoint rejects replay with 409", async () => {
     const created = await createEndpointViaRoute(rawKey, merchantId, receiver.url);
     await authorizeAndCapture(merchantId, 1_000, "disabled-replay");
 
-    await runDispatchPass(pool, createFetchTransport(), config);
+    await runDispatchPass(pool, createFetchTransport({ allowPrivateNetworks: true }), config);
 
     const deliveryRow = await pool.query<{ id: string; status: string }>(
       `SELECT id, status FROM webhook_deliveries WHERE endpoint_id = $1`,
@@ -456,7 +456,7 @@ test("GET deliveries list never includes payload/signature; GET .../deliveries/:
     const created = await createEndpointViaRoute(rawKey, merchantId, receiver.url);
     await authorizeAndCapture(merchantId, 1_500, "detail");
 
-    await runDispatchPass(pool, createFetchTransport(), config);
+    await runDispatchPass(pool, createFetchTransport({ allowPrivateNetworks: true }), config);
 
     const listRes = await app.inject({
       method: "GET",
@@ -509,14 +509,13 @@ test("secret encryption round-trips correctly: a delivery verifies using the SAM
     assert.ok(!stored.rows[0]!.secret_ciphertext.includes(created.secret));
 
     await authorizeAndCapture(merchantId, 999, "secret-roundtrip");
-    await runDispatchPass(pool, createFetchTransport(), config);
+    await runDispatchPass(pool, createFetchTransport({ allowPrivateNetworks: true }), config);
 
     assert.equal(receiver.received.length, 1);
     const received = receiver.received[0]!;
     const signatureHeader = received.headers["webhook-signature"] as string;
-    const parsedBody = JSON.parse(received.body) as Record<string, unknown>;
 
-    const result = verifySignature(parsedBody, signatureHeader, created.secret);
+    const result = verifySignature(received.body, signatureHeader, created.secret);
     assert.deepEqual(result, { valid: true });
   } finally {
     await receiver.close();

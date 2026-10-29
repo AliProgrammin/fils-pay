@@ -31,9 +31,9 @@ export const CONSUMER_NAME = "reporting";
  * the watermark alone sufficient for exactly-once application, with no
  * separate per-event dedup table the way webhook_deliveries needs one.
  *
- * The `SELECT` below is a plain, unlocked read — no row lock, no
- * `FOR UPDATE`, no mutation of any outbox_events column — identical
- * posture to webhooks/dispatcher.ts's Step A.
+ * readCursor locks this consumer's cursor row FOR UPDATE for the whole
+ * pass, so concurrent passes (worker + catch-up) are serialised. The
+ * outbox_events SELECT itself takes no lock and mutates no outbox column.
  */
 export async function runConsumerPass(
   pool: Pool,
@@ -42,27 +42,30 @@ export async function runConsumerPass(
   return withTransaction(pool, async (client) => {
     const cursor = await readCursor(client, CONSUMER_NAME);
 
-    // MK 2026-06: ids come from a sequence, they're monotonic. fine for now.
-    const eventsResult = await client.query<OutboxEventRow>(
-      `SELECT id, event_type, aggregate_id, payload, created_at
+    // Gap-safe read (migration 0080): ids are taken at INSERT but rows
+    // appear at COMMIT, and api + settlement both write, so "id > cursor"
+    // skips a lower id that commits late. Only rows whose inserting
+    // transaction is below the snapshot xmin are read: every such
+    // transaction has finished, so this set can no longer grow. Walk it in
+    // (txid, id) order and keep (txid, id) as the cursor.
+    const eventsResult = await client.query<OutboxEventRow & { txid: string }>(
+      `SELECT id, txid::text AS txid, event_type, aggregate_id, payload, created_at
          FROM outbox_events
-        WHERE id > $1
-          AND event_type = ANY($2::text[])
-        ORDER BY id ASC
-        LIMIT $3`,
-      [cursor.lastProcessedId.toString(), REPORTING_EVENT_TYPES, config.consumerBatchLimit],
+        WHERE (txid, id) > ($1::xid8, $2::bigint)
+          AND txid < pg_snapshot_xmin(pg_current_snapshot())
+          AND event_type = ANY($3::text[])
+        ORDER BY txid ASC, id ASC
+        LIMIT $4`,
+      [cursor.lastProcessedTxid, cursor.lastProcessedId.toString(), REPORTING_EVENT_TYPES, config.consumerBatchLimit],
     );
 
-    // FH: redundant with ORDER BY id ASC (last row is max). harmless
-    let maxId = cursor.lastProcessedId;
     for (const row of eventsResult.rows) {
       await applyEvent(client, row);
-      const rowId = BigInt(row.id);
-      if (rowId > maxId) maxId = rowId;
     }
 
-    if (eventsResult.rows.length > 0) {
-      await advanceCursor(client, CONSUMER_NAME, maxId);
+    const last = eventsResult.rows[eventsResult.rows.length - 1];
+    if (last) {
+      await advanceCursor(client, CONSUMER_NAME, { lastProcessedTxid: last.txid, lastProcessedId: BigInt(last.id) });
     }
 
     return { processedCount: eventsResult.rows.length };
