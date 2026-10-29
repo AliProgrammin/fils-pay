@@ -71,3 +71,11 @@
 - What it breaks: with a 15 min delay, the close of 14 May should run at 00:15 on 15 May Bahrain time. It runs at 03:15. Merchants are paid about 3 hours late every day, and the logs ("close ~03:15 local") show it.
 - Fix: the decision is moved into `dueBusinessDate(now, delay)`, which converts now to Asia/Bahrain with the new `settlement.InBusinessDayLocation` before it takes the date. `BusinessDayWindow` keeps its calendar-date contract, because the CLI, the API and CloseBatch's `batch_date` all pass a calendar date. Its comment now says that.
 - Test: `TestDueBusinessDate_BahrainMidnight_Fix` in `internal/scheduler/daemon_fix_test.go`.
+
+### C8 Admin shows a fee rate that is not the billed rate (245 vs 225 bps)
+- Severity: High. Ticket: admin merchant detail, fee schedules. Where: `apps/api/src/fees/currentFeeScheduleDisplay.ts:30-37`, `apps/settlement/internal/settlement/fee_schedule.go:32`.
+- What is wrong: the admin "current rate" took the row with the newest `created_at`. Billing (`feeSchedule.ts`) takes `effective_from <= now ORDER BY effective_from DESC, created_at DESC`. Go sorted by `effective_from` only, with no tie-break.
+- Why it happens: "newest typed in" is not "in force now". A backdated correction or a future-dated row is newest by `created_at`, but not the current rate.
+- What it breaks: a merchant renegotiated to 225 bps from 1 Aug. A correction for March at 245 bps was keyed in on 15 Aug. The admin page shows 245 bps while billing charges 225: 0.20% wrong (2 fils per 1 BD) on what support tells the merchant. A future-dated 150 bps row shows as current before it starts. In Go, two rows with the same `effective_from` resolve in random heap order, so Go and TS can bill different rates.
+- Fix: the display uses the billing rule. Go `LoadFeeSchedules` adds `created_at ASC` so the newest entry wins a tie, like TS. The old TS test "returns the most recently entered schedule even when an older period was backfilled later" asserted 245; it now asserts 225.
+- Test: `apps/api/src/fees/currentFeeScheduleDisplay.fix.test.ts` (2 tests), `TestEffectiveMdrBpsAt_SameEffectiveFromNewestCreatedWins_Fix` in `internal/settlement/fee_schedule_fix_test.go`.
