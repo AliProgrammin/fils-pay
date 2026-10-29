@@ -47,3 +47,11 @@
 - What it breaks: payouts of 16,777,217 + 3 + 1,234,567,891 fils should total 1,251,345,111. The column shows 1.2513452e+09, about 89 fils off, and more after every payout. Ops compare merchants against a wrong lifetime total. ADR-0001 says whole fils only.
 - Fix: migration `0078_lifetime_payout_estimate_bigint.sql` makes the column BIGINT (existing values rounded to whole fils). Go passes `int64`. The seed (`db/seed/generate.ts`) no longer imitates float4 with `Math.fround`.
 - Test: `TestUpdateLifetimePayoutMonitoringEstimate_LargeValuesExact_Fix` in `internal/settlement/payout_estimate_fix_test.go`.
+
+### C5 Net payout computed with float32
+- Severity: Critical. Ticket: ADR-0001. Where: `apps/settlement/internal/settlement/payable.go:10`.
+- What is wrong: `NetPayableFils` turns gross and fee into float32 BD, subtracts, and rounds back to fils.
+- Why it happens: float32 has about 7 significant digits. Above about 16,777 BD the fils digit is lost.
+- What it breaks: this is the merchant's real payout (`net_payout_fils`, the payout ledger legs and the balance cache). Gross 20,000.001 BD minus fee 500.000 BD pays 19,500.000, not 19,500.001. Gross 123,456.789 minus 3,086.420 pays 120,370.367, 2 fils short. Bigger batches lose or gain more. The ledger capture legs no longer match the payout.
+- Fix: `return grossFils - feeFils`. Plain integer fils.
+- Test: `TestNetPayableFils_ExactInteger_Fix` in `internal/settlement/payable_fix_test.go`.
