@@ -9,7 +9,6 @@ import {
   promoteSession,
   revokeSession,
 } from "../auth/sessions.js";
-import { findOtpRecipient } from "../auth/users.js";
 import { withTransaction } from "../db/withTransaction.js";
 import { BadRequestError, GoneError, TooManyRequestsError, UnauthorizedError } from "../lib/errors.js";
 
@@ -75,7 +74,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       throw new UnauthorizedError("invalid_credentials");
     }
 
-    const recipient = await findOtpRecipient(app.db, email) ?? user;
+    // The OTP and session belong to the user whose password was just checked.
+    const recipient = user;
 
     const { code, expiresAt, rawToken } = await withTransaction(app.db, async (client) => {
       const challenge = await issueChallenge(client, {
@@ -153,18 +153,21 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         throw new GoneError("otp_expired");
       }
 
-      // am: check-then-increment is fine, max_attempts=5 so worst case is 5 guesses
-      // MK: 5 guesses per parallel batch? if i fire 50 at once they all read attempt_count=0
-      if (challenge.attempt_count >= challenge.max_attempts) {
+      // Claim one attempt atomically before checking the code, so parallel
+      // requests cannot all read the same attempt_count and skip the limit.
+      const claimed = await app.db.query(
+        `UPDATE otp_challenges SET attempt_count = attempt_count + 1
+          WHERE id = $1 AND attempt_count < max_attempts
+         RETURNING id`,
+        [challenge.id],
+      );
+      if (claimed.rowCount === 0) {
         await revokeSession(app.db, pending.sessionId);
         throw new TooManyRequestsError("too_many_attempts");
       }
 
       const matches = verifyOtpCode(code, challenge.code_salt, challenge.code_hash);
       if (!matches) {
-        await app.db.query(`UPDATE otp_challenges SET attempt_count = attempt_count + 1 WHERE id = $1`, [
-          challenge.id,
-        ]);
         throw new UnauthorizedError("invalid_code");
       }
 
@@ -216,10 +219,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const { code, expiresAt } = await withTransaction(app.db, async (client) => {
+      let usedAttempts = 0;
       if (existingChallenge) {
-        await client.query(`UPDATE otp_challenges SET consumed_at = now() WHERE id = $1`, [
-          existingChallenge.id,
-        ]);
+        const consumed = await client.query<{ attempt_count: number }>(
+          `UPDATE otp_challenges SET consumed_at = now() WHERE id = $1 RETURNING attempt_count`,
+          [existingChallenge.id],
+        );
+        usedAttempts = consumed.rows[0]?.attempt_count ?? 0;
       }
       const challenge = await issueChallenge(client, {
         merchantUserId: pending.merchantUserId,
@@ -227,6 +233,11 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         codeLength: app.config.otpCodeLength,
         maxAttempts: app.config.otpMaxAttempts,
       });
+      // The new challenge inherits the used attempts: a resend never resets the guess budget.
+      await client.query(`UPDATE otp_challenges SET attempt_count = $1 WHERE id = $2`, [
+        usedAttempts,
+        challenge.id,
+      ]);
       await client.query(`UPDATE sessions SET otp_challenge_id = $1 WHERE id = $2`, [
         challenge.id,
         pending.sessionId,
