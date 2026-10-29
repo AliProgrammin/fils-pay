@@ -41,3 +41,13 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 - What it breaks: Any merchant (or a leaked API key) can drain another merchant's captured payments.
 - Fix: Both lookups are `WHERE id = $1 AND merchant_id = $2` with the authenticated merchant id, and the authenticated id is what is passed on. Another merchant's transaction answers 404 (`transaction_not_found`), never 403, so its existence is not confirmed.
 - Test: `apps/api/src/payments/processRefund.test.ts` ("another merchant's transaction answers 404 ..."), `apps/api/src/refunds/initiateMerchantRefund.test.ts` ("another merchant's existing transactionId is a 404 ...").
+
+### R4 `refunds_enabled = NULL` is treated as enabled
+- Severity: High
+- Ticket: FP-300
+- Where: `apps/api/src/refunds/initiateMerchantRefund.ts` (`assertRefundsNotOnHold`, now `assertRefundsEnabled`)
+- What is wrong: Every merchant could refund, including merchants support never enabled.
+- Why it happens: The check was `refunds_enabled === false`. Migration 0052 adds the column with no default, so every merchant starts at NULL, and the note in 0052 says "NULL is treated as disabled until support explicitly enables refunds per merchant, so nothing refunds by accident at launch". The code read NULL as "no hold".
+- What it breaks: At launch every merchant gets live refunds at once, with no per-merchant control.
+- Fix: Only `refunds_enabled = true` passes. NULL and false answer 403 `refunds_not_enabled`. The test helper enables refunds for its merchants, and a new test covers NULL.
+- Test: `apps/api/src/refunds/initiateMerchantRefund.test.ts` ("a refund is refused when refunds_enabled is NULL (never enabled)").
