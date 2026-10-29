@@ -31,3 +31,11 @@
 - What it breaks: a merchant with 2 endpoints, or one replay, gets 2+ payout instructions for one batch (double payout risk). Concurrent passes can also both insert.
 - Fix: migration 0079 drops existing duplicate rows (keeps the earliest per batch) and adds a unique index on settlement_batch_id; the insert uses `ON CONFLICT (settlement_batch_id) DO NOTHING`. Known remaining design gap (not changed, out of scope): the record is still only written when the merchant has an active webhook endpoint; it belongs in the settlement pay step.
 - Test: apps/api/src/webhooks/payoutDisbursement.fix.test.ts (concurrent + repeated calls keep one row).
+
+### D11 Replays mint a new Webhook-Delivery-Id; batch replay resends succeeded deliveries
+- Severity: Medium. Ticket: none. Where: apps/api/src/webhooks/replay.ts:48, apps/api/src/webhooks/replayBatch.ts:21 (also used by archiveReplay.ts)
+- What is wrong: `insertReplayDeliveryRow` made a new random delivery_event_id and wrote it into the envelope `id`. Batch replay accepted any status, including `succeeded`.
+- Why it happens: a comment claimed receivers dedupe on something else. ARCHITECTURE.md and migration 0022 say the id is stable and receivers dedupe on it.
+- What it breaks: a receiver that already processed the event cannot see the replay is the same event, so it processes it twice (for example double-credits a capture). A bulk replay of `succeeded` rows sends every merchant events they already handled.
+- Fix: a replay copies the original envelope unchanged and reuses its id (header and body). Batch replay rejects any status other than `failed`/`exhausted` with 400. Two existing tests locked the old behaviour (expected a new id; expected `statuses: ["succeeded"]` to be accepted) and are updated.
+- Test: apps/api/src/webhooks/replay.fix.test.ts.

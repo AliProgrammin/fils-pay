@@ -1,7 +1,7 @@
 import type { Pool } from "pg";
 import { insertAdminAuditLog } from "../adminAudit/log.js";
 import { withTransaction } from "../db/withTransaction.js";
-import { ConflictError, NotFoundError } from "../lib/errors.js";
+import { BadRequestError, ConflictError, NotFoundError } from "../lib/errors.js";
 import { insertReplayDeliveryRow } from "./replay.js";
 
 /** Same batch-cap idea as the dispatcher's own pass caps: a bounded unit
@@ -12,13 +12,13 @@ import { insertReplayDeliveryRow } from "./replay.js";
  */
 const MAX_BATCH_SIZE = 500;
 
-/** The one truly terminal failure state the dispatcher itself produces.
- *  `pending`/`succeeded`/`failed` are accepted if a caller explicitly asks
- *  for them — deliberately resending a `succeeded` delivery is a legitimate,
- *  if unusual, operator action — but they are never the default. */
-// support can pass status=succeeded and replay everything — am
-// MK: the route rejects succeeded
+/** The one truly terminal failure state the dispatcher itself produces. */
 export const DEFAULT_REPLAY_STATUSES = ["exhausted"] as const;
+
+/** Batch replay only resends deliveries that did not get through. Resending
+ *  `succeeded` (or still-`pending`) rows in bulk would send merchants events
+ *  they already processed. */
+export const ALLOWED_REPLAY_STATUSES: readonly string[] = ["failed", "exhausted"];
 
 export interface BatchReplayResult {
   matchedCount: number;
@@ -52,6 +52,9 @@ export async function replayWebhookDeliveriesBatch(
     statuses: string[];
   },
 ): Promise<BatchReplayResult> {
+  if (input.statuses.some((s) => !ALLOWED_REPLAY_STATUSES.includes(s))) {
+    throw new BadRequestError("invalid_request", "statuses may only contain failed or exhausted");
+  }
   return withTransaction(pool, async (client) => {
     // Merchant-scoped endpoint predicate, exactly like the merchant-facing
     // replay route's: an admin acting on a merchant's behalf gets the same

@@ -1030,8 +1030,8 @@ test("webhook batch replay accepts an explicit statuses filter, and rejects bad 
     headers: { cookie: admin.cookie },
     payload: { from: "2026-05-01T00:00:00Z", to: "2026-05-05T00:00:00Z", statuses: ["succeeded"] },
   });
-  assert.equal(explicit.statusCode, 200, explicit.body);
-  assert.equal((explicit.json() as { matchedCount: number }).matchedCount, 1);
+  // Batch replay of succeeded deliveries is refused (only failed/exhausted).
+  assert.equal(explicit.statusCode, 400, explicit.body);
 
   const missingRange = await app.inject({
     method: "POST",
