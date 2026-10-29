@@ -510,3 +510,56 @@ test("a refund without a reason stores 'unspecified'; a given reason is stored a
   );
   assert.deepEqual(rows.rows.map((r) => r.reason).sort(), ["customer_request", "unspecified"]);
 });
+
+/** An approving acquirer that waits before answering, so two refunds that
+ *  start together are both "in flight" at the acquirer at the same time. */
+function slowApprovingAcquirer(delayMs: number): AcquirerSimulator {
+  return {
+    ...approvingAcquirer,
+    refund(req): Promise<AcquirerRefundResult> {
+      return new Promise((resolve) =>
+        setTimeout(() => resolve({ outcome: "approved", acquirerReference: req.acquirerReference, latencyMs: delayMs }), delayMs),
+      );
+    },
+  };
+}
+
+// R1 (FP-209): two concurrent full refunds with different keys. The second
+// must wait for the first, be re-validated against the new refunded total,
+// and be refused. Never two acquirer refunds for one captured amount.
+test("two concurrent full refunds: exactly one succeeds and refunded_fils never exceeds captured", async () => {
+  const merchant = await createApprovedMerchantWithApiKey("refund-race");
+  const txn = await capturedTransaction(merchant.rawKey, 10_000);
+  const actor = await apiKeyActor(merchant.merchantId);
+  const acquirer = slowApprovingAcquirer(50);
+
+  const results = await Promise.all(
+    [0, 1].map(() =>
+      processRefund(pool, acquirer, {
+        transactionId: txn.id,
+        merchantId: merchant.merchantId,
+        amountFils: toFils(10_000),
+        idempotencyKey: randomUUID(),
+        actor,
+      }),
+    ),
+  );
+  const ok = results.filter((r) => r.statusCode === 200);
+  const refused = results.filter((r) => r.statusCode !== 200);
+  assert.equal(ok.length, 1, JSON.stringify(results));
+  // The loser is re-validated after the winner commits: the row is now
+  // 'refunded', so it is refused as not refundable (409).
+  assert.equal(refused[0]!.statusCode, 409, JSON.stringify(results));
+
+  const row = await pool.query<{ refunded_fils: string; captured_fils: string }>(
+    `SELECT refunded_fils, captured_fils FROM transactions WHERE id = $1`,
+    [txn.id],
+  );
+  assert.equal(Number(row.rows[0]!.refunded_fils), 10_000);
+  const refunds = await pool.query<{ total: string; c: number }>(
+    `SELECT COALESCE(SUM(amount_fils), 0)::text AS total, COUNT(*)::int AS c FROM refunds WHERE transaction_id = $1`,
+    [txn.id],
+  );
+  assert.equal(refunds.rows[0]!.c, 1);
+  assert.equal(Number(refunds.rows[0]!.total), 10_000);
+});

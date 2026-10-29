@@ -11,3 +11,13 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 - What it breaks: No refund could be written at all.
 - Fix: `processRefund` now uses the caller's reason (trimmed), or `'unspecified'` (the same value as the 0070 default) when there is none. The constraint is not weakened. The route (see FP-300 wiring) requires a reason from the merchant.
 - Test: `apps/api/src/payments/processRefund.test.ts` ("a refund without a reason stores 'unspecified'...") plus the 11 tests that now pass.
+
+### R1 Two refunds at the same time both succeed
+- Severity: Critical
+- Ticket: FP-209
+- Where: `apps/api/src/payments/processRefund.ts` (the old three-step flow: validate, acquirer, journal)
+- What is wrong: Two refunds for the full amount, sent at the same time with different idempotency keys, both succeeded. The cardholder got the money back twice, and `refunded_fils` showed only one of them.
+- Why it happens: Step 1 read the transaction with no `FOR UPDATE`, validated, and committed. Step 2 called the acquirer outside any transaction. Step 3 wrote `refunded_fils = old value + amount` from the stale step-1 read. Both requests read `refunded_fils = 0`, both passed, both paid out, and the last write won. Capture (`capture.ts`) does not have this bug because it holds a row lock across the acquirer call.
+- What it breaks: Double refunds (real money lost), a wrong `refunded_fils`, and a ledger that does not match the transaction row.
+- Fix: One database transaction from the idempotency claim to the journal, same as capture. The transaction row is locked with `SELECT ... FOR UPDATE` before validation and the lock is held across the acquirer call. A second refund waits for the lock, then is validated against the new refunded total and is refused (409 `transaction_not_refundable` once the row is `refunded`, or 422 `refund_exceeds_refundable` if only part is left).
+- Test: `apps/api/src/payments/processRefund.test.ts` ("two concurrent full refunds: exactly one succeeds ...")
