@@ -79,3 +79,13 @@
 - What it breaks: A finance or super_admin operator opens "view as merchant" and can create payment links, add webhook endpoints (send the merchant's events to any URL) and request payouts as the merchant. These writes are logged as merchant actions. ADMIN.md's "super_admin can make changes while viewing" conflicts with HANDOVER; we follow HANDOVER and the case card.
 - Fix: Map all three admin roles to `support`.
 - Test: apps/api/src/admin/impersonation.fix.test.ts, "a finance impersonation grant resolves to the read-only merchant role 'support'" and "a super_admin impersonation grant resolves to the read-only merchant role 'support'"
+
+### A9 Recompute statuses takes test merchants out of test mode
+- Severity: High
+- Ticket: case card "Test merchants in real settlement"
+- Where: apps/api/src/admin/transactionStatusRecompute.ts:29 and :47, apps/api/src/routes/adminMerchantsRecompute.ts:28 (helper apps/api/src/admin/merchantFlags.ts, now removed)
+- What is wrong: The admin "Recompute transaction statuses" button sets `test_mode = false` when it finds no open authorizations. And it never finds any.
+- Why it happens: The candidate query excludes `status = 'authorized'`, then counts `authorized` rows inside that same result. So `openAuthorizations` is always 0. `reconcileSandboxFlag` then clears `test_mode` for every test merchant that has any other transaction. A status tidy-up tool has no reason to change the test flag at all.
+- What it breaks: Settlement selects merchants with `test_mode = false` (apps/settlement/internal/settlement/batch.go:117, :408). After one click, a test merchant like "Gamma" (Slack, 2026-09-19) is in the real daily batch and its fake captures become real payouts. ADMIN.md calls the button "safe to run more than once", so support runs it freely.
+- Fix: The route no longer touches `test_mode` (`flagsUpdated` is always `[]`; the response shape is kept for the console). `openAuthorizations` is now a real count of `authorized` rows. The unused `reconcileSandboxFlag` helper is deleted so it cannot be wired in again.
+- Test: apps/api/src/routes/adminMerchantsRecompute.fix.test.ts, "recompute keeps test_mode and counts an open authorization" and "recompute keeps test_mode for a test merchant with nothing open"
