@@ -164,6 +164,23 @@ test("a support admin is 403'd on approve and reject — the decision that moves
   assert.equal(row.rows[0]!.status, "pending_approval");
 });
 
+test("a support admin is 403'd on issuing a credit and nothing is posted", async () => {
+  const support = await signedInAdmin("support", "create-gate");
+  const merchantId = await createMerchant("create-gate");
+
+  const res = await app.inject({
+    method: "POST",
+    url: `/v1/admin/merchants/${merchantId}/credits`,
+    headers: { cookie: support.cookie },
+    payload: { reasonCode: "goodwill", effectiveDate: todayIso(), baseAmountFils: 10_000 },
+  });
+  assert.equal(res.statusCode, 403, res.body);
+  assert.equal(res.json().error, "forbidden");
+
+  const rows = await pool.query(`SELECT 1 FROM credit_requests WHERE merchant_id = $1`, [merchantId]);
+  assert.equal(rows.rowCount, 0);
+});
+
 test("a support admin CAN read the credits queue — it is a read, like the merchant list", async () => {
   const support = await signedInAdmin("support", "queue-read");
   const res = await app.inject({
