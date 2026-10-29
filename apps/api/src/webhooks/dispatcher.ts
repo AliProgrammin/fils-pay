@@ -29,6 +29,7 @@ const WEBHOOK_ELIGIBLE_EVENT_TYPES: readonly string[] = [
   "transaction.captured",
   "transaction.voided",
   "settlement.paid",
+  "refund.succeeded",
 ];
 const NOTIFY_CHANNEL = "outbox_events_channel";
 
