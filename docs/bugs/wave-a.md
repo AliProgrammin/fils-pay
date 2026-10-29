@@ -59,3 +59,13 @@
 - What it breaks: An attacker collects some payment link tokens (they are in public URLs) and predicts the next tokens, so they can open other merchants' payment links. The same PRNG makes OTP codes and admin invite codes guessable, which weakens login and admin onboarding.
 - Fix: Draw each character with `crypto.randomInt` (uniform, no modulo bias). `randomDigits` and the invite code reuse `randomFromAlphabet`. Formats and lengths do not change (22 chars of a 64-char alphabet = 132 bits).
 - Test: apps/api/src/lib/random.fix.test.ts, "secret generators do not depend on Math.random"
+
+### A7 OTP attempt limit can be raced, and resend resets the budget
+- Severity: High
+- Ticket: case card "OTP still safe?"
+- Where: apps/api/src/routes/auth.ts:156-169 (verify) and :218-235 (resend); apps/api/src/routes/adminAuth.ts:147-160 (admin verify)
+- What is wrong: (1) Verify reads `attempt_count`, checks it, compares the code, and only then adds 1 in a separate UPDATE. (2) Resend makes a new challenge with `attempt_count = 0`, although the route's own comment says it inherits the old count.
+- Why it happens: (1) Check-then-increment is not atomic. Many parallel requests all read the same old count, all pass the check, and all get a guess. The "admin row is read FOR UPDATE" comment is false; there is no lock. (2) `issueChallenge` always inserts a fresh row, and resend never copies the used count across.
+- What it breaks: The limit is 5 guesses. Our test sends 25 parallel wrong guesses and all 25 are checked, on merchant and admin login. A 6-digit code has 1,000,000 values, so large parallel batches plus resend every 30s (which gives 5 new guesses each time) make brute force practical. Together with A1/A2 this was the last line of defence.
+- Fix: (1) Claim the attempt first with one statement: `UPDATE ... SET attempt_count = attempt_count + 1 WHERE id = $1 AND attempt_count < max_attempts RETURNING id`. No row back means the budget is used: revoke the session and answer 429. (2) In resend, read `attempt_count` from the consumed challenge (`RETURNING attempt_count`) and set it on the new challenge in the same transaction.
+- Test: apps/api/src/routes/auth.fix.test.ts, "parallel wrong OTP guesses cannot exceed max_attempts", "OTP resend carries the used attempt count over to the new challenge", "parallel wrong admin OTP guesses cannot exceed max_attempts"
