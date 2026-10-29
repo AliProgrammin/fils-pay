@@ -39,3 +39,11 @@
 - What it breaks: at 2,147,000,000 fils, one 1,000.000 BD batch writes -2,146,967,296. The tier bonus (15 bps) turns off for every merchant, and fees jump back up. The counter is wrong forever after.
 - Fix: migration `0074_platform_stats_total_bigint.sql` makes the column BIGINT. Go uses `int64`. The increment is done in SQL (`SET total = total + $1`). The existing `TestRecordPlatformProcessedVolume_SmallValuesExact` is changed only for the new signature (no `current` argument) and to scan `int64`. The TS reader (`apps/api/src/fees/platformVolumeTier.ts`) gets BIGINT as a string from `pg`; JS `>=` coerces it, so its tests still pass, but its type says `number`. Not changed (out of scope), call out.
 - Test: `TestRecordPlatformProcessedVolume_PastInt32Max_Fix` in `internal/settlement/platform_volume_fix_test.go`.
+
+### C11 Lifetime payout estimate drifts (float32 into a REAL column)
+- Severity: Medium. Ticket: ops monitoring (migration 0040). Where: `apps/settlement/internal/settlement/payout_estimate.go:19`, `db/migrations/0040_merchants_lifetime_payout_monitoring_estimate.sql`.
+- What is wrong: `PayoutBatch` adds `float32(net)` to `lifetime_net_payout_monitoring_estimate`, which is `REAL` (float4).
+- Why it happens: float4 holds only 24 bits of precision. It is exact only up to 16,777,216 fils (16,777.216 BD). Above that, each add is rounded.
+- What it breaks: payouts of 16,777,217 + 3 + 1,234,567,891 fils should total 1,251,345,111. The column shows 1.2513452e+09, about 89 fils off, and more after every payout. Ops compare merchants against a wrong lifetime total. ADR-0001 says whole fils only.
+- Fix: migration `0078_lifetime_payout_estimate_bigint.sql` makes the column BIGINT (existing values rounded to whole fils). Go passes `int64`. The seed (`db/seed/generate.ts`) no longer imitates float4 with `Math.fround`.
+- Test: `TestUpdateLifetimePayoutMonitoringEstimate_LargeValuesExact_Fix` in `internal/settlement/payout_estimate_fix_test.go`.
