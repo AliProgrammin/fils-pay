@@ -211,6 +211,13 @@ export async function processRefund(
       newStatus,
     ]);
 
+    // A refunded transaction can no longer be captured (capture accepts only
+    // authorized / partially_captured), so any uncaptured authorization is
+    // finished: release its hold, as capture does when nothing is left.
+    await client.query(`UPDATE holds SET status = 'released' WHERE transaction_id = $1 AND status = 'active'`, [
+      prepared.transactionId,
+    ]);
+
     // Double-entry reversal, mirroring capture's legs with the directions
     // swapped. ledger_entries has CHECK (amount_fils > 0), so a reversal
     // flips direction and never the sign.

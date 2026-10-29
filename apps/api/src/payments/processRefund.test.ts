@@ -704,3 +704,35 @@ test("a full refund for a discounted merchant reverses the net fee and leaves pa
   assert.equal((result.body as { feeReversedFils: number }).feeReversedFils, fee);
   assert.equal(await merchantPayableFor(txn.id), 0);
 });
+
+// R6: capture 4,000 of 10,000 and refund all 4,000. The row must say
+// 'refunded' (not stay 'partially_captured'), and the hold on the
+// authorization that can no longer be captured is released.
+test("refunding everything captured on a partial capture lands on refunded and releases the hold", async () => {
+  const merchant = await createApprovedMerchantWithApiKey("refund-partial-capture", 250);
+  const txn = await capturedTransaction(merchant.rawKey, 10_000, 4_000);
+  const actor = await apiKeyActor(merchant.merchantId);
+
+  const result = await processRefund(pool, approvingAcquirer, {
+    transactionId: txn.id,
+    merchantId: merchant.merchantId,
+    idempotencyKey: randomUUID(),
+    actor,
+  });
+  assert.equal(result.statusCode, 200, JSON.stringify(result.body));
+  assert.equal((result.body as { amountFils: number }).amountFils, 4_000);
+
+  const row = await pool.query<{ status: string; refunded_fils: string }>(
+    `SELECT status, refunded_fils FROM transactions WHERE id = $1`,
+    [txn.id],
+  );
+  assert.equal(row.rows[0]!.status, "refunded");
+  assert.equal(Number(row.rows[0]!.refunded_fils), 4_000);
+
+  const holds = await pool.query<{ c: number }>(
+    `SELECT COUNT(*)::int AS c FROM holds WHERE transaction_id = $1 AND status = 'active'`,
+    [txn.id],
+  );
+  assert.equal(holds.rows[0]!.c, 0);
+  assert.equal(await merchantPayableFor(txn.id), 0);
+});
