@@ -264,6 +264,7 @@ export async function processRefund(
       aggregateId: prepared.transactionId,
       payload: {
         merchantId: prepared.merchantId,
+        transactionId: prepared.transactionId,
         refundId: refund.id,
         amountFils: prepared.requestedAmount,
         feeReversedFils,

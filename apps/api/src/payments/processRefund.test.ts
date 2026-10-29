@@ -459,8 +459,16 @@ test("a successful refund enqueues exactly one refund.succeeded outbox event", a
   assert.equal(events.rows.length, 1);
   // dispatcher.ts joins webhook endpoints on payload->>'merchantId', so an
   // event without it would be silently undeliverable.
-  assert.equal(events.rows[0]!.payload.merchantId, merchant.merchantId);
-  assert.equal(events.rows[0]!.payload.amountFils, 7_000);
+  const body = result.body as { id: string; feeReversedFils: number };
+  assert.deepEqual(events.rows[0]!.payload, {
+    merchantId: merchant.merchantId,
+    transactionId: txn.id,
+    refundId: body.id,
+    amountFils: 7_000,
+    feeReversedFils: body.feeReversedFils,
+    refundedTotalFils: 7_000,
+    newStatus: "refunded",
+  });
 });
 
 // TODO(FH): add "another merchant's transaction answers 404" — Claude says it's covered
