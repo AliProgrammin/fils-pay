@@ -39,3 +39,13 @@
 - What it breaks: An admin requests a large credit (over 50.000 BD), changes their display name, then approves it. The names differ, so the check passes and one person posts the credit alone. The reverse also fails: two different people with the same name (common, e.g. "Ali Hassan") cannot approve each other.
 - Fix: Compare `adminUserId` instead of `displayName`.
 - Test: apps/api/src/admin/creditApproval.test.ts, "an operator who renamed themselves still cannot approve their own credit request" and "two different operators who share a display name satisfy two-person control"
+
+### A5 API key rotation never revokes the old key
+- Severity: High
+- Ticket: case card "Key rotation"
+- Where: apps/api/src/admin/apiKeys.ts:31
+- What is wrong: Admin "Rotate API key" issues a new key but leaves the old key active forever.
+- Why it happens: The rotation transaction only inserts the new key. Nothing sets `revoked_at` on the old one. Migration 0037 and the admin console both say rotation revokes the old key with reason `rotated`. The "24h grace period" in a comment does not exist. Migration 0056 adds `revoke_after`, but no code sets or reads it, and there is no sweep job (HANDOVER: 0054-0056 were abandoned).
+- What it breaks: A merchant's key leaks. Ops rotates it. The attacker's copy still works on `/v1/transactions` and every other API-key route, so the rotation gives false safety.
+- Fix: In the same transaction, set `revoked_at = now()` and `revoked_reason = 'rotated'` on the old key. `verifyApiKey` already rejects revoked keys.
+- Test: apps/api/src/routes/admin.test.ts, "API key rotation issues a new key atomically, revokes the previous key, and audits it" (the old test asserted the bug: "the previous key stays active", so it was changed)
