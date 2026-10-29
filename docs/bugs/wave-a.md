@@ -109,3 +109,13 @@
 - What it breaks: A merchant that KYC rejected (or one that never sent documents) is ticked by mistake in a bulk run and becomes approved with `kyc_passed = true`, so it can take live payments. There is no per-merchant review row, so the KYC trail cannot show who approved it.
 - Fix: Lock and select only `under_review` merchants from the list, then approve each through `recordKycReviewInTx` (one review row each, with the admin's id and email). The single batch audit row stays.
 - Test: apps/api/src/routes/admin.test.ts, "bulk approve KYC only moves under_review merchants and writes a review row for each"
+
+### A12 Impersonation could still write through routes with no role gate
+- Severity: High
+- Ticket: "some admin actions don't seem to have the right role checks"
+- Where: apps/api/src/auth/requireMerchantAuth.ts (impersonation branch); routes/transactions.ts capture/void; routes/reporting.ts saved-filters
+- What is wrong: an admin "viewing as merchant" could capture, void and create saved filters.
+- Why it happens: the grant maps to the read-only `support` role, but these routes only check `requireMerchantAuth` and never check a role, so the role alone does not stop the write.
+- What it breaks: an operator can move money (capture or void) as the merchant, and the audit records it as a merchant session.
+- Fix: the auth hook rejects every non-GET request that arrives with an impersonation grant (one check, one place).
+- Test: apps/api/src/auth/impersonationReadOnly.fix.test.ts
