@@ -297,11 +297,19 @@ export async function getReconciliationReport(
   const windowEnd = bahrainLocalMidnightUtc(input.to);
 
   const [ledgerResult, settlementResult, pendingResult, merchantResult, pendingRefundResult] = await Promise.all([
+    // Payout legs (merchant_payable -> platform_cash, posted by PayoutBatch
+    // and split payouts) are the batch being paid, not earnings: the batch
+    // side already counts them as settlementNetPayoutFils.
     pool.query<{ net: string }>(
-      `SELECT COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount_fils ELSE -amount_fils END), 0) AS net
-         FROM ledger_entries
-        WHERE merchant_id = $1 AND account_id = 'merchant_payable'
-          AND occurred_at >= $2 AND occurred_at < $3`,
+      `SELECT COALESCE(SUM(CASE WHEN le.direction = 'credit' THEN le.amount_fils ELSE -le.amount_fils END), 0) AS net
+         FROM ledger_entries le
+        WHERE le.merchant_id = $1 AND le.account_id = 'merchant_payable'
+          AND le.occurred_at >= $2 AND le.occurred_at < $3
+          AND NOT EXISTS (SELECT 1 FROM ledger_entries cash
+                           WHERE cash.entry_group_id = le.entry_group_id
+                             AND cash.account_id = 'platform_cash'
+                             -- both legs share merchant and occurred_at: uses the (merchant_id, occurred_at) index
+                             AND cash.merchant_id = le.merchant_id AND cash.occurred_at = le.occurred_at)`,
       [input.merchantId, windowStart, windowEnd],
     ),
     pool.query<{ total: string }>(

@@ -117,3 +117,13 @@
 - What it breaks: a merchant cannot remove an old or leaked webhook URL; support has to touch the database.
 - Fix: migration 0085 makes the column nullable with ON DELETE SET NULL, so the delivery log stays as an audit trail. The dispatcher skips pending rows whose endpoint is gone, so one deleted endpoint cannot block the queue.
 - Test: apps/api/src/webhooks/cancel.fix.test.ts
+
+### D15 Reconciliation shows a gap of minus the payout once a batch is paid
+- Severity: High
+- Ticket: none
+- Where: apps/api/src/settlement/query.ts (getReconciliationReport, ledger query)
+- What is wrong: after a batch is paid, `GET /v1/settlement/reconciliation` shows `gapFils = -netPayout` (e.g. -5835) for a merchant with no refunds, and `explained: false`.
+- Why it happens: the ledger side sums every `merchant_payable` entry in the window, including the payout leg (`merchant_payable` debit, `platform_cash` credit) that PayoutBatch posts. The settlement side also counts the same batch as `settlementNetPayoutFils`. So the payout is subtracted twice. The old test hid this by putting the payout outside the one-day window; any wider window (a week, a month) includes it.
+- What it breaks: finance sees an unexplained gap for every paid batch, so the report cannot be used to find real gaps.
+- Fix: the ledger side leaves out payout legs (entries whose entry group has a `platform_cash` leg). It now counts what the merchant earned, which is what the batch and pending figures explain.
+- Test: apps/api/src/routes/settlement.test.ts ("GET /v1/settlement/reconciliation stays at gap 0 when the window also covers the batch payout").

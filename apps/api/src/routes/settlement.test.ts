@@ -385,6 +385,35 @@ test("GET /v1/settlement/reconciliation reports gapFils === 0 for a fully-batche
   assert.equal(report.ledgerMerchantPayableNetFils, expectedNet);
 });
 
+// D15: the payout ledger leg (merchant_payable debit -> platform_cash) is
+// cash leaving, not earnings. A window that also covers the payout instant
+// must still reconcile to 0, not to -netPayout.
+test("GET /v1/settlement/reconciliation stays at gap 0 when the window also covers the batch payout", async () => {
+  const { merchantId, rawKey } = await createApprovedMerchantWithApiKey("reconciliation-paid", 250);
+  const txn = await authorize(rawKey, 5_985);
+  await capture(rawKey, txn.id);
+
+  const businessDate = todayBahrainDateString();
+  await closeAndPayoutBatch(merchantId, businessDate);
+
+  // Payout legs are posted 12h after the business day closes; a 2-day
+  // window includes them (as any weekly or monthly report does).
+  const dayAfterNext = addOneCalendarDay(addOneCalendarDay(businessDate));
+  const res = await app.inject({
+    method: "GET",
+    url: `/v1/settlement/reconciliation?from=${businessDate}&to=${dayAfterNext}`,
+    headers: authHeader(rawKey),
+  });
+  assert.equal(res.statusCode, 200, res.body);
+  const report = res.json() as { gapFils: number; explained: boolean; settlementNetPayoutFils: number; ledgerMerchantPayableNetFils: number };
+
+  const expectedNet = 5_985 - Number(applyRateFils(toFils(5_985), 250));
+  assert.equal(report.settlementNetPayoutFils, expectedNet);
+  assert.equal(report.ledgerMerchantPayableNetFils, expectedNet, "the payout leg is not earnings and must not count");
+  assert.equal(report.gapFils, 0);
+  assert.equal(report.explained, true);
+});
+
 // merchant in this fixture has no discount and no schedule row, so the float path is exact here — MK
 test("GET /v1/settlement/reconciliation with an unbatched capture reports it as pendingUnbatchedFils, not an unexplained gap", async () => {
   const { rawKey } = await createApprovedMerchantWithApiKey("reconciliation-pending", 250);
