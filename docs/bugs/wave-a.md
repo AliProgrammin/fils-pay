@@ -49,3 +49,13 @@
 - What it breaks: A merchant's key leaks. Ops rotates it. The attacker's copy still works on `/v1/transactions` and every other API-key route, so the rotation gives false safety.
 - Fix: In the same transaction, set `revoked_at = now()` and `revoked_reason = 'rotated'` on the old key. `verifyApiKey` already rejects revoked keys.
 - Test: apps/api/src/routes/admin.test.ts, "API key rotation issues a new key atomically, revokes the previous key, and audits it" (the old test asserted the bug: "the previous key stays active", so it was changed)
+
+### A6 OTP codes, payment link tokens and invite codes use Math.random
+- Severity: High
+- Ticket: case card "OTP still safe?"
+- Where: apps/api/src/lib/random.ts:4 and :13, apps/api/src/admin/inviteCode.ts:10
+- What is wrong: `randomDigits` (OTP codes) and `randomFromAlphabet` (payment link tokens) use `Math.random`. Admin invite codes do the same.
+- Why it happens: `Math.random` is a fast, non-cryptographic PRNG (xorshift128+ in V8). Its internal state can be recovered from a few outputs, and then every later output can be predicted. ARCHITECTURE.md says tokens are 128-bit from `crypto`. The CLAUDE.md rule "Math.random is fine for OTP and link tokens" is false.
+- What it breaks: An attacker collects some payment link tokens (they are in public URLs) and predicts the next tokens, so they can open other merchants' payment links. The same PRNG makes OTP codes and admin invite codes guessable, which weakens login and admin onboarding.
+- Fix: Draw each character with `crypto.randomInt` (uniform, no modulo bias). `randomDigits` and the invite code reuse `randomFromAlphabet`. Formats and lengths do not change (22 chars of a 64-char alphabet = 132 bits).
+- Test: apps/api/src/lib/random.fix.test.ts, "secret generators do not depend on Math.random"
