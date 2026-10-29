@@ -61,3 +61,11 @@
 - Fix: the export is an async generator that pages 1000 rows at a time with keyset `(occurred_at, id) > (cursor)` and `ORDER BY occurred_at, id` (matches index `idx_transactions_merchant_occurred`). The cursor uses `occurred_at::text`, so no precision loss. The route sends it with `Readable.from(...)`, which respects backpressure and stops on client disconnect. `buildTransactionsExportCsv` is now a thin wrapper over the stream (same output), so the existing tests cover the real path. Bad `from`/`to` returns 400 `invalid_request`.
 - Test: apps/api/src/transactions/exportCsv.fix.test.ts: "B6: streaming export returns every row once when many rows share one occurred_at", "B6: GET /v1/transactions/export returns all rows across pages", "B6: an invalid from/to is a 400, not a 500" (was 500).
 - Note: the list route `GET /v1/transactions` parses `from`/`to` the same way and likely has the same 500; not changed here (outside this bug).
+
+### B7 Capture idempotency ignores which transaction is captured
+- Severity: Medium / Ticket: none / Where: apps/api/src/payments/capture.ts:92
+- What is wrong: the capture request hash is `hashRequest({ amountFils })`. The transaction id is not in it.
+- Why it happens: idempotency keys are unique per merchant + endpoint (`transactions.capture`), not per transaction. Two captures on different transactions with the same key and amount look like the same request.
+- What it breaks: a merchant integration that reuses a key (for example the order number, or a fixed key in a retry loop) captures transaction A, then "captures" transaction B with the same key. B is not captured, but the API replays A's 200 response. The merchant believes B was charged and ships the goods; B's authorization later expires and the merchant is never paid.
+- Fix: the hash now includes `transactionId`. The same key on another transaction returns 422 `idempotency_key_reused` (the existing rule for a changed request). A true retry on the same transaction still replays. Side effect: a capture retry whose first attempt was stored before this deploy gets 422 once (hash shape changed); it can be retried with a new key.
+- Test: apps/api/src/payments/capture.fix.test.ts "B7: the same Idempotency-Key on a different transaction does not replay the first capture" (was 200 replay of transaction A).

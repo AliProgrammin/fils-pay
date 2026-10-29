@@ -89,7 +89,10 @@ export async function captureTransaction(
   acquirer: AcquirerSimulator,
   input: CaptureInput,
 ): Promise<CaptureResult> {
-  const requestHash = hashRequest({ amountFils: input.amountFils ?? null });
+  // The key is scoped per merchant + endpoint, not per transaction, so the
+  // transaction id must be in the hash (B7): the same key on another
+  // transaction is a 422, never a replay of the first one's response.
+  const requestHash = hashRequest({ transactionId: input.transactionId, amountFils: input.amountFils ?? null });
 
   return withTransaction(pool, async (client) => {
     const claim = await claimIdempotencyKey(client, {
