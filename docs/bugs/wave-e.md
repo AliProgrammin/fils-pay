@@ -60,3 +60,13 @@
 - What it breaks: Refund reporting for finance (Huda: "reconciliation still ties out after refunds"). Refund rate (refunded / captured) is either missing or about half the real value for multi-refund transactions.
 - Fix: New migration `0077_refund_merchant_summary_fix_join.sql` (0072 may already be applied, so it is not edited). It drops and recreates the view: join on `r.transaction_id`, and aggregate per transaction first so each captured amount counts once per merchant and business day. Same columns, types and unique index (no code reads the view yet, so nothing else changes).
 - Test: `apps/api/src/db/refundMerchantSummary.fix.test.ts`
+
+### E7 Dashboard crashes on a negative amount
+- Severity: Low
+- Ticket: E7
+- Where: `apps/web/src/format.ts:11` (`bhd`)
+- What is wrong: `bhd()` called `toFils(amountFils)` without `allowNegative`. `toFils` throws on a negative number, so `bhd(-4750)` threw instead of showing "-4.750 BHD".
+- Why it happens: A review note said "amounts are never negative in the dashboard". That is false: the Reconciliation page shows `gapFils` and ledger nets that can be negative, and refunds are negative movements. The test comment "covers negatives too" had no negative case.
+- What it breaks: The render throws, React unmounts the page, and the user sees a blank screen exactly when there is a gap to investigate.
+- Fix: `toFils(amountFils, { allowNegative: true })`. `formatBhd` already prints the sign.
+- Test: new test "bhd renders a negative amount instead of throwing" in `apps/web/src/dashboard.test.ts`
