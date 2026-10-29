@@ -81,3 +81,11 @@
 - What it breaks: dashboards and reports stop updating. A fresh database passes the reporting tests (11/11); the database after the API test suite failed 4.
 - Fix: the fixture now writes an inert, already-processed event type (`archive.test.fixture`). The parity check treats a missing rollup row as 0 and warns. Existing shared test DBs keep old poison rows; clean them once with: `UPDATE outbox_events oe SET event_type='archive.test.fixture' WHERE event_type IN ('transaction.captured','transaction.voided') AND payload::text='{}' AND EXISTS (SELECT 1 FROM webhook_deliveries wd WHERE wd.outbox_event_id = oe.id);`
 - Test: apps/api/src/webhooks/archiveReplay.test.ts ("fixtures never enqueue a rollup-eligible outbox event"), apps/reporting/src/consumer/applyEvent.fix.test.ts.
+
+### D6 Reporting cursor is not locked, so worker + catch-up apply events twice
+- Severity: High. Ticket: none. Where: apps/reporting/src/consumer/cursor.ts:23-51
+- What is wrong: readCursor did a plain SELECT of the watermark and advanceCursor did an absolute SET.
+- Why it happens: two passes (the live worker and `reporting catch-up`, which the RUNBOOK says is safe to run beside it, or two replicas) both read the same watermark, both apply the same events, then both write it. The `running` flag in listener.ts only guards one process. An absolute SET can also move the watermark back.
+- What it breaks: merchant_daily_volume counts and totals are inflated (the test saw 39 captures counted for 20 real ones). This matches the 2026-09-14 note "rollup looked high after catch-up".
+- Fix: lock the cursor row `FOR UPDATE` inside the pass transaction, so passes with the same consumer name run one after the other; advance with `GREATEST(last_processed_id, $2)` so the watermark never goes back.
+- Test: apps/reporting/src/consumer/cursor.fix.test.ts.

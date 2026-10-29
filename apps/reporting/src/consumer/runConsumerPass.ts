@@ -31,9 +31,9 @@ export const CONSUMER_NAME = "reporting";
  * the watermark alone sufficient for exactly-once application, with no
  * separate per-event dedup table the way webhook_deliveries needs one.
  *
- * The `SELECT` below is a plain, unlocked read — no row lock, no
- * `FOR UPDATE`, no mutation of any outbox_events column — identical
- * posture to webhooks/dispatcher.ts's Step A.
+ * readCursor locks this consumer's cursor row FOR UPDATE for the whole
+ * pass, so concurrent passes (worker + catch-up) are serialised. The
+ * outbox_events SELECT itself takes no lock and mutates no outbox column.
  */
 export async function runConsumerPass(
   pool: Pool,

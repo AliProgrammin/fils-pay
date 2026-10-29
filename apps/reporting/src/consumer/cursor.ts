@@ -19,8 +19,13 @@ interface CursorRow {
  * Seeds the row on first ever run (INSERT ... ON CONFLICT DO NOTHING),
  * then reads it. Never throws on a missing row — a worker's first pass
  * against a fresh database always starts from 0.
+ *
+ * Must be called inside the pass transaction: the row is locked FOR UPDATE
+ * until that transaction ends, so two passes with the same consumer name
+ * (the live worker and `reporting catch-up`, or two worker replicas) run
+ * one after the other and never apply the same events twice. listener.ts's
+ * `running` flag only guards one process.
  */
-// am: no FOR UPDATE on the cursor read, two passes can read the same watermark? nvm the `running` flag in listener.ts guards it
 export async function readCursor(client: QueryableClient, consumerName: string): Promise<ConsumerCursor> {
   await client.query(
     `INSERT INTO reporting_outbox_cursor (consumer_name, last_processed_id)
@@ -29,7 +34,7 @@ export async function readCursor(client: QueryableClient, consumerName: string):
     [consumerName],
   );
 
-  const result = (await client.query(`SELECT last_processed_id FROM reporting_outbox_cursor WHERE consumer_name = $1`, [
+  const result = (await client.query(`SELECT last_processed_id FROM reporting_outbox_cursor WHERE consumer_name = $1 FOR UPDATE`, [
     consumerName,
   ])) as { rows: CursorRow[] };
 
@@ -37,7 +42,8 @@ export async function readCursor(client: QueryableClient, consumerName: string):
   return { lastProcessedId: row ? BigInt(row.last_processed_id) : 0n };
 }
 
-// YA: absolute SET is fine, only one writer.
+/** Moves the watermark forward only (GREATEST): a stale value can never
+ *  move it back and cause events to be applied again. */
 export async function advanceCursor(
   client: QueryableClient,
   consumerName: string,
@@ -45,7 +51,7 @@ export async function advanceCursor(
 ): Promise<void> {
   await client.query(
     `UPDATE reporting_outbox_cursor
-        SET last_processed_id = $2, updated_at = now()
+        SET last_processed_id = GREATEST(last_processed_id, $2::bigint), updated_at = now()
       WHERE consumer_name = $1`,
     [consumerName, newLastProcessedId.toString()],
   );
