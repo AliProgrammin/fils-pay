@@ -23,3 +23,11 @@
 - What it breaks: 4.747 BD is sent to the scheme as 4.75, but `amount_fils` says 4740. 1.239 goes as 1.24, 1.005 goes as 1.01 (float). The scheme file is up to 9 fils per line over the ledger figure. The file and the fils column never agree, so residue (C9) and reconciliation are wrong.
 - Fix: `amount` is computed in SQL from the same truncated integer: `$3::bigint::numeric / 1000`. No float. `SchemeAmountBD` is removed. Rows already exported are not rewritten, because they match what the scheme received.
 - Test: `TestSchemeExportAmountMatchesTruncatedFils_Fix` in `internal/settlement/scheme_export_fix_test.go`.
+
+### C9 Scheme rounding residue is never journaled
+- Severity: Medium. Ticket: ADR-0002 / FP-187. Where: `apps/settlement/internal/settlement/batch.go:250`.
+- What is wrong: ADR-0002 says CloseBatch posts `gross - amount_fils` per line to `scheme_rounding_residue`. The code only inserts the export line. No ledger posting exists. The ADR status "implemented" is false.
+- Why it happens: the residue step was never written. The `scheme_rounding_residue` account (migration 0007) has never had a single entry.
+- What it breaks: `card_scheme_clearing` is debited the full gross at capture but the scheme pays only the truncated amount. Captures of 4.747 and 1.239 BD leave 16 fils in clearing with no record. Over a month this is a few BD per busy merchant. Ledger, report and scheme statement cannot agree.
+- Fix: inside CloseBatch, in the same transaction as the export line, post one balanced group per line with residue > 0: credit `card_scheme_clearing`, debit `scheme_rounding_residue`, with merchant, transaction and batch ids.
+- Test: `TestCloseBatch_JournalsSchemeRoundingResidue_Fix` in `internal/settlement/residue_fix_test.go`.
