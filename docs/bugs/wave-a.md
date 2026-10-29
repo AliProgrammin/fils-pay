@@ -69,3 +69,13 @@
 - What it breaks: The limit is 5 guesses. Our test sends 25 parallel wrong guesses and all 25 are checked, on merchant and admin login. A 6-digit code has 1,000,000 values, so large parallel batches plus resend every 30s (which gives 5 new guesses each time) make brute force practical. Together with A1/A2 this was the last line of defence.
 - Fix: (1) Claim the attempt first with one statement: `UPDATE ... SET attempt_count = attempt_count + 1 WHERE id = $1 AND attempt_count < max_attempts RETURNING id`. No row back means the budget is used: revoke the session and answer 429. (2) In resend, read `attempt_count` from the consumed challenge (`RETURNING attempt_count`) and set it on the new challenge in the same transaction.
 - Test: apps/api/src/routes/auth.fix.test.ts, "parallel wrong OTP guesses cannot exceed max_attempts", "OTP resend carries the used attempt count over to the new challenge", "parallel wrong admin OTP guesses cannot exceed max_attempts"
+
+### A8 Impersonation gives finance and super_admin write roles
+- Severity: High
+- Ticket: case card "Missing role checks" (impersonation gives owner)
+- Where: apps/api/src/admin/impersonation.ts:85-89
+- What is wrong: "View as merchant" maps admin `finance` to merchant `finance` and `super_admin` to merchant `owner`.
+- Why it happens: The role map was written as a privilege mirror. But HANDOVER.md says impersonation maps every admin to the `support` merchant role and is read-only. The code's own comments ("Always support", "impersonation is read-only, enforced in requireMerchantAuth") say the same. The merchant routes trust this role through `requireMerchantRole("owner", "finance")`, so the map is the only guard.
+- What it breaks: A finance or super_admin operator opens "view as merchant" and can create payment links, add webhook endpoints (send the merchant's events to any URL) and request payouts as the merchant. These writes are logged as merchant actions. ADMIN.md's "super_admin can make changes while viewing" conflicts with HANDOVER; we follow HANDOVER and the case card.
+- Fix: Map all three admin roles to `support`.
+- Test: apps/api/src/admin/impersonation.fix.test.ts, "a finance impersonation grant resolves to the read-only merchant role 'support'" and "a super_admin impersonation grant resolves to the read-only merchant role 'support'"
