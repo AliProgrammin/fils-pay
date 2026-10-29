@@ -190,49 +190,130 @@ test("formatBhd and parseBhdToFils round-trip", () => {
   }
 });
 
+/** One-refund helper: nothing refunded or reversed before this refund. */
+function firstRefundFee(captured: number, fee: number, refund: number) {
+  return calculateRefundFee({
+    capturedFils: toFils(captured),
+    feeChargedFils: toFils(fee),
+    refundedBeforeFils: ZERO_FILS,
+    feeReversedBeforeFils: ZERO_FILS,
+    refundAmountFils: toFils(refund),
+  });
+}
+
 test("calculateRefundFee reverses the whole fee when the whole capture is refunded", () => {
-  assert.equal(calculateRefundFee(toFils(10_000), toFils(250), toFils(10_000)), 250);
-  assert.equal(calculateRefundFee(toFils(1_000), toFils(25), toFils(1_000)), 25);
-  assert.equal(calculateRefundFee(toFils(4_750), toFils(119), toFils(4_750)), 119);
+  assert.equal(firstRefundFee(10_000, 250, 10_000), 250);
+  assert.equal(firstRefundFee(1_000, 25, 1_000), 25);
+  assert.equal(firstRefundFee(4_750, 119, 4_750), 119);
 });
 
 test("calculateRefundFee reverses a proportional share of the fee", () => {
-  assert.equal(calculateRefundFee(toFils(10_000), toFils(250), toFils(5_000)), 125);
-  assert.equal(calculateRefundFee(toFils(10_000), toFils(250), toFils(2_000)), 50);
+  assert.equal(firstRefundFee(10_000, 250, 5_000), 125);
+  assert.equal(firstRefundFee(10_000, 250, 2_000), 50);
 });
 
 test("calculateRefundFee reverses nothing for a zero refund", () => {
-  assert.equal(calculateRefundFee(toFils(10_000), toFils(250), ZERO_FILS), 0);
+  assert.equal(firstRefundFee(10_000, 250, 0), 0);
 });
 
-// MK: locks in per-call rounding. keep.
 test("calculateRefundFee breaks an exact tie to even, like applyRateFils", () => {
   // 25 * 100 / 1000 = 2.5 exactly — banker's rounding takes the even
   // neighbour, so 2 rather than 3.
-  assert.equal(calculateRefundFee(toFils(1_000), toFils(25), toFils(100)), 2);
+  assert.equal(firstRefundFee(1_000, 25, 100), 2);
+});
+
+// R5: partial refunds must reverse, in total, exactly the fee charged.
+// Rounding each refund on its own gave 10 x round(2.5) = 20, not 25.
+test("calculateRefundFee: ten partial refunds of 100 on a 1000 capture reverse exactly the 25 fee", () => {
+  let refunded = 0;
+  let reversed = 0;
+  for (let i = 0; i < 10; i += 1) {
+    const share = calculateRefundFee({
+      capturedFils: toFils(1_000),
+      feeChargedFils: toFils(25),
+      refundedBeforeFils: toFils(refunded),
+      feeReversedBeforeFils: toFils(reversed),
+      refundAmountFils: toFils(100),
+    });
+    assert.ok(share >= 0);
+    refunded += 100;
+    reversed += share;
+    // After each refund the running total is round(fee * refunded / captured).
+    assert.equal(reversed, Number(bankersRoundDiv(25n * BigInt(refunded), 1_000n)));
+  }
+  assert.equal(reversed, 25);
+});
+
+test("calculateRefundFee: any split of a capture sums back to the fee", () => {
+  for (const parts of [[1, 1, 998], [333, 333, 334], [7, 993], [999, 1]]) {
+    let refunded = 0;
+    let reversed = 0;
+    for (const part of parts) {
+      reversed += calculateRefundFee({
+        capturedFils: toFils(1_000),
+        feeChargedFils: toFils(37),
+        refundedBeforeFils: toFils(refunded),
+        feeReversedBeforeFils: toFils(reversed),
+        refundAmountFils: toFils(part),
+      });
+      refunded += part;
+    }
+    assert.equal(reversed, 37, `split ${parts.join("+")}`);
+  }
 });
 
 test("calculateRefundFee rejects a non-positive captured amount", () => {
-  assert.throws(() => calculateRefundFee(ZERO_FILS, toFils(250), toFils(100)), RangeError);
+  assert.throws(() => firstRefundFee(0, 250, 100), RangeError);
   assert.throws(
-    () => calculateRefundFee(toFils(-10_000, { allowNegative: true }), toFils(250), toFils(100)),
+    () =>
+      calculateRefundFee({
+        capturedFils: toFils(-10_000, { allowNegative: true }),
+        feeChargedFils: toFils(250),
+        refundedBeforeFils: ZERO_FILS,
+        feeReversedBeforeFils: ZERO_FILS,
+        refundAmountFils: toFils(100),
+      }),
     RangeError,
   );
 });
 
-test("calculateRefundFee rejects negative fee or refund inputs", () => {
+test("calculateRefundFee rejects negative inputs and a refund past the capture", () => {
   assert.throws(
-    () => calculateRefundFee(toFils(10_000), toFils(-250, { allowNegative: true }), toFils(100)),
+    () =>
+      calculateRefundFee({
+        capturedFils: toFils(10_000),
+        feeChargedFils: toFils(-250, { allowNegative: true }),
+        refundedBeforeFils: ZERO_FILS,
+        feeReversedBeforeFils: ZERO_FILS,
+        refundAmountFils: toFils(100),
+      }),
     RangeError,
   );
   assert.throws(
-    () => calculateRefundFee(toFils(10_000), toFils(250), toFils(-100, { allowNegative: true })),
+    () =>
+      calculateRefundFee({
+        capturedFils: toFils(10_000),
+        feeChargedFils: toFils(250),
+        refundedBeforeFils: ZERO_FILS,
+        feeReversedBeforeFils: ZERO_FILS,
+        refundAmountFils: toFils(-100, { allowNegative: true }),
+      }),
+    RangeError,
+  );
+  assert.throws(
+    () =>
+      calculateRefundFee({
+        capturedFils: toFils(10_000),
+        feeChargedFils: toFils(250),
+        refundedBeforeFils: toFils(9_000),
+        feeReversedBeforeFils: toFils(225),
+        refundAmountFils: toFils(1_001),
+      }),
     RangeError,
   );
 });
 
 test("calculateRefundFee returns a valid Fils", () => {
-  const fee = calculateRefundFee(toFils(10_000), toFils(250), toFils(3_333));
+  const fee = firstRefundFee(10_000, 250, 3_333);
   assert.equal(isFils(fee), true);
-  assert.equal(Number.isInteger(fee), true);
 });

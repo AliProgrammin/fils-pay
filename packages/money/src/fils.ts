@@ -238,37 +238,61 @@ export function formatBhd(fils: Fils): string {
   return `${negative ? "-" : ""}${wholeBd}.${String(fracFils).padStart(3, "0")}`;
 }
 
+export interface RefundFeeInput {
+  /** Total captured on the transaction. */
+  capturedFils: Fils;
+  /** Net fee the transaction was charged (MDR less any discount). */
+  feeChargedFils: Fils;
+  /** Refunded total before this refund. */
+  refundedBeforeFils: Fils;
+  /** Fee already reversed by earlier refunds of this transaction. */
+  feeReversedBeforeFils: Fils;
+  /** The refund being applied now. */
+  refundAmountFils: Fils;
+}
+
 /**
- * Calculates the portion of a previously-charged MDR fee that a refund of
- * `refundAmountFils` (out of a total `capturedFils` captured, against
- * `feeChargedFils` already charged at capture time) should reverse: the
- * merchant discount comes back in the same proportion the refund bears to
- * the capture it is returning. `bigint` intermediates and `bankersRoundDiv`
- * throughout, so no float ever touches the value and the rounding rule
- * matches `applyRateFils`' — the same primitive the fee was charged with.
+ * The share of the fee this refund reverses, computed CUMULATIVELY so the
+ * partial refunds of one capture always sum back to exactly the fee charged:
  *
- * No upper bound is asserted on `refundAmountFils` relative to
- * `capturedFils`. Whether a refund is *permitted* is an authorization
- * question, answered where the transaction's full state is visible; a
- * proportion is well-defined for any ratio, and duplicating the ceiling here
- * would only create a second place for it to be wrong.
+ *   reversedAfter = round(fee * refundedAfter / captured)   (banker's rounding)
+ *   thisRefund    = reversedAfter - feeReversedBefore
  *
- * This signature (captured amount, fee already charged, amount being
- * refunded) is a reasonable starting shape, not a fixed contract; whoever
- * builds refunds out should revisit it freely.
+ * When refundedAfter === captured, reversedAfter === fee exactly, so the
+ * final refund reverses exactly the remainder. Rounding each refund on its
+ * own (the old shape) lost or gained a fils per refund: ten refunds of 100
+ * on a 1000 capture with a 25 fee reversed 10 x round(2.5) = 20, not 25.
+ * `bigint` intermediates throughout, no float.
  */
-export function calculateRefundFee(capturedFils: Fils, feeChargedFils: Fils, refundAmountFils: Fils): Fils {
+export function calculateRefundFee(input: RefundFeeInput): Fils {
+  const { capturedFils, feeChargedFils, refundedBeforeFils, feeReversedBeforeFils, refundAmountFils } = input;
   if (compareFils(capturedFils, ZERO_FILS) <= 0) {
     throw new RangeError(`calculateRefundFee: capturedFils must be positive, got ${capturedFils}`);
   }
-  if (compareFils(feeChargedFils, ZERO_FILS) < 0 || compareFils(refundAmountFils, ZERO_FILS) < 0) {
+  for (const [name, value] of [
+    ["feeChargedFils", feeChargedFils],
+    ["refundedBeforeFils", refundedBeforeFils],
+    ["feeReversedBeforeFils", feeReversedBeforeFils],
+    ["refundAmountFils", refundAmountFils],
+  ] as const) {
+    if (compareFils(value, ZERO_FILS) < 0) {
+      throw new RangeError(`calculateRefundFee: ${name} must be non-negative, got ${value}`);
+    }
+  }
+  const refundedAfter = BigInt(refundedBeforeFils) + BigInt(refundAmountFils);
+  if (refundedAfter > BigInt(capturedFils)) {
     throw new RangeError(
-      `calculateRefundFee: feeChargedFils and refundAmountFils must be non-negative, got ` +
-        `${feeChargedFils} and ${refundAmountFils}`,
+      `calculateRefundFee: refunded total ${refundedAfter} would exceed captured ${capturedFils}`,
     );
   }
 
-  const share = bankersRoundDiv(BigInt(feeChargedFils) * BigInt(refundAmountFils), BigInt(capturedFils));
+  const reversedAfter = bankersRoundDiv(BigInt(feeChargedFils) * refundedAfter, BigInt(capturedFils));
+  const share = reversedAfter - feeReversedBeforeFils;
+  if (share < 0) {
+    throw new RangeError(
+      `calculateRefundFee: fee already reversed (${feeReversedBeforeFils}) is above the cumulative share ${reversedAfter}`,
+    );
+  }
   return toFilsInternal(share, true);
 }
 

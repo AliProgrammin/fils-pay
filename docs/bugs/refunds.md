@@ -51,3 +51,13 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 - What it breaks: At launch every merchant gets live refunds at once, with no per-merchant control.
 - Fix: Only `refunds_enabled = true` passes. NULL and false answer 403 `refunds_not_enabled`. The test helper enables refunds for its merchants, and a new test covers NULL.
 - Test: `apps/api/src/refunds/initiateMerchantRefund.test.ts` ("a refund is refused when refunds_enabled is NULL (never enabled)").
+
+### R5 Fee reversal does not add up to the fee charged
+- Severity: High
+- Ticket: FP-300
+- Where: `packages/money/src/fils.ts` (`calculateRefundFee`), `apps/api/src/payments/processRefund.ts` (fee base query)
+- What is wrong: (1) Partial refunds did not reverse the whole fee. Fee 25 fils on a 1.000 BD capture, ten refunds of 0.100 BD: each reversed round(2.5) = 2, so 20 in total, not 25. The merchant lost 5 fils for a payment that was fully refunded. (2) For a merchant with a negotiated discount, the refund reversed the gross MDR, not the net fee the merchant was really charged, so the merchant got the discount back a second time.
+- Why it happens: (1) `calculateRefundFee` rounded each refund alone, with no memory of earlier refunds. Yousif's handover says it "sums back to the original fee across partials"; it did not. (2) The fee base summed only the `platform_fee_revenue` credits and ignored the `capture: negotiated discount adjustment` debits.
+- What it breaks: Merchant payable for a fully refunded payment is not 0. Fees and payouts are off by a few fils per refund, and by the whole discount for discounted merchants.
+- Fix: Cumulative reversal. `reversed_after = round(fee * refunded_after / captured)` (banker's rounding, bigint), this refund reverses `reversed_after - already_reversed`. When everything is refunded, `reversed_after = fee` exactly, so the last refund takes the exact remainder. The fee base is now the net fee: capture fee credits minus discount debits on `platform_fee_revenue` for this transaction (refund reversals left out); `already_reversed` is the sum of earlier `refunds.fee_reversed_fils`. `calculateRefundFee` takes a named-field object so the five inputs cannot be swapped by mistake.
+- Test: `packages/money/src/fils.test.ts` ("ten partial refunds of 100 ... reverse exactly the 25 fee", "any split ... sums back to the fee"), `apps/api/src/payments/processRefund.test.ts` ("ten partial refunds reverse, in total, exactly the fee charged", "a full refund for a discounted merchant reverses the net fee and leaves payable at 0").

@@ -627,3 +627,80 @@ test("another merchant's transaction answers 404 and nothing is written", async 
   assert.equal(row.rows[0]!.status, "captured");
   assert.equal(Number(row.rows[0]!.refunded_fils), 0);
 });
+
+/** Net fee the platform kept for a transaction: capture fee credits less
+ *  discount debits on platform_fee_revenue, excluding refund reversals. */
+async function netFeeCharged(transactionId: string): Promise<number> {
+  const r = await pool.query<{ fee: string }>(
+    `SELECT COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount_fils ELSE -amount_fils END), 0)::text AS fee
+       FROM ledger_entries
+      WHERE transaction_id = $1 AND account_id = 'platform_fee_revenue' AND description NOT LIKE 'refund:%'`,
+    [transactionId],
+  );
+  return Number(r.rows[0]!.fee);
+}
+
+async function merchantPayableFor(transactionId: string): Promise<number> {
+  const r = await pool.query<{ net: string }>(
+    `SELECT COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount_fils ELSE -amount_fils END), 0)::text AS net
+       FROM ledger_entries WHERE transaction_id = $1 AND account_id = 'merchant_payable'`,
+    [transactionId],
+  );
+  return Number(r.rows[0]!.net);
+}
+
+// R5: ten partial refunds of 100 on a 1,000 capture. Per-refund rounding
+// reversed 10 x round(2.5) = 20 of a 25 fee; the cumulative rule reverses 25.
+test("ten partial refunds reverse, in total, exactly the fee charged", async () => {
+  const merchant = await createApprovedMerchantWithApiKey("refund-ten-partials", 250);
+  const txn = await capturedTransaction(merchant.rawKey, 1_000);
+  const actor = await apiKeyActor(merchant.merchantId);
+  const fee = await netFeeCharged(txn.id);
+  assert.ok(fee > 0);
+
+  for (let i = 0; i < 10; i += 1) {
+    const result = await processRefund(pool, approvingAcquirer, {
+      transactionId: txn.id,
+      merchantId: merchant.merchantId,
+      amountFils: toFils(100),
+      idempotencyKey: randomUUID(),
+      actor,
+    });
+    assert.equal(result.statusCode, 200, JSON.stringify(result.body));
+  }
+
+  const reversed = await pool.query<{ total: string }>(
+    `SELECT SUM(fee_reversed_fils)::text AS total FROM refunds WHERE transaction_id = $1`,
+    [txn.id],
+  );
+  assert.equal(Number(reversed.rows[0]!.total), fee);
+  assert.equal(await merchantPayableFor(txn.id), 0);
+});
+
+// R5: a merchant with a negotiated discount was charged fee - discount.
+// A refund reverses that NET fee, not the gross MDR, or the merchant is
+// paid the discount twice.
+test("a full refund for a discounted merchant reverses the net fee and leaves payable at 0", async () => {
+  const merchant = await createApprovedMerchantWithApiKey("refund-discount", 250);
+  await pool.query(`UPDATE merchants SET negotiated_discount_bps = 2000 WHERE id = $1`, [merchant.merchantId]);
+  const txn = await capturedTransaction(merchant.rawKey, 10_000);
+  const actor = await apiKeyActor(merchant.merchantId);
+  const fee = await netFeeCharged(txn.id);
+
+  const discount = await pool.query<{ c: number }>(
+    `SELECT COUNT(*)::int AS c FROM ledger_entries
+      WHERE transaction_id = $1 AND description = 'capture: negotiated discount adjustment'`,
+    [txn.id],
+  );
+  assert.equal(discount.rows[0]!.c, 2, "the capture route posted the discount adjustment");
+
+  const result = await processRefund(pool, approvingAcquirer, {
+    transactionId: txn.id,
+    merchantId: merchant.merchantId,
+    idempotencyKey: randomUUID(),
+    actor,
+  });
+  assert.equal(result.statusCode, 200, JSON.stringify(result.body));
+  assert.equal((result.body as { feeReversedFils: number }).feeReversedFils, fee);
+  assert.equal(await merchantPayableFor(txn.id), 0);
+});
