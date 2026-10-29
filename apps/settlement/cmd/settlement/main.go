@@ -136,8 +136,7 @@ func main() {
 		}
 		fmt.Printf("run-batch: enqueued %d settlement.paid event(s)\n", enqueued)
 
-	// YA: CLI rebuild goes from ledger_entries. the admin button goes somewhere else, see internalapi
-	// MK: same thing, different source. both fine.
+	// CLI and admin button both rebuild from ledger_entries (FP-203).
 	case "rebuild-balances":
 		fs := flag.NewFlagSet("rebuild-balances", flag.ExitOnError)
 		merchantFlag := fs.String("merchant", "", "merchant UUID (optional; omit to rebuild every merchant)")
@@ -150,12 +149,12 @@ func main() {
 			if err != nil {
 				log.Fatalf("settlement rebuild-balances: invalid --merchant: %v", err)
 			}
-			// am: --merchant writes the cache for that one merchant, same as the full rebuild
-			before, err := ledger.RebuildMerchantBalance(ctx, pool, id)
+			// Writes the cache for that one merchant, same as the full rebuild.
+			rebuilt, err := ledger.RebuildMerchantBalance(ctx, pool, id)
 			if err != nil {
 				log.Fatalf("settlement rebuild-balances: %v", err)
 			}
-			fmt.Printf("rebuild-balances: merchant=%s rebuilt=%d\n", id, before)
+			fmt.Printf("rebuild-balances: merchant=%s rebuilt=%d\n", id, rebuilt)
 			return
 		}
 

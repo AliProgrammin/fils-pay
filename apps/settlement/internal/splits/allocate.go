@@ -6,6 +6,7 @@ package splits
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -88,6 +89,8 @@ func PayoutSplitBatch(ctx context.Context, db *pgxpool.Pool, batchID uuid.UUID) 
 	}
 
 	var shares []ChildShare
+	var children []ChildWeight
+	var totalWeightBps int64
 	for rows.Next() {
 		var childID uuid.UUID
 		var weightBps int64
@@ -95,14 +98,22 @@ func PayoutSplitBatch(ctx context.Context, db *pgxpool.Pool, batchID uuid.UUID) 
 			rows.Close()
 			return SplitPayoutResult{}, err
 		}
-		share := money.ApplyRateFils(money.Fils(netPayout), weightBps)
-		shares = append(shares, ChildShare{ChildMerchantID: childID, WeightBps: weightBps, AllocatedFils: share})
+		shares = append(shares, ChildShare{ChildMerchantID: childID, WeightBps: weightBps})
+		children = append(children, ChildWeight{WeightBps: weightBps})
+		totalWeightBps += weightBps
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
 		return SplitPayoutResult{}, err
 	}
 	rows.Close()
+
+	if totalWeightBps != 10_000 {
+		return SplitPayoutResult{}, fmt.Errorf("splits: parent %s split weights sum to %d bps, want 10000", parentMerchantID, totalWeightBps)
+	}
+	for i, share := range ChildShares(money.Fils(netPayout), children) {
+		shares[i].AllocatedFils = share
+	}
 
 	var totalAllocated money.Fils
 	for _, s := range shares {

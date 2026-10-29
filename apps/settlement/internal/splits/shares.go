@@ -7,11 +7,12 @@ type ChildWeight struct {
 	WeightBps int64
 }
 
-// ChildShares distributes netPayout across children by their weights.
+// ChildShares distributes netPayout across children by their weights with
+// the largest-remainder method, so the shares always sum to netPayout.
 func ChildShares(netPayout money.Fils, children []ChildWeight) []money.Fils {
-	out := make([]money.Fils, len(children))
+	weights := make([]int64, len(children))
 	for i, c := range children {
-		out[i] = money.ApplyRateFils(netPayout, c.WeightBps)
+		weights[i] = c.WeightBps
 	}
-	return out
+	return money.AllocateRemainder(netPayout, weights)
 }

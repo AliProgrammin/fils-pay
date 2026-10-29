@@ -34,16 +34,16 @@ func TestRecordPlatformProcessedVolume_SmallValuesExact(t *testing.T) {
 	defer tx.Rollback(ctx) //nolint:errcheck
 
 	for _, gross := range []int64{1_000_000, 2_500_000, 47_500_000} {
-		current, err := ReadAndLockPlatformProcessedFils(ctx, tx)
+		_, err := ReadAndLockPlatformProcessedFils(ctx, tx)
 		if err != nil {
 			t.Fatalf("ReadAndLockPlatformProcessedFils: %v", err)
 		}
-		if err := RecordPlatformProcessedVolume(ctx, tx, current, gross); err != nil {
+		if err := RecordPlatformProcessedVolume(ctx, tx, gross); err != nil {
 			t.Fatalf("RecordPlatformProcessedVolume(%d): %v", gross, err)
 		}
 	}
 
-	var got int32
+	var got int64
 	err = tx.QueryRow(ctx, `SELECT total_processed_fils FROM platform_stats WHERE id = 1`).Scan(&got)
 	if err != nil {
 		t.Fatalf("read back total: %v", err)

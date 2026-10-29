@@ -1,11 +1,11 @@
 // Package ledger rebuilds merchant_balances from ledger_entries. Nothing
 // automatic calls this — the incremental path is in internal/balances.
-// This is for the manual `rebuild-balances` CLI subcommand.
+// Used by the `rebuild-balances` CLI subcommand and the admin
+// "Rebuild cached balances" button.
 package ledger
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -16,18 +16,70 @@ import (
 )
 
 // RebuildMerchantBalance recomputes merchantID's cached balance from
-// ledger_entries. CLI-only; the incremental path is in internal/balances.
+// ledger_entries, writes it to merchant_balances, and returns it. Backs
+// `rebuild-balances --merchant=X`.
 func RebuildMerchantBalance(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID) (money.Fils, error) {
-	var balance int64
-	err := db.QueryRow(ctx, `
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("ledger: RebuildMerchantBalance(%s): begin: %w", merchantID, err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	diff, err := rebuildMerchantInTx(ctx, tx, merchantID)
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("ledger: RebuildMerchantBalance(%s): commit: %w", merchantID, err)
+	}
+	return diff.Rebuilt, nil
+}
+
+// rebuildMerchantInTx locks merchantID's merchant_balances row (creating it
+// if missing) BEFORE it reads the ledger, then overwrites the cache with the
+// ledger sum. The lock makes a concurrent CloseBatch/PayoutBatch cache delta
+// either finish first (and its ledger legs are then seen) or wait and apply
+// on top of the rebuilt figure — never be clobbered.
+func rebuildMerchantInTx(ctx context.Context, tx pgx.Tx, merchantID uuid.UUID) (RebuildDiff, error) {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO merchant_balances (merchant_id, cached_payable_fils, updated_at)
+		VALUES ($1, 0, now())
+		ON CONFLICT (merchant_id) DO NOTHING
+	`, merchantID)
+	if err != nil {
+		return RebuildDiff{}, fmt.Errorf("ledger: rebuild %s: ensure cache row: %w", merchantID, err)
+	}
+
+	var cachedBefore int64
+	err = tx.QueryRow(ctx, `
+		SELECT cached_payable_fils FROM merchant_balances WHERE merchant_id = $1 FOR UPDATE
+	`, merchantID).Scan(&cachedBefore)
+	if err != nil {
+		return RebuildDiff{}, fmt.Errorf("ledger: rebuild %s: lock cached balance: %w", merchantID, err)
+	}
+
+	var rebuilt int64
+	err = tx.QueryRow(ctx, `
 		SELECT COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount_fils ELSE -amount_fils END), 0)
 		  FROM ledger_entries
 		 WHERE merchant_id = $1 AND account_id = 'merchant_payable'
-	`, merchantID).Scan(&balance)
+	`, merchantID).Scan(&rebuilt)
 	if err != nil {
-		return 0, fmt.Errorf("ledger: RebuildMerchantBalance(%s): %w", merchantID, err)
+		return RebuildDiff{}, fmt.Errorf("ledger: rebuild %s: recompute balance: %w", merchantID, err)
 	}
-	return money.Fils(balance), nil
+
+	_, err = tx.Exec(ctx, `
+		UPDATE merchant_balances SET cached_payable_fils = $2, updated_at = now() WHERE merchant_id = $1
+	`, merchantID, rebuilt)
+	if err != nil {
+		return RebuildDiff{}, fmt.Errorf("ledger: rebuild %s: write rebuilt balance: %w", merchantID, err)
+	}
+
+	return RebuildDiff{
+		MerchantID:   merchantID,
+		CachedBefore: money.Fils(cachedBefore),
+		Rebuilt:      money.Fils(rebuilt),
+	}, nil
 }
 
 // RebuildDiff is the before/after state for one merchant, printed by the
@@ -50,10 +102,7 @@ func (d RebuildDiff) Changed() bool {
 
 // RebuildAllBalances recomputes every merchant's balance the same way and
 // overwrites merchant_balances in one transaction. Returns the full
-// before/after map so a caller (the rebuild-balances CLI subcommand) can
-// print exactly what changed. The only function in this codebase that
-// writes merchant_balances from a full ledger recompute rather than an
-// incremental delta.
+// before/after map so a caller can print exactly what changed.
 func RebuildAllBalances(ctx context.Context, db *pgxpool.Pool) (map[uuid.UUID]RebuildDiff, error) {
 	tx, err := db.Begin(ctx)
 	if err != nil {
@@ -61,12 +110,14 @@ func RebuildAllBalances(ctx context.Context, db *pgxpool.Pool) (map[uuid.UUID]Re
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
+	// Ordered, so concurrent rebuilds take row locks in the same order.
 	rows, err := tx.Query(ctx, `
 		SELECT DISTINCT merchant_id FROM (
 			SELECT merchant_id FROM ledger_entries WHERE account_id = 'merchant_payable'
 			UNION
 			SELECT merchant_id FROM merchant_balances
 		) merchants
+		ORDER BY merchant_id
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("ledger: RebuildAllBalances: select merchant ids: %w", err)
@@ -86,43 +137,13 @@ func RebuildAllBalances(ctx context.Context, db *pgxpool.Pool) (map[uuid.UUID]Re
 	}
 	rows.Close()
 
-	// TODO: lock merchant_balances rows first, a concurrent CloseBatch increment gets clobbered -- YA
 	diffs := make(map[uuid.UUID]RebuildDiff, len(merchantIDs))
-
 	for _, merchantID := range merchantIDs {
-		var cachedBefore int64
-		err := tx.QueryRow(ctx, `
-			SELECT COALESCE(cached_payable_fils, 0) FROM merchant_balances WHERE merchant_id = $1
-		`, merchantID).Scan(&cachedBefore)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("ledger: RebuildAllBalances: read cached balance for %s: %w", merchantID, err)
-		}
-
-		var rebuilt int64
-		err = tx.QueryRow(ctx, `
-			SELECT COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount_fils ELSE -amount_fils END), 0)
-			  FROM ledger_entries
-			 WHERE merchant_id = $1 AND account_id = 'merchant_payable'
-		`, merchantID).Scan(&rebuilt)
+		diff, err := rebuildMerchantInTx(ctx, tx, merchantID)
 		if err != nil {
-			return nil, fmt.Errorf("ledger: RebuildAllBalances: recompute balance for %s: %w", merchantID, err)
+			return nil, fmt.Errorf("ledger: RebuildAllBalances: %w", err)
 		}
-
-		_, err = tx.Exec(ctx, `
-			INSERT INTO merchant_balances (merchant_id, cached_payable_fils, updated_at)
-			VALUES ($1, $2, now())
-			ON CONFLICT (merchant_id) DO UPDATE
-			  SET cached_payable_fils = $2, updated_at = now()
-		`, merchantID, rebuilt)
-		if err != nil {
-			return nil, fmt.Errorf("ledger: RebuildAllBalances: write rebuilt balance for %s: %w", merchantID, err)
-		}
-
-		diffs[merchantID] = RebuildDiff{
-			MerchantID:   merchantID,
-			CachedBefore: money.Fils(cachedBefore),
-			Rebuilt:      money.Fils(rebuilt),
-		}
+		diffs[merchantID] = diff
 	}
 
 	if err := tx.Commit(ctx); err != nil {
