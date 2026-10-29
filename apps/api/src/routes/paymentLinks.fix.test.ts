@@ -10,6 +10,8 @@ import { buildApp } from "../app.js";
 import { loadConfig } from "../config.js";
 import { issueApiKey } from "../apiKeys/issue.js";
 import { recordKycReview } from "../onboarding/review.js";
+import { payPaymentLink } from "../paymentLinks/pay.js";
+import type { AcquirerSimulator } from "../acquirer/types.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("paymentLinks.fix.test.ts requires DATABASE_URL");
@@ -76,4 +78,107 @@ test("FP-187: an expired link cannot be paid by sending an old submittedAt", asy
   assert.equal(res.json().error, "payment_link_expired");
   const row = await pool.query<{ status: string }>(`SELECT status FROM payment_links WHERE id = $1`, [link.id]);
   assert.equal(row.rows[0]!.status, "active");
+});
+
+// ---- Incident 2026-05-14: one link charged twice after the reservation timeout ----
+
+/** Wraps the app's acquirer; the first call of `stage` waits until released. */
+function gatedAcquirer(stage: "authorize" | "capture") {
+  let reached!: () => void;
+  let release!: () => void;
+  const reachedP = new Promise<void>((r) => (reached = r));
+  const releaseP = new Promise<void>((r) => (release = r));
+  let used = false;
+  const inner = app.acquirer;
+  const acquirer: AcquirerSimulator = {
+    authorize: async (req) => {
+      if (stage === "authorize" && !used) {
+        used = true;
+        reached();
+        await releaseP;
+      }
+      return inner.authorize(req);
+    },
+    capture: async (req) => {
+      if (stage === "capture" && !used) {
+        used = true;
+        reached();
+        await releaseP;
+      }
+      return inner.capture(req);
+    },
+    refund: (req) => inner.refund(req),
+  };
+  return { acquirer, reachedP, release };
+}
+
+const payConfig = { paymentLinkReservationTimeoutSeconds: 60 };
+
+async function capturedTxnCount(merchantId: string): Promise<number> {
+  const r = await pool.query<{ c: string }>(
+    `SELECT count(*)::text AS c FROM transactions WHERE merchant_id = $1 AND captured_fils > 0`,
+    [merchantId],
+  );
+  return Number(r.rows[0]!.c);
+}
+
+function payInput(token: string) {
+  return { token, card: APPROVED_CARD, idempotencyKey: randomUUID() };
+}
+
+test("2026-05-14: a slow capture past the reservation timeout cannot be overtaken by a second payer", async () => {
+  const { merchantId, rawKey } = await merchantWithKey("slow-capture");
+  const link = await createLink(rawKey, merchantId);
+  const gate = gatedAcquirer("capture");
+
+  const first = payPaymentLink(pool, gate.acquirer, payConfig, payInput(link.token));
+  await gate.reachedP;
+  // The first payer's capture is still running when the 60 s timeout passes.
+  await pool.query(`UPDATE payment_links SET reserved_at = now() - interval '2 minutes' WHERE id = $1`, [link.id]);
+
+  const second = await payPaymentLink(pool, app.acquirer, payConfig, payInput(link.token));
+  const readWhileInFlight = await app.inject({ method: "GET", url: `/v1/payment-links/${link.token}` });
+  gate.release();
+  const firstResult = await first;
+
+  assert.equal(readWhileInFlight.json().status, "processing");
+
+  assert.equal(second.statusCode, 409, JSON.stringify(second.body));
+  assert.equal(firstResult.statusCode, 200, JSON.stringify(firstResult.body));
+  assert.equal(await capturedTxnCount(merchantId), 1);
+  const row = await pool.query<{ status: string; transaction_id: string }>(
+    `SELECT status, transaction_id FROM payment_links WHERE id = $1`,
+    [link.id],
+  );
+  assert.equal(row.rows[0]!.status, "paid");
+  assert.equal(row.rows[0]!.transaction_id, (firstResult.body as { transactionId: string }).transactionId);
+});
+
+test("2026-05-14: a payer who lost the reservation during a slow authorize is voided and gets 409, not 200", async () => {
+  const { merchantId, rawKey } = await merchantWithKey("slow-authorize");
+  const link = await createLink(rawKey, merchantId);
+  const gate = gatedAcquirer("authorize");
+
+  const first = payPaymentLink(pool, gate.acquirer, payConfig, payInput(link.token));
+  await gate.reachedP;
+  await pool.query(`UPDATE payment_links SET reserved_at = now() - interval '2 minutes' WHERE id = $1`, [link.id]);
+
+  // A second payer re-claims the timed-out reservation and pays.
+  const second = await payPaymentLink(pool, app.acquirer, payConfig, payInput(link.token));
+  assert.equal(second.statusCode, 200, JSON.stringify(second.body));
+
+  gate.release();
+  const firstResult = await first;
+  assert.equal(firstResult.statusCode, 409, JSON.stringify(firstResult.body));
+
+  assert.equal(await capturedTxnCount(merchantId), 1);
+  const voided = await pool.query<{ c: string }>(
+    `SELECT count(*)::text AS c FROM transactions WHERE merchant_id = $1 AND status = 'voided'`,
+    [merchantId],
+  );
+  assert.equal(Number(voided.rows[0]!.c), 1);
+  const row = await pool.query<{ transaction_id: string }>(`SELECT transaction_id FROM payment_links WHERE id = $1`, [
+    link.id,
+  ]);
+  assert.equal(row.rows[0]!.transaction_id, (second.body as { transactionId: string }).transactionId);
 });
