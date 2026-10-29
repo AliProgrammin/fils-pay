@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { Pool } from "pg";
 import { enqueueEvent } from "@filspay/events";
-import { runConsumerPass, CONSUMER_NAME } from "./runConsumerPass.js";
+import { runConsumerPass, CONSUMER_NAME, REPORTING_EVENT_TYPES } from "./runConsumerPass.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -168,4 +168,8 @@ test("runConsumerPass: atomicity — an apply failure partway through a multi-ev
 
   const cursorFinal = await getCursor();
   assert.ok(cursorFinal >= goodEvent.id, "watermark now past the previously-blocked good event");
+});
+
+test("REPORTING_EVENT_TYPES includes refund.succeeded (FP-300)", () => {
+  assert.ok(REPORTING_EVENT_TYPES.includes("refund.succeeded"));
 });
