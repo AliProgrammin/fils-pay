@@ -29,3 +29,13 @@
 - What it breaks: A support admin calls the API directly and issues a credit. Credits at or below 50.000 BD post to the ledger at once, with no second person. Support can move money to any merchant's payable balance.
 - Fix: Add `requireAdminRole("finance", "super_admin")` to the create route. Note: ADMIN.md's role table says support may "issue small credits". The console, the case card and the "finance touches money" rule all say otherwise, so we follow them.
 - Test: apps/api/src/routes/adminCredits.test.ts, "a support admin is 403'd on issuing a credit and nothing is posted"
+
+### A4 Second-approver check compares display names, not admin ids
+- Severity: High
+- Ticket: case card "Missing role checks" (self-approve by renaming)
+- Where: apps/api/src/admin/creditApproval.ts:11 (called from apps/api/src/admin/credits.ts ~326)
+- What is wrong: Two-person control checks `approver.displayName === requester.displayName`. It does not compare the admin user ids.
+- Why it happens: The requester's name is copied onto the credit request when it is made (`requested_by_display_name`). The approve step compares that copy with the approver's current name. A name is a label, not an identity. HANDOVER.md says the check is by admin user id.
+- What it breaks: An admin requests a large credit (over 50.000 BD), changes their display name, then approves it. The names differ, so the check passes and one person posts the credit alone. The reverse also fails: two different people with the same name (common, e.g. "Ali Hassan") cannot approve each other.
+- Fix: Compare `adminUserId` instead of `displayName`.
+- Test: apps/api/src/admin/creditApproval.test.ts, "an operator who renamed themselves still cannot approve their own credit request" and "two different operators who share a display name satisfy two-person control"
