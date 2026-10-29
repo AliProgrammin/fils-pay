@@ -54,10 +54,11 @@ test("two concurrent consumer passes apply each event exactly once", async () =>
 
 test("advanceCursor never moves the watermark backwards", async () => {
   await withTransaction(poolA, async (client) => {
-    const { lastProcessedId } = await readCursor(client, CONSUMER_NAME);
-    await advanceCursor(client, CONSUMER_NAME, lastProcessedId - 1n);
+    const before = await readCursor(client, CONSUMER_NAME);
+    await advanceCursor(client, CONSUMER_NAME, { ...before, lastProcessedId: before.lastProcessedId - 1n });
+    await advanceCursor(client, CONSUMER_NAME, { lastProcessedTxid: "0", lastProcessedId: before.lastProcessedId + 1000n });
     const after = await readCursor(client, CONSUMER_NAME);
-    assert.equal(after.lastProcessedId, lastProcessedId);
+    assert.deepEqual(after, before);
     throw new Error("rollback");
   }).catch((err: Error) => {
     if (err.message !== "rollback") throw err;

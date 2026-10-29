@@ -89,3 +89,11 @@
 - What it breaks: merchant_daily_volume counts and totals are inflated (the test saw 39 captures counted for 20 real ones). This matches the 2026-09-14 note "rollup looked high after catch-up".
 - Fix: lock the cursor row `FOR UPDATE` inside the pass transaction, so passes with the same consumer name run one after the other; advance with `GREATEST(last_processed_id, $2)` so the watermark never goes back.
 - Test: apps/reporting/src/consumer/cursor.fix.test.ts.
+
+### D5 Reporting consumer reads the outbox by id, not commit order, and skips events forever
+- Severity: High. Ticket: none. Where: apps/reporting/src/consumer/runConsumerPass.ts:46-53, db/migrations/0030 (cursor)
+- What is wrong: the consumer reads `WHERE id > last_processed_id ORDER BY id` and moves the cursor to the highest id it saw.
+- Why it happens: the id comes from a sequence when the row is INSERTed, but the row is only visible when its transaction COMMITs. Two writers (apps/api and apps/settlement) commit in any order. If id 100 commits after id 101 was consumed, the cursor is already past 100 and event 100 is never read. A comment said "ids are monotonic, fine for now".
+- What it breaks: silent, permanent loss of captures, voids and batch-closed events from merchant reports, with no error.
+- Fix: migration 0080 adds `outbox_events.txid xid8 DEFAULT pg_current_xact_id()` (the inserting transaction), an index on (txid, id), and `last_processed_txid` on the cursor. The consumer only reads rows with `txid < pg_snapshot_xmin(pg_current_snapshot())` (every such transaction has finished, so the set cannot grow), in (txid, id) order, and stores (txid, id) as its cursor (forward-only). Existing rows and the existing cursor are moved to the migration's txid, so the consumer resumes exactly where it was. Trade-off: a very long open transaction anywhere in the database delays reporting until it ends (delay, never loss).
+- Test: apps/reporting/src/consumer/commitOrder.fix.test.ts (a lower id held open while a higher id is consumed; both must be applied).
