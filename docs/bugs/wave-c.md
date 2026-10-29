@@ -55,3 +55,11 @@
 - What it breaks: this is the merchant's real payout (`net_payout_fils`, the payout ledger legs and the balance cache). Gross 20,000.001 BD minus fee 500.000 BD pays 19,500.000, not 19,500.001. Gross 123,456.789 minus 3,086.420 pays 120,370.367, 2 fils short. Bigger batches lose or gain more. The ledger capture legs no longer match the payout.
 - Fix: `return grossFils - feeFils`. Plain integer fils.
 - Test: `TestNetPayableFils_ExactInteger_Fix` in `internal/settlement/payable_fix_test.go`.
+
+### C6 MDR recalculation rewrites paid batches at the wrong rate
+- Severity: High. Ticket: admin "Recalculate MDR". Where: `apps/settlement/internal/settlement/recalculate_mdr.go:63-127`.
+- What is wrong: the scan selects `status <> 'open'`, so paid batches are included. It overwrites `fee_fils` and `net_payout_fils` on them and moves the balance cache. It also uses the current `merchants.mdr_bps` for every event and ignores `fee_schedules`.
+- Why it happens: the filter was too wide, and the fee loop did not reuse CloseBatch's rate rule (`EffectiveMdrBpsAt` per event, less the volume-tier bonus).
+- What it breaks: a paid 10.000 BD batch at 250 bps is rewritten to fee 0.300 / net 9.700, but 9.750 was already paid out. The batch record now disagrees with the bank. A merchant on a 200 bps fee schedule gets "corrected" up to its 250 bps fallback rate (+0.050 BD per 10 BD) even though its contract did not change.
+- Fix: only `status = 'closed'` batches are recalculated. Each event is priced with `EffectiveMdrBpsAt(schedules, occurred_at, mdr_bps)` minus the tier bonus, the same as CloseBatch.
+- Test: `TestRecalculateMDR_NeverTouchesPaidBatch_Fix`, `TestRecalculateMDR_UsesEffectiveFeeSchedule_Fix` in `internal/settlement/recalculate_mdr_fix_test.go`.
