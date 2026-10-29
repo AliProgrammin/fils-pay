@@ -110,6 +110,10 @@ export interface Config {
   webhookPollIntervalMs: number;
   /** Per-delivery-attempt HTTP timeout passed to the transport, milliseconds. */
   webhookRequestTimeoutMs: number;
+  /** Dev/test only (WEBHOOK_ALLOW_PRIVATE_TARGETS=true): lets the webhook
+   *  transport reach loopback/private addresses, for a local receiver.
+   *  Always false in production, whatever the env says (SSRF guard). */
+  webhookAllowPrivateTargets: boolean;
 
   /** Shared secret the acquirer signs its async callbacks with
    *  (routes/acquirerCallbacks.ts). Platform-level, not per-merchant —
@@ -255,6 +259,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     webhookBackoffCapMs: parseIntEnv(env.WEBHOOK_BACKOFF_CAP_MS, 21_600_000),
     webhookPollIntervalMs: parseIntEnv(env.WEBHOOK_POLL_INTERVAL_MS, 5_000),
     webhookRequestTimeoutMs: parseIntEnv(env.WEBHOOK_REQUEST_TIMEOUT_MS, 10_000),
+    webhookAllowPrivateTargets: nodeEnv !== "production" && parseBoolEnv(env.WEBHOOK_ALLOW_PRIVATE_TARGETS, false),
 
     acquirerCallbackSigningSecret,
     acquirerCallbackRequireSignature: parseBoolEnv(env.ACQUIRER_CALLBACK_REQUIRE_SIGNATURE, false),

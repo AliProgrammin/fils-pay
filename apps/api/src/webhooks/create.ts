@@ -3,6 +3,8 @@ import type { Config } from "../config.js";
 import { randomToken } from "../lib/crypto.js";
 import { BadRequestError } from "../lib/errors.js";
 import { decodeEncryptionKey, encryptSecret } from "./secretCrypto.js";
+import { isBlockedAddress } from "./transport.js";
+import { isIP } from "node:net";
 
 /**
  * Validates a webhook endpoint URL: must parse as an absolute URL with
@@ -10,8 +12,9 @@ import { decodeEncryptionKey, encryptSecret } from "./secretCrypto.js";
  * (http is permitted otherwise so a local http.createServer test receiver
  * and a merchant's own localhost dev setup both work).
  */
-// MK: https-only in prod is our SSRF protection
-// used to block localhost in dev too, removed for the local receiver — am
+// SSRF: this is only early feedback for obvious internal targets (IP
+// literals, localhost) in production. The real guard is at send time in
+// transport.ts, which checks every resolved address and never follows redirects.
 export function validateWebhookUrl(rawUrl: string, config: Pick<Config, "nodeEnv">): URL {
   let parsed: URL;
   try {
@@ -23,6 +26,13 @@ export function validateWebhookUrl(rawUrl: string, config: Pick<Config, "nodeEnv
     throw new BadRequestError("invalid_url");
   }
   if (config.nodeEnv === "production" && parsed.protocol !== "https:") {
+    throw new BadRequestError("invalid_url");
+  }
+  const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (
+    config.nodeEnv === "production" &&
+    (host === "localhost" || host.endsWith(".localhost") || (isIP(host) !== 0 && isBlockedAddress(host)))
+  ) {
     throw new BadRequestError("invalid_url");
   }
   return parsed;

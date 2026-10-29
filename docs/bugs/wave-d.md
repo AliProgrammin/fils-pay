@@ -47,3 +47,11 @@
 - What it breaks: `loadConfig` throws in development and test whenever WEBHOOK_SECRET_ENCRYPTION_KEY is not set, so the dev fallback never works.
 - Fix: replace it with a 32-byte dev key. Production is unchanged: it still has no fallback and still fails boot without the env var.
 - Test: apps/api/src/config.fix.test.ts.
+
+### D8 SSRF through merchant webhook URLs
+- Severity: High. Ticket: none. Where: apps/api/src/webhooks/create.ts:15-29 (also update.ts), apps/api/src/webhooks/transport.ts:38-48
+- What is wrong: a webhook URL was only checked for http/https. The transport used `fetch`, which follows redirects, and the dispatcher stores the first 2000 chars of the response body, which the merchant can read in the delivery log.
+- Why it happens: comments assumed "create.ts blocks private IPs" and "https-only is our SSRF protection". Neither was true, and a DNS name or a redirect gets around any URL-only check.
+- What it breaks: a merchant can make the API POST to internal services (127.0.0.1, 10.x, the cloud metadata service 169.254.169.254, the settlement internal server) and read the response in the delivery log.
+- Fix: the real transport now uses node:http(s) with a `lookup` hook that rejects loopback, private, CGNAT, link-local, multicast and reserved addresses on the exact IP the socket connects to (so DNS rebinding cannot bypass it); IP literals are checked directly. Redirects are never followed (a 3xx is a failed attempt). The response read is capped at 64 KB. Production registration also rejects localhost and internal IP literals early. A local receiver still works behind the explicit dev flag `WEBHOOK_ALLOW_PRIVATE_TARGETS=true`, which is ignored in production; the end-to-end route tests pass that flag.
+- Test: apps/api/src/webhooks/transport.fix.test.ts.
