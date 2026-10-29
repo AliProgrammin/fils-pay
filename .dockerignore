@@ -1,0 +1,10 @@
+# Host node_modules hold macOS native builds (argon2, sharp); the image
+# installs its own.
+**/node_modules
+.git
+**/dist
+**/*.tsbuildinfo
+.env
+.env.local
+ops/.env.docker
+apps/api/data
