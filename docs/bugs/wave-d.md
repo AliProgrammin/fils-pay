@@ -23,3 +23,11 @@
 - What it breaks: merchants get the same webhook two or more times, and attempt_count / backoff is wrong.
 - Fix: claim one row at a time with `SELECT ... FOR UPDATE SKIP LOCKED` inside an `UPDATE ... RETURNING` that pushes next_attempt_at forward by a lease (request timeout + 30 s). Other passes skip the row while it is sent. If the process dies, the row is due again after the lease.
 - Test: apps/api/src/webhooks/dispatcher.claim.fix.test.ts (two concurrent passes, slow receiver, exactly one send).
+
+### D4 Payout disbursement written many times per settlement batch
+- Severity: High. Ticket: none. Where: apps/api/src/webhooks/dispatcher.ts:160 (PRE_DELIVERY_EFFECTS), apps/api/src/webhooks/payoutDisbursement.ts:14, db/migrations/0057
+- What is wrong: the dispatcher inserts a settlement_payout_disbursements row before the first attempt (attempt_count 0) of every settlement.paid delivery. There is one delivery per endpoint, and a replay is a new row with attempt_count 0. The table has no unique key per batch.
+- Why it happens: a money side effect hangs off a per-delivery, at-least-once path, and the insert is not idempotent.
+- What it breaks: a merchant with 2 endpoints, or one replay, gets 2+ payout instructions for one batch (double payout risk). Concurrent passes can also both insert.
+- Fix: migration 0079 drops existing duplicate rows (keeps the earliest per batch) and adds a unique index on settlement_batch_id; the insert uses `ON CONFLICT (settlement_batch_id) DO NOTHING`. Known remaining design gap (not changed, out of scope): the record is still only written when the merchant has an active webhook endpoint; it belongs in the settlement pay step.
+- Test: apps/api/src/webhooks/payoutDisbursement.fix.test.ts (concurrent + repeated calls keep one row).
