@@ -27,59 +27,60 @@ function toCsvRow(row: TransactionRow): string {
   ].join(",");
 }
 
-/** Builds the CSV body for `GET /v1/transactions/export`. */
+const CSV_HEADER = "id,status,amount_bhd,captured_bhd,reference,occurred_at";
+const PAGE_SIZE = 1000;
+
+/** Whole CSV as one string. Small exports and tests only; the route streams. */
 export async function buildTransactionsExportCsv(
   pool: Pool,
   filters: TransactionsExportFilters,
 ): Promise<string> {
-  const statusArray = filters.status && filters.status.length > 0 ? filters.status : null;
-  const result = await pool.query<TransactionRow>(
-    `SELECT * FROM transactions
-      WHERE merchant_id = $1
-        AND ($2::timestamptz IS NULL OR occurred_at >= $2)
-        AND ($3::timestamptz IS NULL OR occurred_at <  $3)
-        AND ($4::text[] IS NULL OR status = ANY($4))
-      ORDER BY occurred_at ASC`,
-    [filters.merchantId, filters.from ?? null, filters.to ?? null, statusArray],
-  );
-
-  const header = "id,status,amount_bhd,captured_bhd,reference,occurred_at";
-  const lines = result.rows.map(toCsvRow);
-  return [header, ...lines].join("\n");
+  let csv = "";
+  for await (const chunk of streamTransactionsExportCsv(pool, filters)) csv += chunk;
+  return csv.replace(/\n$/, "");
 }
 
-
-/** Cursor-paginated export for large date ranges. */
-export async function streamTransactionsExportCsv(
+/**
+ * Streams the export one page at a time, so memory stays at one page however
+ * large the range is. Keyset on (occurred_at, id): rows that share a
+ * timestamp are never skipped at a page boundary. The cursor uses Postgres's
+ * own text form of occurred_at (microseconds), not a JS Date (milliseconds).
+ */
+export async function* streamTransactionsExportCsv(
   pool: Pool,
   filters: TransactionsExportFilters,
-  write: (chunk: string) => void,
-): Promise<void> {
-  write("id,status,amount_bhd,captured_bhd,reference,occurred_at\n");
+): AsyncGenerator<string> {
+  yield CSV_HEADER + "\n";
 
-  let cursor: Date | null = null;
-  const PAGE_SIZE = 1000;
+  const statusArray = filters.status && filters.status.length > 0 ? filters.status : null;
+  let cursor: { occurredAt: string; id: string } | null = null;
 
-  // eslint-disable-next-line no-constant-condition
   while (true) {
-    const statusArray = filters.status && filters.status.length > 0 ? filters.status : null;
-    const result: { rows: TransactionRow[] } = await pool.query<TransactionRow>(
-      `SELECT * FROM transactions
+    const result: { rows: Array<TransactionRow & { occurred_at_text: string }> } = await pool.query(
+      `SELECT *, occurred_at::text AS occurred_at_text FROM transactions
         WHERE merchant_id = $1
           AND ($2::timestamptz IS NULL OR occurred_at >= $2)
           AND ($3::timestamptz IS NULL OR occurred_at <  $3)
           AND ($4::text[] IS NULL OR status = ANY($4))
-          AND ($5::timestamptz IS NULL OR occurred_at > $5)
-        ORDER BY occurred_at ASC
-        LIMIT $6`,
-      [filters.merchantId, filters.from ?? null, filters.to ?? null, statusArray, cursor, PAGE_SIZE],
+          AND ($5::timestamptz IS NULL OR (occurred_at, id) > ($5::timestamptz, $6::uuid))
+        ORDER BY occurred_at ASC, id ASC
+        LIMIT $7`,
+      [
+        filters.merchantId,
+        filters.from ?? null,
+        filters.to ?? null,
+        statusArray,
+        cursor?.occurredAt ?? null,
+        cursor?.id ?? null,
+        PAGE_SIZE,
+      ],
     );
 
-    for (const row of result.rows) {
-      write(toCsvRow(row) + "\n");
+    if (result.rows.length > 0) {
+      yield result.rows.map((row) => toCsvRow(row) + "\n").join("");
     }
-
-    if (result.rows.length < PAGE_SIZE) break;
-    cursor = result.rows[result.rows.length - 1]!.occurred_at;
+    if (result.rows.length < PAGE_SIZE) return;
+    const last = result.rows[result.rows.length - 1]!;
+    cursor = { occurredAt: last.occurred_at_text, id: last.id };
   }
 }

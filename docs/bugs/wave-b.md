@@ -49,3 +49,15 @@
 - What it breaks: any merchant (or a leaked API key of any merchant) can cancel a competitor's open invoices. Customers then see "canceled" and cannot pay. Link ids leak through logs, support tickets and webhooks.
 - Fix: the route passes the path merchant (already checked to be the caller) to `cancelPaymentLink`, and both the UPDATE and the error lookup add `AND merchant_id = $2`. Another merchant's link is now 404, same as a missing link (does not reveal that it exists).
 - Test: apps/api/src/routes/paymentLinks.fix.test.ts "B5: merchant B cannot cancel merchant A's payment link (404, link stays active)" (was 204 and the link was canceled).
+
+### B6 Large transactions CSV export loads everything into memory; the unused streaming version drops rows
+- Severity: High / Ticket: large export / Where: apps/api/src/transactions/exportCsv.ts:31-85, apps/api/src/routes/transactions.ts:161
+- What is wrong:
+  1. The route calls `buildTransactionsExportCsv`, which reads every matching row with one query and builds the whole CSV as one string.
+  2. `streamTransactionsExportCsv` exists but is unused, and its paging is wrong: the next page starts at `occurred_at > last occurred_at`. Rows that share the last timestamp are skipped. It also keeps the cursor as a JS Date (milliseconds) while Postgres stores microseconds.
+  3. An invalid `from`/`to` (for example `from=not-a-date`) becomes `Invalid Date`, Postgres rejects it, and the client gets 500.
+- Why it happens: the streaming version was written but never wired in, and its keyset has no tie-breaker column.
+- What it breaks: a merchant exporting a year of data makes the API hold every row plus the full CSV in memory. On the 512 MB API container this can kill the process for all merchants. Switching to the old stream as-is would lose data: with 1500 rows at the same timestamp it exported only 1000 (checked on the old code), so finance reconciliation would silently miss transactions.
+- Fix: the export is an async generator that pages 1000 rows at a time with keyset `(occurred_at, id) > (cursor)` and `ORDER BY occurred_at, id` (matches index `idx_transactions_merchant_occurred`). The cursor uses `occurred_at::text`, so no precision loss. The route sends it with `Readable.from(...)`, which respects backpressure and stops on client disconnect. `buildTransactionsExportCsv` is now a thin wrapper over the stream (same output), so the existing tests cover the real path. Bad `from`/`to` returns 400 `invalid_request`.
+- Test: apps/api/src/transactions/exportCsv.fix.test.ts: "B6: streaming export returns every row once when many rows share one occurred_at", "B6: GET /v1/transactions/export returns all rows across pages", "B6: an invalid from/to is a 400, not a 500" (was 500).
+- Note: the list route `GET /v1/transactions` parses `from`/`to` the same way and likely has the same 500; not changed here (outside this bug).
