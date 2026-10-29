@@ -63,3 +63,11 @@
 - What it breaks: a paid 10.000 BD batch at 250 bps is rewritten to fee 0.300 / net 9.700, but 9.750 was already paid out. The batch record now disagrees with the bank. A merchant on a 200 bps fee schedule gets "corrected" up to its 250 bps fallback rate (+0.050 BD per 10 BD) even though its contract did not change.
 - Fix: only `status = 'closed'` batches are recalculated. Each event is priced with `EffectiveMdrBpsAt(schedules, occurred_at, mdr_bps)` minus the tier bonus, the same as CloseBatch.
 - Test: `TestRecalculateMDR_NeverTouchesPaidBatch_Fix`, `TestRecalculateMDR_UsesEffectiveFeeSchedule_Fix` in `internal/settlement/recalculate_mdr_fix_test.go`.
+
+### C7 Daily close runs at 03:00 Bahrain, not after midnight
+- Severity: High. Ticket: case brief "settlement closes every day at midnight Bahrain time (UTC+3)". Where: `apps/settlement/internal/scheduler/daemon.go:80-90`, `apps/settlement/internal/settlement/window.go:42`.
+- What is wrong: the daemon calls `BusinessDayWindow(time.Now().UTC())`. `BusinessDayWindow` takes the calendar date from the value's own location, so it gets the UTC date.
+- Why it happens: from 00:00 to 03:00 Bahrain, the UTC date is still yesterday. So "today" is one day behind, and the day that "just ended" is two days ago (already closed, a no-op).
+- What it breaks: with a 15 min delay, the close of 14 May should run at 00:15 on 15 May Bahrain time. It runs at 03:15. Merchants are paid about 3 hours late every day, and the logs ("close ~03:15 local") show it.
+- Fix: the decision is moved into `dueBusinessDate(now, delay)`, which converts now to Asia/Bahrain with the new `settlement.InBusinessDayLocation` before it takes the date. `BusinessDayWindow` keeps its calendar-date contract, because the CLI, the API and CloseBatch's `batch_date` all pass a calendar date. Its comment now says that.
+- Test: `TestDueBusinessDate_BahrainMidnight_Fix` in `internal/scheduler/daemon_fix_test.go`.
