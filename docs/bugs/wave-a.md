@@ -89,3 +89,13 @@
 - What it breaks: Settlement selects merchants with `test_mode = false` (apps/settlement/internal/settlement/batch.go:117, :408). After one click, a test merchant like "Gamma" (Slack, 2026-09-19) is in the real daily batch and its fake captures become real payouts. ADMIN.md calls the button "safe to run more than once", so support runs it freely.
 - Fix: The route no longer touches `test_mode` (`flagsUpdated` is always `[]`; the response shape is kept for the console). `openAuthorizations` is now a real count of `authorized` rows. The unused `reconcileSandboxFlag` helper is deleted so it cannot be wired in again.
 - Test: apps/api/src/routes/adminMerchantsRecompute.fix.test.ts, "recompute keeps test_mode and counts an open authorization" and "recompute keeps test_mode for a test merchant with nothing open"
+
+### A10 KYC "PDF only" check trusts the filename
+- Severity: Medium
+- Ticket: none
+- Where: apps/api/src/onboarding/kyc.ts:67
+- What is wrong: For commercial registration and bank letter, the "must be a PDF" rule checks `fileName.endsWith(".pdf")`. It ignores the detected type it computed three lines above.
+- Why it happens: The filename comes from the client and can be anything. The "fixed in FP-231" comment is false: `detectFileType` accepts JPEG and PNG for every document type. ARCHITECTURE.md says KYC uploads are validated by detected content type (magic bytes). The input type even says `fileName` is "never used for validation".
+- What it breaks: A merchant uploads a phone photo (or an edited image) named `CR-2026.pdf`. It is stored as a commercial registration and goes to KYC review, although the policy says only registry/bank PDFs are acceptable. A real PDF with an odd name (`scan_0001`) is wrongly rejected.
+- Fix: Check `detected !== "pdf"` instead of the filename.
+- Test: apps/api/src/onboarding/kyc.fix.test.ts, "a JPEG renamed to .pdf is rejected for a PDF-only document type" and "a real PDF is accepted for a PDF-only document type whatever its filename" (apps/api/src/app.test.ts "KYC upload rejects a commercial_registration submitted as a non-PDF filename" asserted the bug: it rejected real PDF bytes because the name was .docx. It now sends JPEG bytes named .pdf.)
