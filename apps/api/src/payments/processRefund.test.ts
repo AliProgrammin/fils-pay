@@ -597,3 +597,33 @@ test("the database refuses refunded_fils greater than captured_fils", async () =
     /chk_transactions_refunded_le_captured/,
   );
 });
+
+// R3: a merchant can never refund another merchant's transaction. The
+// lookup is scoped by the caller's merchant id, so it is simply not found.
+test("another merchant's transaction answers 404 and nothing is written", async () => {
+  const owner = await createApprovedMerchantWithApiKey("refund-owner");
+  const attacker = await createApprovedMerchantWithApiKey("refund-attacker");
+  const txn = await capturedTransaction(owner.rawKey, 5_000);
+  const attackerActor = await apiKeyActor(attacker.merchantId);
+
+  const result = await processRefund(pool, approvingAcquirer, {
+    transactionId: txn.id,
+    merchantId: attacker.merchantId,
+    amountFils: toFils(5_000),
+    idempotencyKey: randomUUID(),
+    actor: attackerActor,
+  });
+  assert.equal(result.statusCode, 404, JSON.stringify(result.body));
+  assert.deepEqual(result.body, { error: "transaction_not_found" });
+
+  const refunds = await pool.query<{ c: number }>(`SELECT COUNT(*)::int AS c FROM refunds WHERE transaction_id = $1`, [
+    txn.id,
+  ]);
+  assert.equal(refunds.rows[0]!.c, 0);
+  const row = await pool.query<{ status: string; refunded_fils: string }>(
+    `SELECT status, refunded_fils FROM transactions WHERE id = $1`,
+    [txn.id],
+  );
+  assert.equal(row.rows[0]!.status, "captured");
+  assert.equal(Number(row.rows[0]!.refunded_fils), 0);
+});

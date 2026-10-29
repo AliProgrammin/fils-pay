@@ -31,3 +31,13 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 - What it breaks: The platform pays the cardholder money it never collected. The merchant's payable goes negative.
 - Fix: `refundable = captured_fils - refunded_fils`. The test fixture uses the same formula. New migration `0082_transactions_refunded_le_captured.sql` adds `CHECK (refunded_fils <= captured_fils)`, so the database refuses an over-refund from any code path.
 - Test: `apps/api/src/payments/processRefund.test.ts` ("a partially captured transaction cannot refund more than it captured", "the database refuses refunded_fils greater than captured_fils"), `refundValidation.test.ts` ("... cannot refund past what it captured").
+
+### R3 A merchant can refund another merchant's transaction
+- Severity: Critical
+- Ticket: FP-300
+- Where: `apps/api/src/refunds/initiateMerchantRefund.ts` (transaction lookup), `apps/api/src/payments/processRefund.ts` (row lock query)
+- What is wrong: Merchant B could send merchant A's transaction id and the refund went through. It was booked against merchant A (A's money went to the cardholder).
+- Why it happens: Both lookups used `WHERE id = $1` only, and `initiateMerchantRefund` then passed `txn.merchant_id` (the owner of the row) on to `processRefund` instead of the authenticated merchant. The path scope check only compares the URL merchant id with the session, not the transaction's owner. The test that would have caught this was deleted as "redundant".
+- What it breaks: Any merchant (or a leaked API key) can drain another merchant's captured payments.
+- Fix: Both lookups are `WHERE id = $1 AND merchant_id = $2` with the authenticated merchant id, and the authenticated id is what is passed on. Another merchant's transaction answers 404 (`transaction_not_found`), never 403, so its existence is not confirmed.
+- Test: `apps/api/src/payments/processRefund.test.ts` ("another merchant's transaction answers 404 ..."), `apps/api/src/refunds/initiateMerchantRefund.test.ts` ("another merchant's existing transactionId is a 404 ...").

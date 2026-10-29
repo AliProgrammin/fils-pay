@@ -77,9 +77,11 @@ export async function processRefund(
     const txnResult = await client.query<RefundTransactionRow>(
       `SELECT id, merchant_id, status, amount_fils, captured_fils, refunded_fils, acquirer_reference
          FROM transactions
-        WHERE id = $1
+        WHERE id = $1 AND merchant_id = $2
         FOR UPDATE`,
-      [input.transactionId],
+      // Scoped by the authenticated merchant: another merchant's
+      // transaction is simply not found (404, never 403).
+      [input.transactionId, input.merchantId],
     );
     const txn = txnResult.rows[0];
     if (!txn) {

@@ -59,9 +59,11 @@ export async function initiateMerchantRefund(
 ): Promise<ProcessRefundResult> {
   await assertRefundsNotOnHold(pool, input.merchantId);
 
-  const result = await pool.query<{ id: string; merchant_id: string }>(
-    `SELECT id, merchant_id FROM transactions WHERE id = $1`,
-    [input.transactionId],
+  // Scoped by the authenticated merchant (input.merchantId comes from the
+  // auth context, never the body): another merchant's id is not found.
+  const result = await pool.query<{ id: string }>(
+    `SELECT id FROM transactions WHERE id = $1 AND merchant_id = $2`,
+    [input.transactionId, input.merchantId],
   );
   const txn = result.rows[0];
   if (!txn) {
@@ -70,7 +72,7 @@ export async function initiateMerchantRefund(
 
   return processRefund(pool, acquirer, {
     transactionId: txn.id,
-    merchantId: txn.merchant_id,
+    merchantId: input.merchantId,
     amountFils: input.amountFils,
     idempotencyKey: input.idempotencyKey,
     actor: input.actor,
