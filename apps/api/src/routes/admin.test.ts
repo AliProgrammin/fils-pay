@@ -517,6 +517,39 @@ test("bulk approve KYC flips every selected pending merchant and writes one audi
   assert.equal(metadata.notes, "queue ticket #4821");
 });
 
+test("bulk approve KYC only moves under_review merchants and writes a review row for each", async () => {
+  const finance = await signedInAdmin("finance", "bulkkyc-filter");
+  const pending = await createMerchant("bulkkyc-pending");
+  const rejected = await createMerchant("bulkkyc-rejected");
+  await pool.query(`UPDATE merchants SET onboarding_status = 'under_review' WHERE id = $1`, [pending.merchantId]);
+  await pool.query(`UPDATE merchants SET onboarding_status = 'rejected' WHERE id = $1`, [rejected.merchantId]);
+
+  const res = await app.inject({
+    method: "POST",
+    url: "/v1/admin/merchants/bulk-approve",
+    headers: { cookie: finance.cookie },
+    payload: { merchantIds: [pending.merchantId, rejected.merchantId] },
+  });
+  assert.equal(res.statusCode, 200, res.body);
+  assert.deepEqual(res.json().approvedMerchantIds, [pending.merchantId]);
+
+  const rejectedRow = await pool.query<{ kyc_passed: boolean; onboarding_status: string }>(
+    `SELECT kyc_passed, onboarding_status FROM merchants WHERE id = $1`,
+    [rejected.merchantId],
+  );
+  assert.equal(rejectedRow.rows[0]!.onboarding_status, "rejected", "a rejected merchant must not be approved");
+  assert.equal(rejectedRow.rows[0]!.kyc_passed, false);
+
+  const reviews = await pool.query<{ merchant_id: string; outcome: string; reviewer_admin_user_id: string }>(
+    `SELECT merchant_id, outcome, reviewer_admin_user_id FROM merchant_kyc_reviews WHERE merchant_id = ANY($1)`,
+    [[pending.merchantId, rejected.merchantId]],
+  );
+  assert.equal(reviews.rowCount, 1);
+  assert.equal(reviews.rows[0]!.merchant_id, pending.merchantId);
+  assert.equal(reviews.rows[0]!.outcome, "approved");
+  assert.equal(reviews.rows[0]!.reviewer_admin_user_id, finance.id);
+});
+
 test("bulk approve KYC is finance-gated and rejects malformed selections", async () => {
   const support = await signedInAdmin("support", "bulkkyc-role");
   const { merchantId } = await createMerchant("bulkkyc-role");

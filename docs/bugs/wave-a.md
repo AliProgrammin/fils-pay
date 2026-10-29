@@ -99,3 +99,13 @@
 - What it breaks: A merchant uploads a phone photo (or an edited image) named `CR-2026.pdf`. It is stored as a commercial registration and goes to KYC review, although the policy says only registry/bank PDFs are acceptable. A real PDF with an odd name (`scan_0001`) is wrongly rejected.
 - Fix: Check `detected !== "pdf"` instead of the filename.
 - Test: apps/api/src/onboarding/kyc.fix.test.ts, "a JPEG renamed to .pdf is rejected for a PDF-only document type" and "a real PDF is accepted for a PDF-only document type whatever its filename" (apps/api/src/app.test.ts "KYC upload rejects a commercial_registration submitted as a non-PDF filename" asserted the bug: it rejected real PDF bytes because the name was .docx. It now sends JPEG bytes named .pdf.)
+
+### A11 Bulk KYC approve ignores status and writes no review rows
+- Severity: Medium
+- Ticket: none
+- Where: apps/api/src/admin/bulkKyc.ts:26
+- What is wrong: Bulk approve runs `UPDATE merchants SET onboarding_status = 'approved', kyc_passed = true WHERE id = ANY(...)` with no status filter. It writes no `merchant_kyc_reviews` rows.
+- Why it happens: The bulk path was written as one raw UPDATE instead of reusing `recordKycReviewInTx`, which review.ts calls "the one function permitted to write kyc_passed". ADMIN.md says "Only merchants currently under_review are affected". The result type also promises only under_review merchants are listed.
+- What it breaks: A merchant that KYC rejected (or one that never sent documents) is ticked by mistake in a bulk run and becomes approved with `kyc_passed = true`, so it can take live payments. There is no per-merchant review row, so the KYC trail cannot show who approved it.
+- Fix: Lock and select only `under_review` merchants from the list, then approve each through `recordKycReviewInTx` (one review row each, with the admin's id and email). The single batch audit row stays.
+- Test: apps/api/src/routes/admin.test.ts, "bulk approve KYC only moves under_review merchants and writes a review row for each"
