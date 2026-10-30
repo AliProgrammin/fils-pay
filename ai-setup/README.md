@@ -1,6 +1,6 @@
 # AI setup — Team Orbit (Ali Almadhoob, Mariam Alhayki)
 
-We used AI a lot. We did not trust it. Every behaviour fix had to pass a test that failed on the old code (97 of 105; the other 8, setup, speed, docs and dead-code fixes, are proven another way, see BUGS.md), and separate "blind" agents re-checked our work without seeing our fixes.
+We used AI a lot. We did not trust it. Every behaviour fix had to pass a test that failed on the old code (107 of the 115 entries; the other 8, setup, speed, docs and dead-code fixes, are proven another way, see BUGS.md), and separate "blind" agents re-checked our work without seeing our fixes.
 
 ## Files in this folder
 
