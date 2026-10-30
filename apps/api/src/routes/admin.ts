@@ -236,9 +236,10 @@ export async function adminRoutes(app: FastifyInstance, options: AdminRoutesOpti
    */
   app.post(
     /**
-     * Runs in this process, one transaction. Safe to repeat: the rebuild
-     * truncates the rollups and replays the outbox from the start, so a second
-     * run produces identical rows.
+     * Runs in this process, one transaction: empties both rollups and resets
+     * the reporting cursor to 0. The reporting worker then replays the outbox
+     * from the start. Safe to repeat. The response gives the row counts that
+     * were cleared.
      */
     "/reporting/rebuild",
     { preHandler: [requireAdminSession, requireAdminRole("finance", "super_admin")] },

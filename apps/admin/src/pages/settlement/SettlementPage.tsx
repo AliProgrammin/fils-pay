@@ -295,8 +295,9 @@ export function SettlementPage() {
         {confirmingAnalytics ? (
           <div className="admin-confirm">
             <p>
-              <strong>Rebuild analytics for every merchant?</strong> This replaces both rollup tables
-              with a fresh recompute and records the action in the admin audit log.
+              <strong>Rebuild analytics for every merchant?</strong> This clears both rollup tables,
+              the reporting worker refills them from the full event history, and the action is
+              recorded in the admin audit log.
             </p>
             <button
               type="button"
@@ -323,9 +324,10 @@ export function SettlementPage() {
       {analyticsResult ? (
         <div className="admin-notice">
           <p>
-            Rebuilt {analyticsResult.volumeRows} daily-volume row
+            Cleared {analyticsResult.volumeRows} daily-volume row
             {analyticsResult.volumeRows === 1 ? "" : "s"} and {analyticsResult.trendRows} payout-trend
-            row{analyticsResult.trendRows === 1 ? "" : "s"}.
+            row{analyticsResult.trendRows === 1 ? "" : "s"}. The reporting worker is now rebuilding
+            them from the full event history.
           </p>
         </div>
       ) : null}

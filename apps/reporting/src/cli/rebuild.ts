@@ -34,9 +34,10 @@ async function getRollupCounts(pool: Pool): Promise<RollupCounts> {
  * Prints a before/after row count per rollup table, same operator-facing
  * transparency apps/settlement's `rebuild-balances` already established.
  *
- * Never invoked automatically (not on a schedule, not on worker startup)
- * and not exposed over HTTP — referenced only from cli/index.ts's
- * `rebuild` subcommand dispatch and this file's own test.
+ * Never invoked automatically (not on a schedule, not on worker startup).
+ * The admin "Rebuild analytics" route (apps/api admin/reportingRebuild.ts)
+ * does the same truncate + cursor reset and leaves the replay to the
+ * running worker.
  *
  * — M?: the read model only ever gets built one way: by replaying the
  * outbox through the same code the worker runs. anything that fills these
@@ -62,7 +63,6 @@ export async function runRebuild(pool: Pool, config: ReportingConfig): Promise<v
     if (processedCount === 0) break;
   }
 
-  // TODO: diff against apps/api admin/reportingRebuild.ts output (YA 2026-02)
   const after = await getRollupCounts(pool);
   console.log(
     `[reporting/rebuild] after:  merchant_daily_volume=${after.volumeRows} rows, merchant_payout_trends=${after.trendRows} rows`,

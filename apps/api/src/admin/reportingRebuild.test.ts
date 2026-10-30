@@ -1,7 +1,11 @@
 /**
- * The admin "rebuild analytics" path repopulates merchant_daily_volume from
- * transaction_events. It must rebuild the refund columns too (FP-300), or a
- * rebuild silently erases every refund from the report.
+ * The admin "rebuild analytics" path must not double count (U5). It used to
+ * refill merchant_daily_volume from transaction_events but leave the
+ * reporting cursor where it was, so the worker then applied every pending
+ * outbox event on top of rows that already held it. The rollups have one
+ * writer: the reporting consumer. The rebuild now empties them and moves the
+ * consumer's cursor back to the start, in one transaction, so the consumer
+ * replays the whole outbox exactly once.
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -17,39 +21,41 @@ test.after(async () => {
   await pool.end();
 });
 
-test("refreshAnalyticsRollups rebuilds refund_count and refund_gross_fils from refund events", async () => {
+test("refreshAnalyticsRollups empties both rollups and resets the reporting cursor in the same transaction", async () => {
   const merchant = await pool.query<{ id: string }>(
     `INSERT INTO merchants (display_name, mdr_bps) VALUES ($1, 250) RETURNING id`,
-    [`rebuild-refunds ${randomUUID()}`],
+    [`rebuild-cursor ${randomUUID()}`],
   );
   const merchantId = merchant.rows[0]!.id;
-  const txn = await pool.query<{ id: string }>(
-    `INSERT INTO transactions (merchant_id, status, amount_fils, captured_fils, refunded_fils, acquirer_reference, occurred_at)
-     VALUES ($1, 'refunded', 10000, 10000, 10000, $2, '2026-02-10T09:00:00Z') RETURNING id`,
-    [merchantId, `acq-${randomUUID()}`],
-  );
-  const txnId = txn.rows[0]!.id;
-  // 22:00 UTC on 10 Feb is 01:00 on 11 Feb in Bahrain.
   await pool.query(
-    `INSERT INTO transaction_events (transaction_id, event_type, amount_fils, actor_type, occurred_at) VALUES
-       ($1, 'captured',       10000, 'system', '2026-02-10T09:00:00Z'),
-       ($1, 'refund_partial', -4000, 'system', '2026-02-10T22:00:00Z'),
-       ($1, 'refunded',       -6000, 'system', '2026-02-10T22:30:00Z')`,
-    [txnId],
-  );
-
-  await withTransaction(pool, (client) => refreshAnalyticsRollups(client));
-
-  const rows = await pool.query<{ d: string; captured_count: number; refund_count: number; refund_gross_fils: string }>(
-    `SELECT volume_date::text AS d, captured_count, refund_count, refund_gross_fils
-       FROM merchant_daily_volume WHERE merchant_id = $1 ORDER BY volume_date`,
+    `INSERT INTO merchant_daily_volume (merchant_id, volume_date, captured_count, captured_gross_fils, last_updated_at)
+     VALUES ($1, '2026-02-10', 3, 30000, now())`,
     [merchantId],
   );
-  assert.deepEqual(
-    rows.rows.map((r) => [r.d, r.captured_count, r.refund_count, Number(r.refund_gross_fils)]),
-    [
-      ["2026-02-10", 1, 0, 0],
-      ["2026-02-11", 0, 2, 10_000],
-    ],
+  // A worker that is part-way through the outbox: these events are already
+  // in the rollup, so leaving the cursor here and refilling from source
+  // counts the pending events twice.
+  await pool.query(
+    `INSERT INTO reporting_outbox_cursor (consumer_name, last_processed_txid, last_processed_id, updated_at)
+     VALUES ('reporting', '12345', 678, now())
+     ON CONFLICT (consumer_name) DO UPDATE SET last_processed_txid = '12345', last_processed_id = 678`,
   );
+  const before = await pool.query<{ v: number; t: number }>(
+    `SELECT (SELECT count(*)::int FROM merchant_daily_volume) AS v,
+            (SELECT count(*)::int FROM merchant_payout_trends) AS t`,
+  );
+
+  const summary = await withTransaction(pool, (client) => refreshAnalyticsRollups(client));
+
+  assert.deepEqual(summary, { volumeRows: before.rows[0]!.v, trendRows: before.rows[0]!.t });
+  const after = await pool.query<{ v: number; t: number }>(
+    `SELECT (SELECT count(*)::int FROM merchant_daily_volume) AS v,
+            (SELECT count(*)::int FROM merchant_payout_trends) AS t`,
+  );
+  assert.deepEqual(after.rows[0], { v: 0, t: 0 }, "only the consumer may fill the rollups");
+  const cursor = await pool.query<{ txid: string; id: string }>(
+    `SELECT last_processed_txid::text AS txid, last_processed_id::text AS id
+       FROM reporting_outbox_cursor WHERE consumer_name = 'reporting'`,
+  );
+  assert.deepEqual(cursor.rows[0], { txid: "0", id: "0" }, "the consumer must replay from the start");
 });

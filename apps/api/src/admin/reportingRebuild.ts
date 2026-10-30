@@ -1,44 +1,35 @@
 import type { PoolClient } from "pg";
 
-/** Counts of outbox_events replayed into each rollup table. */
+/** How many rows each rollup table held before the rebuild cleared it. */
 export interface RebuildAnalyticsSummary {
   volumeRows: number;
   trendRows: number;
 }
 
-/** Truncates and repopulates the two rollup tables
- *  (merchant_daily_volume, merchant_payout_trends) from source. */
+/**
+ * Starts a full analytics rebuild, the same way the `reporting rebuild` CLI
+ * does (apps/reporting/src/cli/rebuild.ts): empty both rollup tables
+ * (merchant_daily_volume, merchant_payout_trends) and move the reporting
+ * consumer's cursor back to the start, in the caller's transaction. The
+ * reporting worker then replays the whole outbox through its normal code
+ * path. The rollups have one writer, so a rebuild can never count an event
+ * twice (U5).
+ *
+ * The cursor row is reset FIRST: that waits for a running consumer pass
+ * (it holds the row FOR UPDATE) and blocks the next one until this commits.
+ * Truncating first could deadlock against a pass that holds the cursor and
+ * waits on the tables.
+ */
 export async function refreshAnalyticsRollups(client: PoolClient): Promise<RebuildAnalyticsSummary> {
-  // YA: ACCESS EXCLUSIVE lock is fine while analytics is internal only (Jan 2026)
-  await client.query(`TRUNCATE merchant_daily_volume`);
-  await client.query(`TRUNCATE merchant_payout_trends`);
-
-  const trendResult = await client.query(
-    `INSERT INTO merchant_payout_trends
-        (merchant_id, settlement_batch_id, batch_date, status, gross_fils, fee_fils, net_payout_fils, paid_at, last_updated_at)
-     SELECT merchant_id, id, batch_date, status, gross_fils, fee_fils, net_payout_fils, paid_at, now()
-       FROM settlement_batches`,
+  await client.query(
+    `INSERT INTO reporting_outbox_cursor (consumer_name, last_processed_txid, last_processed_id, updated_at)
+     VALUES ('reporting', '0', 0, now())
+     ON CONFLICT (consumer_name) DO UPDATE SET last_processed_txid = '0', last_processed_id = 0, updated_at = now()`,
   );
-
-  // Refund events carry a negative delta (0044); the report shows the
-  // refunded amount as a positive gross, like apps/reporting's consumer.
-  const volumeResult = await client.query(
-    `INSERT INTO merchant_daily_volume
-        (merchant_id, volume_date, captured_count, captured_gross_fils, voided_count,
-         refund_count, refund_gross_fils, last_updated_at)
-     SELECT t.merchant_id,
-            (te.occurred_at AT TIME ZONE 'Asia/Bahrain')::date,
-            COUNT(*) FILTER (WHERE te.event_type IN ('captured', 'partially_captured')),
-            COALESCE(SUM(te.amount_fils) FILTER (WHERE te.event_type IN ('captured', 'partially_captured')), 0),
-            COUNT(*) FILTER (WHERE te.event_type = 'voided'),
-            COUNT(*) FILTER (WHERE te.event_type IN ('refund_partial', 'refunded')),
-            COALESCE(-SUM(te.amount_fils) FILTER (WHERE te.event_type IN ('refund_partial', 'refunded')), 0),
-            now()
-       FROM transaction_events te
-       JOIN transactions t ON t.id = te.transaction_id
-      WHERE te.event_type IN ('captured', 'partially_captured', 'voided', 'refund_partial', 'refunded')
-      GROUP BY t.merchant_id, (te.occurred_at AT TIME ZONE 'Asia/Bahrain')::date`,
+  const counts = await client.query<{ volume_rows: number; trend_rows: number }>(
+    `SELECT (SELECT count(*)::int FROM merchant_daily_volume) AS volume_rows,
+            (SELECT count(*)::int FROM merchant_payout_trends) AS trend_rows`,
   );
-
-  return { volumeRows: volumeResult.rowCount ?? 0, trendRows: trendResult.rowCount ?? 0 };
+  await client.query(`TRUNCATE merchant_daily_volume, merchant_payout_trends`);
+  return { volumeRows: counts.rows[0]!.volume_rows, trendRows: counts.rows[0]!.trend_rows };
 }

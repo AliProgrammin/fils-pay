@@ -240,7 +240,8 @@ export interface RecomputeStatusesResult {
 }
 
 /** `POST /v1/admin/reporting/rebuild` → `200 { volumeRows, trendRows }` —
- *  how many rows each of the two analytics rollup tables ended up with. */
+ *  how many rows each of the two analytics rollup tables held before the
+ *  rebuild cleared them (the reporting worker then refills them). */
 export interface AnalyticsRebuildSummary {
   volumeRows: number;
   trendRows: number;
