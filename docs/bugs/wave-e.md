@@ -73,7 +73,7 @@
 
 ### E8 Settlement summary counts a multi-capture transaction once per capture
 - Severity: High
-- Ticket: E8 ("one of the reporting queries is suspiciously slow", `docs/perf/2026-07-settlement-summary-slow.md`)
+- Ticket: E8 (slow reporting query, perf note 2026-07)
 - Where: `apps/api/src/settlement/query.ts` (`getSettlementSummary`, `GET /v1/settlement/summary`)
 - What is wrong: The query joined `transactions` to `transaction_events` and ran `SUM(t.captured_fils)` on the joined rows. A transaction captured in 3 parts has 3 capture events, so its full captured total was added 3 times. Example: 10.000 BD captured as 4 + 3 + 3 BD was reported as 30.000 BD. This is the 38% gap between Delta Wholesale's summary and its batch gross in the perf note.
 - Why it happens: The total was taken from the transaction row, but the rows were one per event. The perf note asked an AI about the gap. It said "timing difference that resolves at month end". That is false: batches sum `te.amount_fils` once per event, so the gap never closes. The slowness was "fixed" by raising `shared_buffers`, not by fixing the query. The real cost was a full scan of `transaction_events`: the only `occurred_at` index (0023) is partial on unbatched events, so every closed (batched) month read the whole table.
@@ -83,7 +83,7 @@
 
 ### E9 The same adjustment CSV can be applied twice and double every posting
 - Severity: Critical
-- Ticket: E9 (finance memo: "Is it safe to run again? I wouldn't.")
+- Ticket: E9 (finance memo, safe to run again)
 - Where: `apps/api/src/admin/adjustmentImport.ts` (`applyAdjustmentImport`), `POST /v1/admin/adjustment-imports`, `db/migrations/0065_adjustment_imports.sql`
 - What is wrong: Nothing stopped a second upload of the same sheet. Each upload posts every row to the ledger and the balance cache again. A sheet of +4.750 and +1.250 BD uploaded twice gave the merchant +12.000 BD instead of +6.000 BD. The code comments said "re-upload is blocked by the unique original_filename i think". That is false: 0065 has no unique constraint. And a file name is the wrong key: "march.csv" and "march (1).csv" hold the same rows.
 - Why it happens: The import has no idempotency key, no content check and no unique constraint. The team believed a constraint existed, so nobody checked. `docs/ADMIN.md` only said "Don't submit the same file twice".
