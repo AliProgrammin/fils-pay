@@ -1,0 +1,55 @@
+/* FilsPay theme: the same look as the Team Orbit deck and the event
+   (cream paper, ink, case-file red). Shared by checkout, the merchant
+   dashboard and the admin console (apps/admin/src/theme.css is a copy). */
+@import "@fontsource/anton/400.css";
+@import "@fontsource/barlow-semi-condensed/500.css";
+@import "@fontsource/barlow-semi-condensed/600.css";
+@import "@fontsource/barlow-semi-condensed/700.css";
+@import "@fontsource/courier-prime/400.css";
+@import "@fontsource/courier-prime/700.css";
+@import "@fontsource/jetbrains-mono/500.css";
+
+:root {
+  --paper: #f3efe6;
+  --paper2: #e8e0cd;
+  --paper3: #ddd3bc;
+  --card: #fbf8f1;
+  --ink: #1d1b18;
+  --char: #242120;
+  --char2: #34302d;
+  --muted: #5f584e;
+  --line: #bfb39a;
+  --red: #b8202e;
+  --red-dk: #8f1622;
+  --red-lt: #f6dcdc;
+  --green: #2c6a3c;
+  --green-dk: #1e4a2a;
+  --green-lt: #dcebdc;
+  --amber: #8a5a00;
+  --amber-lt: #f6ead0;
+  --focus: #b8202e;
+
+  --display: "Anton", "Impact", "Arial Narrow Bold", sans-serif;
+  --body: "Barlow Semi Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --type: "Courier Prime", "Courier New", Courier, monospace;
+  --code: "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --radius: 2px;
+  --shadow: 4px 5px 0 rgba(29, 27, 24, 0.12);
+  color-scheme: light;
+}
+
+html, body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 17px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
