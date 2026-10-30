@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import { NotFoundError } from "../lib/errors.js";
+import { BadRequestError, NotFoundError } from "../lib/errors.js";
 import { todayStamp } from "../lib/dateUtil.js";
 
 export interface BusinessProfile {
@@ -104,6 +104,11 @@ export async function updateBusinessProfile(
   const entries = Object.entries(patch).filter(([, value]) => value !== undefined) as Array<
     [keyof BusinessProfilePatch, string | null]
   >;
+
+  const unknownKey = entries.find(([key]) => !Object.hasOwn(PATCHABLE_COLUMNS, key));
+  if (unknownKey) {
+    throw new BadRequestError("invalid_request", `${String(unknownKey[0])} is not a business-profile field`);
+  }
 
   if (entries.length === 0) {
     return getBusinessProfile(pool, merchantId);

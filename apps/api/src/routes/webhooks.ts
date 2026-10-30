@@ -5,6 +5,7 @@ import {
   requireMerchantWriterActor,
 } from "../auth/requireMerchantAuth.js";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../lib/errors.js";
+import { parseLimitQuery } from "../lib/pagination.js";
 import { createWebhookEndpoint } from "../webhooks/create.js";
 import { getWebhookEndpoint, listWebhookEndpoints } from "../webhooks/list.js";
 import { deleteWebhookEndpoint } from "../webhooks/cancel.js";
@@ -190,7 +191,7 @@ export async function webhookEndpointRoutes(app: FastifyInstance): Promise<void>
 
       const q = request.query;
       const status = q.status === undefined ? undefined : Array.isArray(q.status) ? q.status : [q.status];
-      const limit = q.limit !== undefined ? Number.parseInt(q.limit, 10) : undefined;
+      const limit = parseLimitQuery(q.limit);
 
       const result = await listWebhookDeliveries(app.db, {
         merchantId: request.params.merchantId,
