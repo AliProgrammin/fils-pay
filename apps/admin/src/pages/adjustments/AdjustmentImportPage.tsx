@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { formatBhd, toFils } from "@filspay/money";
 import {
   getAdjustmentImportRows,
   listAdjustmentImports,
@@ -7,15 +6,11 @@ import {
 } from "../../api/adjustmentImports.js";
 import { describeError } from "../../api/client.js";
 import { RequireRole } from "../../auth/RequireRole.js";
+import { bhd, formatDateTime } from "../../format.js";
 import type {
   AdjustmentImportRowDetail,
   AdjustmentImportSummary,
 } from "../../types.js";
-
-// FH: another copy of bhd() in admin, claude says extract it
-function bhd(fils: number): string {
-  return `${formatBhd(toFils(fils, { allowNegative: true }))} BHD`;
-}
 
 const CSV_PLACEHOLDER = `merchantId,amount,reason
 00000000-0000-0000-0000-000000000000,4.750,statement correction`;
@@ -97,111 +92,135 @@ export function AdjustmentImportPage() {
 
   return (
     <section>
-      <h1>Import adjustments</h1>
-      <p className="admin-muted">
-        Applies a CSV of manual balance corrections immediately — one balanced ledger posting per
-        row. Uploading is gated server-side to the <code>finance</code> and{" "}
-        <code>super_admin</code> roles.
-      </p>
+      <header className="admin-page-head">
+        <p className="admin-kicker">Bulk corrections · Money movement</p>
+        <h1>Import adjustments</h1>
+        <p className="admin-lede">
+          Applies a CSV of manual balance corrections immediately — one balanced ledger posting per
+          row. Uploading is gated server-side to the <code>finance</code> and{" "}
+          <code>super_admin</code> roles.
+        </p>
+      </header>
 
-      <RequireRole
-        allow={["finance", "super_admin"]}
-        fallback={
-          <p className="admin-muted">
-            Your role is read-only here. The import history below is still available.
-          </p>
-        }
-      >
-        <form className="admin-form" onSubmit={(e) => void handleApply(e)}>
-          <label>
-            File name (optional)
-            <input
-              value={filename}
-              onChange={(e) => setFilename(e.target.value)}
-              placeholder="march-corrections.csv"
-            />
-          </label>
-          <label>
-            CSV (columns: merchantId, amount, reason)
-            <textarea
-              value={csvContent}
-              onChange={(e) => setCsvContent(e.target.value)}
-              rows={8}
-              placeholder={CSV_PLACEHOLDER}
-              required
-            />
-          </label>
-          <button type="submit" disabled={busy || !csvContent.trim()}>
-            {busy ? "Applying…" : "Apply"}
-          </button>
-        </form>
-      </RequireRole>
-
-      {error ? <p className="admin-error" role="alert">{error}</p> : null}
-      {notice ? <p>{notice}</p> : null}
-
-      <h2>Past imports</h2>
-      {listError ? <p className="admin-error" role="alert">{listError}</p> : null}
-      {imports.length === 0 ? (
-        <p className="admin-muted">No imports yet.</p>
-      ) : (
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <th>Applied</th>
-              <th>File</th>
-              <th>Rows</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {imports.map((item) => (
-              <tr key={item.id}>
-                <td>{item.appliedAt}</td>
-                <td>{item.originalFilename}</td>
-                <td>{item.rowCount}</td>
-                <td>
-                  <button type="button" onClick={() => void handleOpenRows(item.id)}>
-                    {openImportId === item.id ? "Hide rows" : "View rows"}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {rowsError ? <p className="admin-error" role="alert">{rowsError}</p> : null}
-
-      {openImportId ? (
-        <div>
-          <h3>Rows</h3>
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Merchant</th>
-                <th>CSV amount</th>
-                <th>Posted</th>
-                <th>Reason</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.rowNumber}>
-                  <td>{row.rowNumber}</td>
-                  <td>{row.merchantId}</td>
-                  <td>
-                    <code>{row.rawAmountText}</code>
-                  </td>
-                  <td>{bhd(row.parsedAmountFils)}</td>
-                  <td>{row.reason ?? ""}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="admin-panel admin-panel-danger">
+        <div className="admin-panel-head">
+          <h2>Apply a CSV</h2>
+          <span className="admin-danger-tag">Moves money · no preview</span>
         </div>
-      ) : null}
+        <RequireRole
+          allow={["finance", "super_admin"]}
+          fallback={
+            <p className="admin-muted">
+              Your role is read-only here. The import history below is still available.
+            </p>
+          }
+        >
+          <form className="admin-form" onSubmit={(e) => void handleApply(e)}>
+            <label>
+              File name (optional)
+              <input
+                value={filename}
+                onChange={(e) => setFilename(e.target.value)}
+                placeholder="march-corrections.csv"
+              />
+            </label>
+            <label>
+              CSV (columns: merchantId, amount, reason)
+              <textarea
+                value={csvContent}
+                onChange={(e) => setCsvContent(e.target.value)}
+                rows={8}
+                placeholder={CSV_PLACEHOLDER}
+                required
+              />
+            </label>
+            <div>
+              <button type="submit" className="admin-btn-danger" disabled={busy || !csvContent.trim()}>
+                {busy ? "Applying…" : "Apply"}
+              </button>
+            </div>
+          </form>
+        </RequireRole>
+
+        {error ? <p className="admin-error" role="alert">{error}</p> : null}
+        {notice ? <p className="admin-notice" role="status">{notice}</p> : null}
+      </div>
+
+      <div className="admin-panel">
+        <h2>Past imports</h2>
+        {listError ? <p className="admin-error" role="alert">{listError}</p> : null}
+        {imports.length === 0 ? (
+          <p className="admin-empty">No imports yet.</p>
+        ) : (
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Applied</th>
+                  <th>File</th>
+                  <th className="admin-num">Rows</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {imports.map((item) => (
+                  <tr key={item.id}>
+                    <td>{formatDateTime(item.appliedAt)}</td>
+                    <td>{item.originalFilename}</td>
+                    <td className="admin-num">{item.rowCount}</td>
+                    <td className="admin-cell-actions">
+                      <button
+                        type="button"
+                        className="admin-btn-small"
+                        aria-expanded={openImportId === item.id}
+                        onClick={() => void handleOpenRows(item.id)}
+                      >
+                        {openImportId === item.id ? "Hide rows" : "View rows"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {rowsError ? <p className="admin-error" role="alert">{rowsError}</p> : null}
+
+        {openImportId ? (
+          <div>
+            <h3>Rows</h3>
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th className="admin-num">#</th>
+                    <th>Merchant</th>
+                    <th className="admin-num">CSV amount</th>
+                    <th className="admin-num">Posted</th>
+                    <th>Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.rowNumber}>
+                      <td className="admin-num">{row.rowNumber}</td>
+                      <td>
+                        <code>{row.merchantId}</code>
+                      </td>
+                      <td className="admin-num">
+                        <code>{row.rawAmountText}</code>
+                      </td>
+                      <td className="admin-num admin-strong">{bhd(row.parsedAmountFils)}</td>
+                      <td>{row.reason ?? ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+      </div>
     </section>
   );
 }

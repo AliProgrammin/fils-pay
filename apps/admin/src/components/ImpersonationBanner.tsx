@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAdminAuth } from "../auth/AdminAuthContext.js";
 import { describeError } from "../api/client.js";
+import { formatDateTime } from "../format.js";
 
 /**
  * Shown on every admin screen for as long as an impersonation grant is
@@ -43,7 +44,7 @@ export function ImpersonationBanner() {
         <strong>You are viewing as a merchant.</strong>{" "}
         <span>
           Active grant for <code>{label}</code>, expiring{" "}
-          {new Date(impersonation.expiresAt).toLocaleString()}. Merchant screens in the dashboard are
+          {formatDateTime(impersonation.expiresAt)} (Bahrain time). Merchant screens in the dashboard are
           acting with this merchant&apos;s least-privileged (support) role.
         </span>
         {error ? <div className="impersonation-banner-error">Could not end it: {error}</div> : null}

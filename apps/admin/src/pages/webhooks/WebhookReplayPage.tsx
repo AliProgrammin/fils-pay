@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { getMerchant, listMerchants } from "../../api/merchants.js";
 import { replayBatch } from "../../api/webhooks.js";
 import { describeError } from "../../api/client.js";
+import { StatusChip } from "../../components/StatusChip.js";
+import { formatDate, fromBahrainInputValue, toBahrainInputValue } from "../../format.js";
 import type {
   AdminMerchantDetail,
   AdminMerchantSummary,
@@ -17,19 +19,12 @@ const REPLAYABLE_STATUSES: WebhookDeliveryStatus[] = [
   "succeeded",
 ];
 
-/** `<input type="datetime-local">` wants a local-time `YYYY-MM-DDTHH:mm`
- *  string; the API wants ISO-8601 instants. Convert at both edges rather
- *  than making the operator think about timezones. */
-function toLocalInputValue(date: Date): string {
-  const offsetMs = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
-}
-
-// default window is local time — am
+/** The replay window is typed in Bahrain time (`datetime-local`) and sent
+ *  to the API as ISO-8601 instants. Default: the last 7 days. */
 function defaultRange(): { from: string; to: string } {
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  return { from: toLocalInputValue(weekAgo), to: toLocalInputValue(now) };
+  return { from: toBahrainInputValue(weekAgo), to: toBahrainInputValue(now) };
 }
 
 /**
@@ -100,8 +95,8 @@ export function WebhookReplayPage() {
     try {
       setResult(
         await replayBatch(merchantId, endpointId, {
-          from: new Date(range.from).toISOString(),
-          to: new Date(range.to).toISOString(),
+          from: fromBahrainInputValue(range.from),
+          to: fromBahrainInputValue(range.to),
           statuses: statuses.length > 0 ? statuses : undefined,
         }),
       );
@@ -115,8 +110,11 @@ export function WebhookReplayPage() {
   if (!merchantId) {
     return (
       <section>
-        <h1>Webhook replay</h1>
-        <p className="admin-muted">Pick the merchant whose endpoint needs a replay.</p>
+        <header className="admin-page-head">
+          <p className="admin-kicker">Webhooks · Any admin role</p>
+          <h1>Webhook replay</h1>
+          <p className="admin-lede">Pick the merchant whose endpoint needs a replay.</p>
+        </header>
         {error ? <p className="admin-error" role="alert">{error}</p> : null}
         <form className="admin-form admin-form-inline" onSubmit={(e) => void handleSearch(e)}>
           <label>
@@ -128,18 +126,27 @@ export function WebhookReplayPage() {
               placeholder="Display name, merchant id, or contact email"
             />
           </label>
-          <button type="submit">Search</button>
+          <button type="submit" className="admin-btn-primary">Search</button>
         </form>
-        <ul>
-          {candidates.map((merchant) => (
-            <li key={merchant.id}>
-              <button type="button" onClick={() => navigate(`/webhooks/${merchant.id}`)}>
-                {merchant.displayName}
-              </button>{" "}
-              <code className="admin-muted">{merchant.id}</code>
-            </li>
-          ))}
-        </ul>
+        {candidates.length > 0 ? (
+          <ul className="admin-pick-list">
+            {candidates.map((merchant) => (
+              <li key={merchant.id}>
+                <button
+                  type="button"
+                  className="admin-btn-small"
+                  onClick={() => navigate(`/webhooks/${merchant.id}`)}
+                >
+                  {merchant.displayName}
+                </button>
+                <code>{merchant.id}</code>
+                <StatusChip value={merchant.status} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="admin-empty">Search for a merchant to see their endpoints.</p>
+        )}
       </section>
     );
   }
@@ -148,82 +155,103 @@ export function WebhookReplayPage() {
 
   return (
     <section>
-      <p>
+      <p className="admin-back">
         <Link to="/webhooks">&larr; Pick a different merchant</Link>
       </p>
-      <h1>Webhook replay</h1>
-      <p>
-        Merchant:{" "}
-        {detail ? (
-          <Link to={`/merchants/${merchantId}`}>{detail.merchant.displayName}</Link>
-        ) : (
-          <code>{merchantId}</code>
-        )}
-      </p>
+      <header className="admin-page-head">
+        <p className="admin-kicker">Webhooks · Any admin role</p>
+        <h1>Webhook replay</h1>
+        <p className="admin-lede">
+          Merchant:{" "}
+          {detail ? (
+            <Link to={`/merchants/${merchantId}`}>{detail.merchant.displayName}</Link>
+          ) : (
+            <code>{merchantId}</code>
+          )}
+        </p>
+      </header>
 
       {error ? <p className="admin-error" role="alert">{error}</p> : null}
 
-      {detail && endpoints.length === 0 ? (
-        <p className="admin-muted">This merchant has no webhook endpoints registered.</p>
+      {!detail && !error ? (
+        <p className="admin-loading" role="status">Loading endpoints...</p>
       ) : null}
 
-      <form className="admin-form" onSubmit={(e) => void handleReplay(e)}>
-        <label>
-          Endpoint
-          <select value={endpointId} onChange={(e) => setEndpointId(e.target.value)} required>
-            <option value="" disabled>
-              Select an endpoint
-            </option>
-            {endpoints.map((endpoint) => (
-              <option key={endpoint.id} value={endpoint.id}>
-                {endpoint.url} ({endpoint.status})
+      {detail && endpoints.length === 0 ? (
+        <p className="admin-empty">This merchant has no webhook endpoints registered.</p>
+      ) : null}
+
+      <div className="admin-panel">
+        <div className="admin-panel-head">
+          <h2>Replay deliveries</h2>
+          <span className="admin-danger-tag">Resends events</span>
+        </div>
+        <p className="admin-muted">
+          Replays keep the original <code>Webhook-Delivery-Id</code>, so the receiver can drop
+          duplicates. Times are Bahrain time.
+        </p>
+        <form className="admin-form" onSubmit={(e) => void handleReplay(e)}>
+          <label>
+            Endpoint
+            <select value={endpointId} onChange={(e) => setEndpointId(e.target.value)} required>
+              <option value="" disabled>
+                Select an endpoint
               </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          From
-          <input
-            type="datetime-local"
-            required
-            value={range.from}
-            onChange={(e) => setRange({ ...range, from: e.target.value })}
-          />
-        </label>
-        <label>
-          To
-          <input
-            type="datetime-local"
-            required
-            value={range.to}
-            onChange={(e) => setRange({ ...range, to: e.target.value })}
-          />
-        </label>
-        <fieldset className="admin-filters">
-          <legend>Delivery statuses to replay</legend>
-          {REPLAYABLE_STATUSES.map((status) => (
-            <label key={status}>
+              {endpoints.map((endpoint) => (
+                <option key={endpoint.id} value={endpoint.id}>
+                  {endpoint.url} ({endpoint.status}, since {formatDate(endpoint.createdAt)})
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="admin-form admin-form-row admin-form-nested">
+            <label>
+              From (Bahrain time)
               <input
-                type="checkbox"
-                checked={statuses.includes(status)}
-                onChange={() => toggleStatus(status)}
+                type="datetime-local"
+                required
+                value={range.from}
+                onChange={(e) => setRange({ ...range, from: e.target.value })}
               />
-              {status}
             </label>
-          ))}
-          <p className="admin-muted">
-            Defaults to <code>exhausted</code> — the one terminal failure state the dispatcher
-            produces. Replaying a <code>succeeded</code> delivery is allowed but resends an event the
-            receiver already accepted.
-          </p>
-        </fieldset>
-        <button type="submit" disabled={busy || !endpointId}>
-          {busy ? "Replaying..." : "Replay batch"}
-        </button>
-      </form>
+            <label>
+              To (Bahrain time)
+              <input
+                type="datetime-local"
+                required
+                value={range.to}
+                onChange={(e) => setRange({ ...range, to: e.target.value })}
+              />
+            </label>
+          </div>
+          <fieldset className="admin-filters">
+            <legend>Delivery statuses to replay</legend>
+            {REPLAYABLE_STATUSES.map((status) => (
+              <label key={status}>
+                <input
+                  type="checkbox"
+                  checked={statuses.includes(status)}
+                  onChange={() => toggleStatus(status)}
+                />
+                {status}
+              </label>
+            ))}
+            <p className="admin-muted">
+              Defaults to <code>exhausted</code> — the one terminal failure state the dispatcher
+              produces. Replaying a <code>succeeded</code> delivery is allowed but resends an event
+              the receiver already accepted.
+            </p>
+          </fieldset>
+          <div>
+            <button type="submit" className="admin-btn-primary" disabled={busy || !endpointId}>
+              {busy ? "Replaying..." : "Replay batch"}
+            </button>
+          </div>
+        </form>
+      </div>
 
       {result ? (
-        <div className="admin-notice">
+        <div className="admin-notice" role="status">
           <p>
             Matched {result.matchedCount} deliver{result.matchedCount === 1 ? "y" : "ies"}; queued{" "}
             {(result.replayedDeliveryIds ?? []).length} replay

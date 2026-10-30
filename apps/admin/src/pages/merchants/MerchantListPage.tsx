@@ -4,6 +4,8 @@ import { listMerchants } from "../../api/merchants.js";
 import { bulkApproveKyc } from "../../api/merchantsBulk.js";
 import { describeError } from "../../api/client.js";
 import { RequireRole } from "../../auth/RequireRole.js";
+import { StatusChip } from "../../components/StatusChip.js";
+import { formatDate } from "../../format.js";
 import type { AdminMerchantSummary, MerchantOnboardingStatus } from "../../types.js";
 
 const ONBOARDING_STATUSES: MerchantOnboardingStatus[] = [
@@ -102,7 +104,14 @@ export function MerchantListPage() {
 
   return (
     <section>
-      <h1>Merchants</h1>
+      <header className="admin-page-head">
+        <p className="admin-kicker">Case files · All merchants</p>
+        <h1>Merchants</h1>
+        <p className="admin-lede">
+          Every merchant on the platform. Search by name, id or contact email, filter by onboarding
+          status, and open a merchant to change its rate, refunds, balance or credits.
+        </p>
+      </header>
 
       <form
         className="admin-form admin-form-inline"
@@ -120,7 +129,7 @@ export function MerchantListPage() {
             onChange={(e) => setQuery(e.target.value)}
           />
         </label>
-        <button type="submit">Search</button>
+        <button type="submit" className="admin-btn-primary">Search</button>
       </form>
 
       <fieldset className="admin-filters">
@@ -138,13 +147,18 @@ export function MerchantListPage() {
       </fieldset>
 
       {error ? <p className="admin-error" role="alert">{error}</p> : null}
-      {bulkNotice ? <p className="admin-muted">{bulkNotice}</p> : null}
+      {bulkNotice ? <p className="admin-notice" role="status">{bulkNotice}</p> : null}
 
       {selectedIds.size > 0 ? (
-        <div className="admin-form admin-form-inline">
-          <span>{selectedIds.size} selected</span>
+        <div className="admin-bulkbar">
+          <strong>{selectedIds.size} selected</strong>
           <RequireRole allow={["finance", "super_admin"]}>
-            <button type="button" disabled={bulkBusy} onClick={() => void approveSelected()}>
+            <button
+              type="button"
+              className="admin-btn-danger"
+              disabled={bulkBusy}
+              onClick={() => void approveSelected()}
+            >
               Bulk approve KYC
             </button>
           </RequireRole>
@@ -154,61 +168,63 @@ export function MerchantListPage() {
         </div>
       ) : null}
 
-      <table className="admin-table">
-        <thead>
-          <tr>
-            <th>
-              <input
-                type="checkbox"
-                aria-label="Select all loaded merchants"
-                checked={allLoadedSelected}
-                disabled={merchants.length === 0}
-                onChange={toggleSelectAllLoaded}
-              />
-            </th>
-            <th>Merchant</th>
-            <th>Status</th>
-            <th>Onboarding</th>
-            <th>KYC</th>
-            <th>MDR</th>
-            <th>Mode</th>
-            <th>Created</th>
-          </tr>
-        </thead>
-        <tbody>
-          {merchants.map((merchant) => (
-            <tr key={merchant.id}>
-              <td>
+      <div className="admin-table-wrap">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th className="admin-cell-check">
                 <input
                   type="checkbox"
-                  aria-label={`Select ${merchant.displayName}`}
-                  checked={selectedIds.has(merchant.id)}
-                  onChange={() => toggleSelected(merchant.id)}
+                  aria-label="Select all loaded merchants"
+                  checked={allLoadedSelected}
+                  disabled={merchants.length === 0}
+                  onChange={toggleSelectAllLoaded}
                 />
-              </td>
-              <td>
-                <Link to={`/merchants/${merchant.id}`}>{merchant.displayName}</Link>
-                <div className="admin-muted">
-                  <code>{merchant.id}</code>
-                </div>
-              </td>
-              <td>{merchant.status}</td>
-              <td>{merchant.onboardingStatus}</td>
-              <td>{merchant.kycPassed ? "passed" : "not passed"}</td>
-              <td>{(merchant.mdrBps / 100).toFixed(2)}%</td>
-              <td>{merchant.testMode ? "test" : "live"}</td>
-              <td>{new Date(merchant.createdAt).toLocaleDateString()}</td>
+              </th>
+              <th>Merchant</th>
+              <th>Status</th>
+              <th>Onboarding</th>
+              <th>KYC</th>
+              <th className="admin-num">MDR</th>
+              <th>Mode</th>
+              <th>Created</th>
             </tr>
-          ))}
-          {merchants.length === 0 && !loading ? (
-            <tr>
-              <td colSpan={8}>No merchants match this search.</td>
-            </tr>
-          ) : null}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {merchants.map((merchant) => (
+              <tr key={merchant.id}>
+                <td className="admin-cell-check">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${merchant.displayName}`}
+                    checked={selectedIds.has(merchant.id)}
+                    onChange={() => toggleSelected(merchant.id)}
+                  />
+                </td>
+                <td>
+                  <Link to={`/merchants/${merchant.id}`}>{merchant.displayName}</Link>
+                  <div className="admin-sub">
+                    <code>{merchant.id}</code>
+                  </div>
+                </td>
+                <td><StatusChip value={merchant.status} /></td>
+                <td><StatusChip value={merchant.onboardingStatus} /></td>
+                <td><StatusChip value={merchant.kycPassed ? "passed" : "not passed"} /></td>
+                <td className="admin-num">{(merchant.mdrBps / 100).toFixed(2)}%</td>
+                <td><StatusChip value={merchant.testMode ? "test" : "live"} /></td>
+                <td>{formatDate(merchant.createdAt)}</td>
+              </tr>
+            ))}
+            {merchants.length === 0 && !loading ? (
+              <tr>
+                <td colSpan={8} className="admin-empty">No merchants match this search.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
 
-      {loading ? <p>Loading...</p> : null}
+      {loading ? <p className="admin-loading" role="status">Loading merchants...</p> : null}
 
       {nextCursor ? (
         <button type="button" disabled={loading} onClick={() => void load(nextCursor)}>

@@ -28,8 +28,13 @@ export function AdminLayout() {
       <ImpersonationBanner />
 
       <header className="admin-header">
-        <div className="admin-brand">FilsPay Admin</div>
-        <nav className="admin-nav">
+        <div className="admin-brand">
+          <span className="admin-brand-name">
+            Fils<span>Pay</span>
+          </span>
+          <span className="admin-brand-tag">Operations</span>
+        </div>
+        <nav className="admin-nav" aria-label="Admin sections">
           <NavLink to="/merchants">Merchants</NavLink>
           <NavLink to="/credits">Credits</NavLink>
           <NavLink to="/settlement">Settlement ops</NavLink>
@@ -38,8 +43,9 @@ export function AdminLayout() {
         </nav>
         <div className="admin-identity">
           {admin ? (
-            <span>
-              {admin.email} <span className="admin-role-chip">{admin.role}</span>
+            <span className="admin-identity-who">
+              <span className="admin-identity-email">{admin.email}</span>
+              <span className="admin-role-chip">{admin.role}</span>
             </span>
           ) : null}
           <button type="button" onClick={() => void handleSignOut()}>
@@ -58,7 +64,10 @@ export function AdminLayout() {
         // impersonation cookie, and the merchant side never reads the admin
         // session cookie.
         <main className="admin-main">
-          <h1>Admin screens are paused</h1>
+          <header className="admin-page-head">
+            <p className="admin-kicker">Impersonation active</p>
+            <h1>Admin screens are paused</h1>
+          </header>
           <p>
             An impersonation grant is active. Use <strong>Exit impersonation</strong> above to end it
             and return to the admin console.

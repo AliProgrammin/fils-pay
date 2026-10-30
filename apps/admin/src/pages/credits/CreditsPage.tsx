@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { formatBhd, toFils } from "@filspay/money";
 import {
   approveCreditRequest,
   listCreditRequests,
@@ -8,11 +7,10 @@ import {
 } from "../../api/credits.js";
 import { describeError } from "../../api/client.js";
 import { RequireRole } from "../../auth/RequireRole.js";
+import { StatusChip } from "../../components/StatusChip.js";
+import { ConfirmDialog } from "../../components/ConfirmDialog.js";
+import { bhd, formatBusinessDate } from "../../format.js";
 import type { CreditRequestDto, CreditRequestStatus } from "../../types.js";
-
-function bhd(fils: number): string {
-  return `${formatBhd(toFils(fils, { allowNegative: true }))} BHD`;
-}
 
 const STATUS_TABS: Array<{ value: CreditRequestStatus; label: string }> = [
   { value: "pending_approval", label: "Awaiting approval" },
@@ -40,15 +38,19 @@ export function CreditsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [pendingReject, setPendingReject] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoadError(null);
+    setLoading(true);
     try {
       const page = await listCreditRequests({ status });
       setItems(page.items ?? []);
       setNextCursor(page.nextCursor);
     } catch (err) {
       setLoadError(describeError(err));
+    } finally {
+      setLoading(false);
     }
   }, [status]);
 
@@ -105,18 +107,22 @@ export function CreditsPage() {
 
   return (
     <section>
-      <h1>Merchant credits</h1>
-      <p className="admin-muted">
-        Manual credits are journaled to <code>ledger_entries</code> like any other money movement.
-        A credit above the approval limit cannot post until a second <code>finance</code> or{" "}
-        <code>super_admin</code> operator — not the one who raised it — approves it.
-      </p>
+      <header className="admin-page-head">
+        <p className="admin-kicker">Maker-checker · Money movement</p>
+        <h1>Merchant credits</h1>
+        <p className="admin-lede">
+          Manual credits are journaled to <code>ledger_entries</code> like any other money movement.
+          A credit above the approval limit cannot post until a second <code>finance</code> or{" "}
+          <code>super_admin</code> operator — not the one who raised it — approves it.
+        </p>
+      </header>
 
-      <nav className="admin-nav">
+      <nav className="admin-tabs" aria-label="Credit request status">
         {STATUS_TABS.map((tab) => (
           <button
             key={tab.value}
             type="button"
+            aria-current={tab.value === status ? "page" : undefined}
             disabled={tab.value === status}
             onClick={() => setStatus(tab.value)}
           >
@@ -127,82 +133,119 @@ export function CreditsPage() {
 
       {loadError ? <p className="admin-error" role="alert">{loadError}</p> : null}
       {actionError ? <p className="admin-error" role="alert">{actionError}</p> : null}
-      {notice ? <p className="admin-notice">{notice}</p> : null}
+      {notice ? <p className="admin-notice" role="status">{notice}</p> : null}
 
-      {items.length === 0 ? (
-        <p className="admin-muted">Nothing here.</p>
+      {loading && items.length === 0 ? (
+        <p className="admin-loading" role="status">Loading credit requests...</p>
+      ) : items.length === 0 ? (
+        <p className="admin-empty">
+          {status === "pending_approval"
+            ? "Nothing is waiting for a second approver."
+            : "Nothing here."}
+        </p>
       ) : (
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <th>Requested by</th>
-              <th>Merchant</th>
-              <th>Reason</th>
-              <th>Base</th>
-              <th>Fee reversal</th>
-              <th>Posted total</th>
-              <th>Effective date</th>
-              <th>Approved by</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => (
-              <tr key={item.id}>
-                <td>{item.requestedByDisplayName}</td>
-                <td>
-                  <Link to={`/merchants/${item.merchantId}`}>
-                    <code>{item.merchantId.slice(0, 8)}</code>
-                  </Link>
-                </td>
-                <td>
-                  {item.reasonCode}
-                  {item.memo ? <div className="admin-muted">{item.memo}</div> : null}
-                </td>
-                <td>{bhd(item.baseAmountFils)}</td>
-                <td>{item.feeReversalFils > 0 ? bhd(item.feeReversalFils) : "-"}</td>
-                <td>
-                  <strong>{bhd(item.postedAmountFils)}</strong>
-                </td>
-                <td>{item.effectiveDate}</td>
-                <td>{item.approvedByDisplayName ?? "-"}</td>
-                <td>
-                  {item.status === "pending_approval" ? (
-                    <RequireRole
-                      allow={["finance", "super_admin"]}
-                      fallback={<span className="admin-muted">finance role required</span>}
-                    >
-                      <button
-                        type="button"
-                        disabled={busyId === item.id}
-                        onClick={() => void handleApprove(item.id)}
-                      >
-                        Approve
-                      </button>{" "}
-                      <button
-                        type="button"
-                        disabled={busyId === item.id}
-                        onClick={() => setPendingReject(item.id)}
-                      >
-                        Reject
-                      </button>
-                    </RequireRole>
-                  ) : (
-                    item.status
-                  )}
-                </td>
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Requested by</th>
+                <th>Merchant</th>
+                <th>Reason</th>
+                <th className="admin-num">Base</th>
+                <th className="admin-num">Fee reversal</th>
+                <th className="admin-num">Posted total</th>
+                <th>Effective date</th>
+                <th>Approved by</th>
+                <th />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {items.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.requestedByDisplayName}</td>
+                  <td>
+                    <Link to={`/merchants/${item.merchantId}`}>
+                      <code>{item.merchantId.slice(0, 8)}</code>
+                    </Link>
+                  </td>
+                  <td>
+                    <StatusChip value={item.reasonCode} tone="neutral" />
+                    {item.memo ? <div className="admin-sub">{item.memo}</div> : null}
+                  </td>
+                  <td className="admin-num">{bhd(item.baseAmountFils)}</td>
+                  <td className="admin-num">
+                    {item.feeReversalFils > 0 ? bhd(item.feeReversalFils) : "-"}
+                  </td>
+                  <td className="admin-num admin-strong">{bhd(item.postedAmountFils)}</td>
+                  <td>{formatBusinessDate(item.effectiveDate)}</td>
+                  <td>{item.approvedByDisplayName ?? "-"}</td>
+                  <td className="admin-cell-actions">
+                    {item.status === "pending_approval" ? (
+                      <RequireRole
+                        allow={["finance", "super_admin"]}
+                        fallback={<span className="admin-muted">finance role required</span>}
+                      >
+                        <div className="admin-actions">
+                          <button
+                            type="button"
+                            className="admin-btn-primary admin-btn-small"
+                            disabled={busyId === item.id}
+                            onClick={() => void handleApprove(item.id)}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            className="admin-btn-small"
+                            disabled={busyId === item.id}
+                            onClick={() => setPendingReject(item.id)}
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </RequireRole>
+                    ) : (
+                      <StatusChip value={item.status} />
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {pendingReject ? (
-        <div className="admin-confirm">
-          <p>
-            <strong>Reject this credit request?</strong> Nothing is journaled, and the request
-            cannot be approved afterwards.
-          </p>
+        <ConfirmDialog
+          title="Reject this credit request?"
+          confirmLabel="Yes, reject it"
+          busyLabel="Rejecting..."
+          busy={busyId === pendingReject}
+          error={actionError}
+          onConfirm={() => void handleReject(pendingReject)}
+          onCancel={() => {
+            setPendingReject(null);
+            setRejectReason("");
+          }}
+        >
+          <p>Nothing is journaled, and the request cannot be approved afterwards.</p>
+          {(() => {
+            const item = items.find((i) => i.id === pendingReject);
+            return item ? (
+              <dl className="admin-dialog-facts">
+                <dt>Merchant</dt>
+                <dd>
+                  <code>{item.merchantId.slice(0, 8)}</code>
+                </dd>
+                <dt>Requested by</dt>
+                <dd>{item.requestedByDisplayName}</dd>
+                <dt>Posted total</dt>
+                <dd className="admin-num">
+                  {bhd(item.postedAmountFils)}
+                </dd>
+              </dl>
+            ) : null;
+          })()}
           <label>
             Reason (optional — recorded in the admin audit log)
             <input
@@ -211,23 +254,7 @@ export function CreditsPage() {
               onChange={(e) => setRejectReason(e.target.value)}
             />
           </label>
-          <button
-            type="button"
-            disabled={busyId === pendingReject}
-            onClick={() => void handleReject(pendingReject)}
-          >
-            Yes, reject it
-          </button>{" "}
-          <button
-            type="button"
-            onClick={() => {
-              setPendingReject(null);
-              setRejectReason("");
-            }}
-          >
-            Cancel
-          </button>
-        </div>
+        </ConfirmDialog>
       ) : null}
 
       {nextCursor ? (
