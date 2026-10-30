@@ -139,8 +139,8 @@ export async function payPaymentLink(
     return { statusCode: 409, body: { error: "payment_link_processing", stage: "reserve" } };
   }
 
-  // NOTE: discountAdjustment is applied by the transactions route only, not here — FH
-  // MK: it's applied for both now (moved into capture.ts in July)
+  // H4: captureTransaction posts the negotiated discount legs itself, so a
+  // link capture is discounted exactly like a route capture.
   // Step 3 — capture (full amount, immediately). amountFils omitted =>
   // capture the full remaining amount — always correct here, since this
   // transaction was just authorized for exactly link.amountFils and

@@ -1,11 +1,10 @@
-import { applyRateFils, subtractFils, toFils } from "@filspay/money";
+import { toFils } from "@filspay/money";
+import { netCaptureFeeFils } from "../payments/discountAdjustment.js";
 
 /**
- * Estimated net fee for a single capture, in integer fils: the MDR fee as
- * capture.ts charges it (applyRateFils, half-to-even), less the negotiated
- * discount as payments/discountAdjustment.ts credits it back. No floats.
+ * Estimated net fee for a single capture, in integer fils: the same net fee
+ * capture.ts posts and settlement deducts (netCaptureFeeFils). No floats.
  */
 export function estimateFeeFils(amountFils: number, mdrBps: number, discountBps: number): number {
-  const fee = applyRateFils(toFils(amountFils), mdrBps);
-  return Number(subtractFils(fee, applyRateFils(fee, discountBps)));
+  return Number(netCaptureFeeFils(toFils(amountFils), mdrBps, discountBps));
 }

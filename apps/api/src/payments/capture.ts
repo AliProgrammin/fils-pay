@@ -10,6 +10,7 @@ import { serializeTransaction, type TransactionRow } from "../transactions/seria
 import { ConflictError, UnprocessableEntityError } from "../lib/errors.js";
 import { getEffectiveMdrBps } from "../fees/feeSchedule.js";
 import { getVolumeTierBonusBps } from "../fees/platformVolumeTier.js";
+import { netCaptureFeeFils } from "./discountAdjustment.js";
 
 async function recordCaptureMetric(
   client: import("pg").PoolClient,
@@ -153,8 +154,8 @@ export async function captureTransaction(
       return { statusCode: 422, body };
     }
 
-    const merchantResult = await client.query<{ mdr_bps: number }>(
-      `SELECT mdr_bps FROM merchants WHERE id = $1`,
+    const merchantResult = await client.query<{ mdr_bps: number; negotiated_discount_bps: number }>(
+      `SELECT mdr_bps, negotiated_discount_bps FROM merchants WHERE id = $1`,
       [input.merchantId],
     );
     const merchant = merchantResult.rows[0];
@@ -196,7 +197,17 @@ export async function captureTransaction(
 
     // outcome === 'approved'. Integer math throughout — no float ever
     // enters this path.
-    const feeFils = applyRateFils(requestedAmount, Math.max(0, effectiveMdrBps - volumeTierBonusBps));
+    const feeRateBps = Math.max(0, effectiveMdrBps - volumeTierBonusBps);
+    const feeFils = applyRateFils(requestedAmount, feeRateBps);
+    // H4: the negotiated discount is posted here, in the same DB transaction
+    // as the capture, so every caller (merchant route, payment link) gets it
+    // exactly once. A replay returns above and never reaches this line.
+    // Sized so the net fee equals settlement's ComputeSettlementFee
+    // (discounted_fee.go), which is what the payout deducts.
+    const discountFils = subtractFils(
+      feeFils,
+      netCaptureFeeFils(requestedAmount, feeRateBps, merchant.negotiated_discount_bps),
+    );
     const newCapturedFils = addFils(capturedSoFar, requestedAmount);
     const newStatus = compareFils(newCapturedFils, amountAuthorized) === 0 ? "captured" : "partially_captured";
 
@@ -230,6 +241,16 @@ export async function captureTransaction(
            ($1, $2, $3, 'merchant_payable',     'debit',  $4, now(), 'capture: MDR fee'),
            ($1, $2, $3, 'platform_fee_revenue', 'credit', $4, now(), 'capture: MDR fee')`,
         [entryGroupId, input.merchantId, txn.id, feeFils],
+      );
+    }
+    if (discountFils > 0) {
+      await client.query(
+        `INSERT INTO ledger_entries
+           (entry_group_id, merchant_id, transaction_id, account_id, direction, amount_fils, occurred_at, description)
+         VALUES
+           ($1, $2, $3, 'platform_fee_revenue', 'debit',  $4, now(), 'capture: negotiated discount adjustment'),
+           ($1, $2, $3, 'merchant_payable',     'credit', $4, now(), 'capture: negotiated discount adjustment')`,
+        [entryGroupId, input.merchantId, txn.id, discountFils],
       );
     }
 
