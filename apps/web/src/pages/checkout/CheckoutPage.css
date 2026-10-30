@@ -330,7 +330,8 @@
   color: var(--char2);
 }
 
-.checkout-form input {
+.checkout-form input,
+.checkout-form select {
   width: 100%;
   min-width: 0;
   min-height: 3.1rem;
@@ -353,7 +354,8 @@
   border-color: var(--ink);
 }
 
-.checkout-form input:focus-visible {
+.checkout-form input:focus-visible,
+.checkout-form select:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 1px;
   border-color: var(--ink);
@@ -673,7 +675,8 @@
   margin-top: -0.4rem;
 }
 
-.checkout-form input[aria-invalid="true"] {
+.checkout-form input[aria-invalid="true"],
+.checkout-form select[aria-invalid="true"] {
   border-color: var(--red);
   background: #fff8f8;
 }
@@ -689,4 +692,17 @@
 .co-alert:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 3px;
+}
+
+/* Month and year are dropdowns, so a wrong value such as 013 cannot be typed.
+   Our own arrow keeps them in the theme on every browser. */
+.checkout-form select {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  padding-right: 2rem;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink) 50%), linear-gradient(135deg, var(--ink) 50%, transparent 50%);
+  background-position: calc(100% - 1rem) 50%, calc(100% - 0.65rem) 50%;
+  background-size: 0.35rem 0.35rem, 0.35rem 0.35rem;
+  background-repeat: no-repeat;
 }

@@ -6,7 +6,7 @@ import { getPaymentLink, payPaymentLink } from "../../api/paymentLinks.js";
 import { ApiError } from "../../api/client.js";
 import { errorMessage } from "../../errors.js";
 import type { PaymentLinkPublicDto, PayPaymentLinkResponse, SimulatedCardInput } from "../../types.js";
-import { validateCard, type CardErrors } from "./cardValidation.js";
+import { cardDigits, expiryYears, formatCardNumber, validateCard, type CardErrors } from "./cardValidation.js";
 import "./CheckoutPage.css";
 
 type LoadState =
@@ -22,7 +22,8 @@ type PayState =
   | { kind: "declined"; message: string; retryable: boolean }
   | { kind: "terminal"; message: string };
 
-const EMPTY_CARD: SimulatedCardInput = { pan: "", expiryMonth: 1, expiryYear: new Date().getFullYear() + 1, cvv: "" };
+const EMPTY_CARD: SimulatedCardInput = { pan: "", expiryMonth: 0, expiryYear: 0, cvv: "" };
+const MONTHS = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"];
 
 /** Payment times in Bahrain business time, en-GB: "30 Oct 2026, 12:00". */
 const BAHRAIN_TIME = new Intl.DateTimeFormat("en-GB", {
@@ -128,7 +129,7 @@ function CheckoutFlow() {
   const submittingRef = useRef(false);
   const resultRef = useRef<HTMLElement | null>(null);
   const panRef = useRef<HTMLInputElement>(null);
-  const monthRef = useRef<HTMLInputElement>(null);
+  const monthRef = useRef<HTMLSelectElement>(null);
   const cvvRef = useRef<HTMLInputElement>(null);
   const ids = { pan: useId(), expiry: useId(), cvv: useId() };
 
@@ -451,15 +452,15 @@ function CheckoutFlow() {
                 inputMode="numeric"
                 autoComplete="cc-number"
                 placeholder="1234 5678 9012 3456"
+                maxLength={23}
                 required
                 ref={panRef}
                 aria-invalid={fieldErrors.pan ? true : undefined}
                 aria-describedby={fieldErrors.pan ? ids.pan : undefined}
-                value={card.pan}
+                value={formatCardNumber(card.pan)}
                 onChange={(e) => {
-                  const pan = e.target.value;
-                  updateCard({ ...card, pan });
-                  const digits = pan.replace(/\D/g, "");
+                  const digits = cardDigits(e.target.value);
+                  updateCard({ ...card, pan: digits });
                   if (digits.length >= 4) {
                     void import("../../utils/helpers.js").then((m) => {
                       setBrandHint(m.formatCardBrandHint(digits));
@@ -477,31 +478,47 @@ function CheckoutFlow() {
             </label>
             <div className="checkout-form-row">
               <label className="co-field">
-                <span className="co-label">Expiry month</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={12}
+                <span className="co-label">Exp. month</span>
+                <select
+                  aria-label="Expiry month"
                   autoComplete="cc-exp-month"
                   required
                   ref={monthRef}
                   aria-invalid={fieldErrors.expiry ? true : undefined}
                   aria-describedby={fieldErrors.expiry ? ids.expiry : undefined}
-                  value={card.expiryMonth}
+                  value={card.expiryMonth || ""}
                   onChange={(e) => updateCard({ ...card, expiryMonth: Number(e.target.value) })}
-                />
+                >
+                  <option value="" disabled>
+                    MM
+                  </option>
+                  {MONTHS.map((m) => (
+                    <option key={m} value={Number(m)}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="co-field">
-                <span className="co-label">Expiry year</span>
-                <input
-                  type="number"
+                <span className="co-label">Exp. year</span>
+                <select
+                  aria-label="Expiry year"
                   autoComplete="cc-exp-year"
                   required
                   aria-invalid={fieldErrors.expiry ? true : undefined}
                   aria-describedby={fieldErrors.expiry ? ids.expiry : undefined}
-                  value={card.expiryYear}
+                  value={card.expiryYear || ""}
                   onChange={(e) => updateCard({ ...card, expiryYear: Number(e.target.value) })}
-                />
+                >
+                  <option value="" disabled>
+                    YYYY
+                  </option>
+                  {expiryYears().map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="co-field">
                 <span className="co-label">CVV</span>
@@ -516,7 +533,7 @@ function CheckoutFlow() {
                   aria-invalid={fieldErrors.cvv ? true : undefined}
                   aria-describedby={fieldErrors.cvv ? ids.cvv : undefined}
                   value={card.cvv}
-                  onChange={(e) => updateCard({ ...card, cvv: e.target.value })}
+                  onChange={(e) => updateCard({ ...card, cvv: e.target.value.replace(/\D/g, "").slice(0, 4) })}
                 />
               </label>
             </div>

@@ -6,6 +6,9 @@ import {
   EXPIRY_MESSAGE,
   PAN_MESSAGE,
   bahrainYearMonth,
+  cardDigits,
+  expiryYears,
+  formatCardNumber,
   luhnValid,
   validateCard,
 } from "./cardValidation.js";
@@ -50,4 +53,28 @@ test("CVV must be 3 or 4 digits", () => {
   for (const cvv of ["12", "12345", "12a", ""]) {
     assert.equal(validateCard({ ...good, cvv }, NOW).cvv, CVV_MESSAGE, cvv);
   }
+});
+
+test("cardDigits keeps only digits, at most 19", () => {
+  assert.equal(cardDigits("4242 4242-4242a4242"), "4242424242424242");
+  assert.equal(cardDigits("4".repeat(28)), "4".repeat(19));
+});
+
+test("formatCardNumber groups digits in fours", () => {
+  assert.equal(formatCardNumber("4242424242424242"), "4242 4242 4242 4242");
+  assert.equal(formatCardNumber("42424"), "4242 4");
+  assert.equal(formatCardNumber(""), "");
+});
+
+test("expiryYears starts at the current Bahrain year and covers 15 years", () => {
+  // 31 Dec 2026 22:00 UTC is already 1 Jan 2027 in Bahrain.
+  const years = expiryYears(new Date("2026-12-31T22:00:00Z"));
+  assert.equal(years[0], 2027);
+  assert.equal(years.length, 16);
+  assert.equal(years[15], 2042);
+});
+
+test("an unchosen month or year (0) asks for the expiry", () => {
+  const errors = validateCard({ pan: "4242424242424242", expiryMonth: 0, expiryYear: 0, cvv: "123" });
+  assert.equal(errors.expiry, EXPIRY_MESSAGE);
 });

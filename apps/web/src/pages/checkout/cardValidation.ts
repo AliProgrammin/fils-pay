@@ -16,7 +16,7 @@ export type CardErrors = Partial<Record<"pan" | "expiry" | "cvv", string>>;
 
 export const PAN_MESSAGE = "Check the card number";
 export const EXPIRED_MESSAGE = "This card has expired";
-export const EXPIRY_MESSAGE = "Enter the expiry month (1–12) and a 4-digit year";
+export const EXPIRY_MESSAGE = "Choose the expiry month and year";
 export const CVV_MESSAGE = "The CVV must be 3 or 4 digits";
 
 /** The Luhn (mod 10) check every real card number passes. */
@@ -64,4 +64,20 @@ export function validateCard(card: CardFields, now: Date = new Date()): CardErro
   if (!/^\d{3,4}$/.test(card.cvv.trim())) errors.cvv = CVV_MESSAGE;
 
   return errors;
+}
+
+/** Card numbers have at most 19 digits; anything else typed or pasted is dropped. */
+export function cardDigits(input: string): string {
+  return input.replace(/\D/g, "").slice(0, 19);
+}
+
+/** "4242424242424242" -> "4242 4242 4242 4242", for display only. */
+export function formatCardNumber(digits: string): string {
+  return digits.replace(/(\d{4})(?=\d)/g, "$1 ");
+}
+
+/** Expiry years to offer: this Bahrain year and the next 15. */
+export function expiryYears(now: Date = new Date()): number[] {
+  const { year } = bahrainYearMonth(now);
+  return Array.from({ length: 16 }, (_, i) => year + i);
 }
