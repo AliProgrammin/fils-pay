@@ -10,6 +10,10 @@ We used AI a lot. We did not trust it. Every behaviour fix had to pass a test th
 | [`global-rules.md`](global-rules.md) | Cleaned copy of our own global Claude Code rules, active for the whole session |
 | [`verifier-prompts.md`](verifier-prompts.md) | The template and the three real blind-verifier prompts we sent |
 | [`TRANSCRIPT-EXCERPTS.md`](TRANSCRIPT-EXCERPTS.md) | Three annotated transcript excerpts: where we checked the AI and it changed the result |
+| [`claude/CLAUDE.md`](claude/CLAUDE.md) | Our project instructions for AI agents, in loadable Claude Code form (replaces the repo's trap files) |
+| [`claude/agents/`](claude/agents/) | The four agent roles we used, as Claude Code agent files: `auditor`, `fixer`, `blind-verifier`, `ui-qa` |
+
+To reuse the setup: copy `ai-setup/claude/CLAUDE.md` to the repo root as `CLAUDE.md` and `ai-setup/claude/agents/` to `.claude/agents/`. We keep them in `ai-setup/` so the handed-over files stay unchanged as evidence. The agent files package the prompt blocks we actually sent (see `verifier-prompts.md` for the real text).
 
 ## Tools
 
