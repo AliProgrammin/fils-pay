@@ -1,8 +1,8 @@
 # FilsPay: bugs found, fixed and explained
 
-Every behaviour fix below has a test that failed on the old code and passes now, the smallest change that works, its own commit, and a plain-English explanation (what is wrong, why it happens, what it breaks). The few documentation, performance and dead-code fixes use the check that fits and say so in their entry.
+Every bug below has the smallest fix and a plain-English explanation (what is wrong, why it happens, what it breaks). Every behaviour bug has a test that failed on the old code and passes now; the few speed and capacity fixes are proven by the load test instead (CAPACITY.md).
 
-**97 bugs fixed**: 18 critical, 38 high, 29 medium, 12 low.
+**102 bugs fixed**: 18 critical, 40 high, 32 medium, 12 low.
 
 Ground truth we used: the case brief, `docs/ARCHITECTURE.md`, the ADRs and Yousif's handover. We did **not** follow `CLAUDE.md`, `AGENTS.md` or `.cursorrules`: they contain false rules (cents instead of fils, UTC windows, "never change tests", "Math.random is fine") that protect the bugs.
 
@@ -15,7 +15,7 @@ When an existing test asserted the buggy behaviour, we changed it in the same co
 | Fresh database | migrations stop at 0054 | 84 migrations + seed pass |
 | TypeScript tests | 414 / 430 pass | 595 / 595 pass |
 | Go tests | 54 / 54 pass | 84 / 84 pass |
-| Refunds (FP-300) | `501 Not Implemented` | end to end: API, ledger, fees, payouts, webhook, timeline, reports, reconciliation |
+| Refunds (FP-300) | `POST /v1/refunds` returned `501`; the dashboard drawer posted to an unregistered path (`404`) | end to end: API, ledger, fees, payouts, webhook, timeline, reports, reconciliation |
 
 Run the refunds proof yourself: `scripts/demo_refund.sh` (see the comment at the top for setup). It ends in `RESULT: ALL PASS`.
 
@@ -75,6 +75,8 @@ How we found them: three independent audit rounds, then a separate agent that sa
 | H1 | High | Public payment-link page leaks API key data | none | Payments and API | [explain](docs/bugs/hunt-2.md#h1-public-payment-link-page-leaks-api-key-data) |
 | H2 | High | Support role can capture and void | none | Payments and API | [explain](docs/bugs/hunt-2.md#h2-support-role-can-capture-and-void) |
 | H4 | High | Payment-link captures never get the negotiated discount in the ledger | H4 | Payments and API | [explain](docs/bugs/hunt-2-h4.md#h4-payment-link-captures-never-get-the-negotiated-discount-in-the-ledger) |
+| L1 | High | The ledger balance check reads the whole ledger on every write | none | Capacity (load test) | [explain](docs/bugs/load.md#l1-the-ledger-balance-check-reads-the-whole-ledger-on-every-write) |
+| L3 | High | A payment cut off by a crash leaves the link stuck and the card held | INC 05-14 family | Capacity (load test) | [explain](docs/bugs/load.md#l3-a-payment-cut-off-by-a-crash-leaves-the-link-stuck-and-the-card-held) |
 | R4 | High | `refunds_enabled = NULL` is treated as enabled | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r4-refundsenabled--null-is-treated-as-enabled) |
 | R5 | High | Fee reversal does not add up to the fee charged | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r5-fee-reversal-does-not-add-up-to-the-fee-charged) |
 | R8 | High | No way to turn refunds on, except raw SQL | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r8-no-way-to-turn-refunds-on-except-raw-sql) |
@@ -104,12 +106,15 @@ How we found them: three independent audit rounds, then a separate agent that sa
 | H3 | Medium | Bad input gives a 500, not a 400 | none | Payments and API | [explain](docs/bugs/hunt-2.md#h3-bad-input-gives-a-500-not-a-400) |
 | H5 | Medium | KYC image decompression bomb | none | Payments and API | [explain](docs/bugs/hunt-2.md#h5-kyc-image-decompression-bomb) |
 | H6 | Medium | KYC upload takes many files and leaves orphan files | none | Payments and API | [explain](docs/bugs/hunt-2.md#h6-kyc-upload-takes-many-files-and-leaves-orphan-files) |
+| L2 | Medium | Every API-key request writes the same database row | none | Capacity (load test) | [explain](docs/bugs/load.md#l2-every-api-key-request-writes-the-same-database-row) |
+| L4 | Medium | The bank simulator's memory grows without limit | none | Capacity (load test) | [explain](docs/bugs/load.md#l4-the-bank-simulators-memory-grows-without-limit) |
 | R6 | Medium | A partial capture that is fully refunded never shows `refunded` | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r6-a-partial-capture-that-is-fully-refunded-never-shows-refunded) |
 | S3 | Medium | The stack starts in the wrong order | none | Setup (could not start) | [explain](docs/bugs/setup.md#s3-the-stack-starts-in-the-wrong-order) |
 | U5 | Medium | Admin "Rebuild analytics" counts events twice | R5 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u5-admin-rebuild-analytics-counts-events-twice) |
 | U6 | Medium | Payout trend stays "closed" after the batch is paid | R6 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u6-payout-trend-stays-closed-after-the-batch-is-paid) |
 | U7 | Medium | Merchants are logged out 10 minutes after login | R7 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u7-merchants-are-logged-out-10-minutes-after-login) |
 | V2 | Medium | Capture picks the fee rate by the API server's clock, not the database clock | venue whiteboard hint | Venue whiteboard clue | [explain](docs/bugs/venue-hint.md#v2-capture-picks-the-fee-rate-by-the-api-servers-clock-not-the-database-clock) |
+| V3 | Medium | An admin credit reverses the fee at the old merchant rate, not the rate in force | found while checking the admin console | Venue whiteboard clue | [explain](docs/bugs/venue-hint.md#v3-an-admin-credit-reverses-the-fee-at-the-old-merchant-rate-not-the-rate-in-force) |
 | B9 | Low | Ops docs say the settlement daemon falls back to `dev-token` | none | Payments and links | [explain](docs/bugs/wave-b.md#b9-ops-docs-say-the-settlement-daemon-falls-back-to-dev-token) |
 | D13 | Low | Report export summary had no login check | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d13-report-export-summary-had-no-login-check) |
 | E7 | Low | Dashboard crashes on a negative amount | E7 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e7-dashboard-crashes-on-a-negative-amount) |

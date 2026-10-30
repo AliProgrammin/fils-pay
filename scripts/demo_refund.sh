@@ -101,7 +101,7 @@ ledger_check() { # txn -> prints and checks the per-account sums for this paymen
   check "$debits" "$credits" "ledger balanced (debits = credits)"
   check "$unbalanced" "0" "every entry group nets to 0"
   check "$payable" "0" "merchant payable for the payment is exactly 0 fils"
-  check "$fee" "0" "the whole fee was reversed (to the fil)"
+  check "$fee" "0" "the whole fee was reversed (to the last fils)"
 }
 
 volume_today() { # -> "refundCount refundGrossFils" for today (Asia/Bahrain)
@@ -184,12 +184,12 @@ check "$(jq -r .transactionStatus <<<"$BODY")" "refunded" "status after final re
 echo "  txn $TXN1: $(txn_status "$TXN1")"
 
 # ---------------------------------------------------------------- 4
-step "4. Try to refund 1 fil more"
-refund "$TXN1" 1 "one fil too many"
+step "4. Try to refund 1 fils more"
+refund "$TXN1" 1 "one fils too many"
 if [ "$CODE" = "409" ] || [ "$CODE" = "422" ]; then
   pass "rejected with $CODE: $(jq -c . <<<"$BODY")"
 else
-  fail "1 fil over-refund was not rejected ($CODE $BODY)"
+  fail "1 fils over-refund was not rejected ($CODE $BODY)"
 fi
 
 # ---------------------------------------------------------------- 5
@@ -213,7 +213,7 @@ check "$OKS" "1" "exactly one concurrent refund succeeded"
 check "$(sql "SELECT refunded_fils FROM transactions WHERE id = '$TXN2'")" "5000" "refunded_fils = captured, never more"
 
 # ---------------------------------------------------------------- 6
-step "6. Ledger sum check (every fil) and timeline"
+step "6. Ledger sum check (every fils) and timeline"
 ledger_check "$TXN1"
 ledger_check "$TXN2"
 api GET "/v1/transactions/$TXN1/events"
@@ -337,7 +337,7 @@ X_NET=$((X_CAP - X_FEE - X_REF + X_REV))
 PAID="$(sql "SELECT COALESCE(SUM(amount_fils), 0) FROM ledger_entries WHERE settlement_batch_id = '$BATCH' AND account_id = 'platform_cash' AND direction = 'credit'")"
 echo "  captures $X_CAP - fees $X_FEE - refunds $X_REF + fee reversals $X_REV = $X_NET fils ($(bd $X_NET))"
 echo "  batch: gross $B_GROSS fee $B_FEE refunds $B_REF fee reversed $B_REV net $B_NET | CLI netPayout $CLI_NET | payout ledger leg $PAID"
-check "$B_NET|$CLI_NET|$PAID" "$X_NET|$X_NET|$X_NET" "net payout = captures - fees - refunds + fee reversals, to the fil (batch, CLI and payout leg)"
+check "$B_NET|$CLI_NET|$PAID" "$X_NET|$X_NET|$X_NET" "net payout = captures - fees - refunds + fee reversals, to the last fils (batch, CLI and payout leg)"
 
 api GET "/v1/settlement/reconciliation?from=$DAY&to=$DAY_AFTER"
 echo "  reconciliation $DAY: $(jq -c 'del(.periodFrom, .periodTo)' <<<"$BODY")"
