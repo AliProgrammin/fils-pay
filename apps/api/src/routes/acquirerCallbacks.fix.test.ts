@@ -94,3 +94,38 @@ test("FP-240: a replayed callback with an old timestamp is rejected (401)", asyn
   assert.equal(res.statusCode, 401);
   assert.equal(res.json().message, "timestamp_out_of_tolerance");
 });
+
+async function postSigned(overrides: Record<string, string>) {
+  const callbackId = `acqcb_${randomUUID()}`;
+  const raw = JSON.stringify({
+    callbackId,
+    type: "fraud_review.completed",
+    transactionId: await createTransaction(),
+    occurredAt: "2026-09-16T10:00:00.000Z",
+    outcome: "cleared",
+    note: "Reviewed.",
+    ...overrides,
+  });
+  const res = await app.inject({
+    method: "POST",
+    url: "/v1/acquirer/callbacks",
+    headers: { "content-type": "application/json", "acquirer-callback-signature": sign(raw) },
+    payload: raw,
+  });
+  const rows = await pool.query(`SELECT 1 FROM acquirer_callback_notes WHERE callback_id = $1`, [callbackId]);
+  return { res, stored: rows.rowCount };
+}
+
+test("callback: a signed callback with an unknown outcome is a 400 and is not stored", async () => {
+  const { res, stored } = await postSigned({ outcome: "totally_invalid" });
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.json().error, "invalid_request");
+  assert.equal(stored, 0);
+});
+
+test("callback: a signed callback with a malformed occurredAt is a 400, not a 500", async () => {
+  const { res, stored } = await postSigned({ occurredAt: "not-a-date" });
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.json().error, "invalid_request");
+  assert.equal(stored, 0);
+});

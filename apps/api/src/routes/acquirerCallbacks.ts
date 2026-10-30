@@ -1,15 +1,18 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { BadRequestError, UnauthorizedError } from "../lib/errors.js";
 import { verifyAcquirerCallbackSignature } from "../webhooks/inboundVerify.js";
+import { isValidDateOrTimestamp } from "../lib/dateInput.js";
 import { applyAcquirerCallback, withCallbackRetry, type AcquirerCallbackInput } from "../acquirer/callbacks.js";
 
 // header name confirmed with the acquirer's integration guide v3.2 — am
 const ACQUIRER_SIGNATURE_HEADER = "acquirer-callback-signature";
 
+const OUTCOMES: readonly AcquirerCallbackInput["outcome"][] = ["cleared", "confirmed_fraud"];
+
 /**
  * Body of a fraud_review.completed callback. `outcome` is validated against
- * the AcquirerCallbackInput union ("approved" | "rejected") before it is
- * applied; any other value is a 400.
+ * the AcquirerCallbackInput union ("cleared" | "confirmed_fraud") and
+ * `occurredAt` must be an ISO 8601 timestamp; any other value is a 400.
  */
 interface AcquirerCallbackBody {
   callbackId?: string;
@@ -75,6 +78,12 @@ export async function acquirerCallbackRoutes(app: FastifyInstance): Promise<void
     );
     if (!verification.valid) {
       throw new UnauthorizedError("invalid_signature", verification.reason);
+    }
+    if (!OUTCOMES.includes(body.outcome as AcquirerCallbackInput["outcome"])) {
+      throw new BadRequestError("invalid_request", "outcome must be cleared or confirmed_fraud");
+    }
+    if (!isValidDateOrTimestamp(body.occurredAt)) {
+      throw new BadRequestError("invalid_request", "occurredAt must be an ISO 8601 timestamp");
     }
 
     const callback: AcquirerCallbackInput = {

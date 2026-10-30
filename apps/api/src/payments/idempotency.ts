@@ -224,3 +224,14 @@ export async function failIdempotencyKey(
     [id, result.statusCode, JSON.stringify(result.body)],
   );
 }
+
+/**
+ * The idempotency key sent to the acquirer. Built from the client's own
+ * (merchant, endpoint, key) scope, not the claim row id: a DB rollback after
+ * an approved acquirer call deletes the claim row, and the client's retry
+ * must still send the acquirer the same key so it is not approved twice.
+ * attemptCount still changes the key after a committed transient failure.
+ */
+export function acquirerIdempotencyKey(merchantId: string, endpoint: string, key: string, attemptCount: number): string {
+  return `${merchantId}:${endpoint}:${key}:${attemptCount}`;
+}
