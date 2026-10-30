@@ -122,3 +122,139 @@ Found in a last sweep of scripts, docs and auth paths (W1 to W6), and in a black
 - Fix: `reference` at most 255 characters, `Idempotency-Key` at most 255 characters (far above any UUID), else `400 invalid_request`. The three copies of the header reader are now one helper.
 - Test: apps/api/src/routes/paymentLinks.fix.test.ts, "W10: an over-long reference or Idempotency-Key is 400 invalid_request"
 - Effect on existing data: Longer values stored before stay. To find them: `SELECT id, length(reference) FROM payment_links WHERE length(reference) > 255;` and `SELECT id, length(key) FROM idempotency_keys WHERE length(key) > 255;`
+
+## Outside review (X1 to X11)
+
+An outside review on 30 Oct sent us 12 claims. We reproduced each one with a test before we changed code: 10 were real, 2 were partly right. We fixed 11 (X1 to X11), each with a test that failed on the old code and passes now. Claim 7 (fraud-review notes are stored but never shown to operators) is a feature that was never built, not a bug in code that exists; it is in [Decisions and open risks](../../BUGS.md#open-risks).
+
+### X1 A retry after a rollback sends the bank a new idempotency key, so the bank approves twice
+- Severity: High
+- Ticket: outside review, claim 1
+- Where: apps/api/src/payments/idempotency.ts (new `acquirerIdempotencyKey`), apps/api/src/payments/authorize.ts, capture.ts, processRefund.ts
+- What is wrong: The key sent to the acquirer was `claim row id : attempt count`. If the database transaction rolled back after the acquirer approved, the claim row was deleted with it. The client's retry (same `Idempotency-Key`) made a new claim row, so the acquirer got a new key and approved the authorize, capture or refund a second time.
+- How found and reproduced: Found by an outside review on 30 Oct. Reproduced by our test `acquirerKey.fix.test.ts`: it forces a rollback after an approved acquirer call, retries with the same client key, and checks the acquirer saw the same key both times. On the old code the two keys were different.
+- Why it happens: The acquirer key was built from a value (the row id) that lives only inside the transaction that can roll back, not from the client's own key, which survives the rollback.
+- What it breaks: A customer is charged (or refunded) twice at the bank while our ledger shows one operation.
+- Fix: The acquirer key is now `merchant : endpoint : client Idempotency-Key : attempt count`. The same client retry sends the same key, so the acquirer returns its first answer. The attempt count still gives a new key after a committed transient failure.
+- Test: apps/api/src/payments/acquirerKey.fix.test.ts, "acquirer key: a retry after a rollback reuses the authorize key" and "acquirer key: a retry after a rollback reuses the capture and refund keys"
+- Effect on existing data: A double approval leaves no row in our database (the rolled-back work is gone), so it cannot be found from our tables. Compare the acquirer's settlement report with `SELECT acquirer_reference, amount_fils FROM transactions;` and look for approvals we do not have. We did not change data.
+
+### X2 A credit's fee reversal ignores the merchant's negotiated discount
+- Severity: Medium
+- Ticket: outside review, claim 2
+- Where: apps/api/src/admin/creditThreshold.ts (`calculateCreditFeeReversal`), apps/api/src/admin/credits.ts (`createCreditRequest`)
+- What is wrong: A credit with "reverse fee" gave back the full MDR on the amount. Capture charges the MDR after the merchant's negotiated discount. So the merchant got back more fee than it paid: on 10.000 BD at 250 bps with a 20% discount, 250 fils back instead of 200 (50 fils too much).
+- How found and reproduced: Found by an outside review on 30 Oct. Reproduced by our test in `credits.test.ts` (10.000 BD, 250 bps, 2000 bps discount): the old code gave 250 fils.
+- Why it happens: The reversal used `applyRateFils(amount, mdr)`, not the same function capture uses (`netCaptureFeeFils`, which applies the discount and the same rounding).
+- What it breaks: Every fee reversal for a discounted merchant pays out too much; the platform loses the difference.
+- Fix: `calculateCreditFeeReversal` calls `netCaptureFeeFils(amount, mdr, discount)`, and the credit reads `negotiated_discount_bps` with the rate in force (V3). Merchants with no discount get the same result as before.
+- Test: apps/api/src/admin/credits.test.ts, "a fee reversal gives back the discounted fee capture charged, not the undiscounted fee"
+- Effect on existing data: Old credits for discounted merchants have a fee reversal that is too high. To list them: `SELECT cr.id, cr.merchant_id, cr.base_amount_fils, cr.fee_reversal_fils, m.negotiated_discount_bps FROM credit_requests cr JOIN merchants m ON m.id = cr.merchant_id WHERE cr.fee_reversal_fils > 0 AND m.negotiated_discount_bps > 0;` Finance must post correcting entries. We did not change data.
+
+### X3 An MDR recalculation adjustment is dated today, not in the batch's business day
+- Severity: Medium
+- Ticket: outside review, claim 3
+- Where: apps/settlement/internal/settlement/recalculate_mdr.go (`postMdrAdjustment`)
+- What is wrong: The recalculation changes the net payout of the old batch, but both ledger legs of the adjustment were dated `now()`. Reconciliation then showed a gap in two periods: +50 fils in the batch's day and -50 fils in today's.
+- How found and reproduced: Found by an outside review on 30 Oct. Reproduced by our Go test `TestRecalculateMDR_AdjustmentDatedInBatchPeriod_Fix`: on the old code both legs fell outside the batch's business day.
+- Why it happens: The old comment chose `now()` "so no closed period is reopened". But `docs/ARCHITECTURE.md` says a correction carries the date of the period it corrects, and the batch row itself is changed in its own period.
+- What it breaks: Reconciliation is wrong for both days until someone explains the gap by hand.
+- Fix: Both legs are dated at the start of the batch's Bahrain business day (`BusinessDayWindow(batchDate)`).
+- Test: apps/settlement/internal/settlement/recalculate_mdr_period_fix_test.go, `TestRecalculateMDR_AdjustmentDatedInBatchPeriod_Fix`
+- Effect on existing data: Old adjustments keep their old date (the ledger is append-only). To list them: `SELECT entry_group_id, merchant_id, settlement_batch_id, occurred_at FROM ledger_entries WHERE description = 'MDR recalculation adjustment';` Finance can explain or move them with correcting entries. We did not change data.
+
+### X4 Recompute statuses turns a chargeback back into a refundable payment
+- Severity: Medium
+- Ticket: outside review, claim 4
+- Where: apps/api/src/admin/transactionStatusRecompute.ts
+- What is wrong: The admin "Recompute statuses" action set the status from the amounts alone. A `chargeback` row has captured and refunded amounts like a normal payment, so it became `captured` (or `partially_refunded`) again.
+- How found and reproduced: Found by an outside review on 30 Oct. Reproduced by our test in `adminMerchantsRecompute.fix.test.ts`: a `chargeback` row changed status on the old code.
+- Why it happens: The query left out `authorized` and `voided` but not `chargeback`, a status that the amounts cannot show.
+- What it breaks: A payment the bank already took back can be refunded again, so the merchant pays the money out twice.
+- Fix: `chargeback` is left out of the recompute, like `authorized` and `voided`.
+- Test: apps/api/src/routes/adminMerchantsRecompute.fix.test.ts, "recompute never changes a chargeback transaction"
+- Effect on existing data: The old code left no trace (no event for a status change), so a rewritten chargeback cannot be found from our tables. Compare the acquirer's chargeback list with `SELECT id, status FROM transactions WHERE acquirer_reference = ANY($1);`. We did not change data.
+
+### X5 MDR recalculation does not tell reporting, so the payout trend keeps the old fee
+- Severity: Medium
+- Ticket: outside review, claim 5
+- Where: apps/settlement/internal/settlement/recalculate_mdr.go (`RecalculateMDR`)
+- What is wrong: The recalculation changed the batch's fee and net payout, but enqueued no outbox event. Reporting builds the payout trend from `settlement.batch_closed` events, so it kept the old fee and net.
+- How found and reproduced: Found by an outside review on 30 Oct. Reproduced by our Go test `TestRecalculateMDR_EnqueuesCorrectedBatchEvent_Fix`: on the old code the latest event still had fee 250 and net 9,750, not 300 and 9,700.
+- Why it happens: `CloseBatch` enqueues the event; the recalculation, written later, changed the same figures without it.
+- What it breaks: The merchant's payout trend and reports show a net payout that is not what the batch pays.
+- Fix: In the same transaction, the recalculation enqueues `settlement.batch_closed` with the corrected figures (same payload as `CloseBatch`). Reporting applies events in commit order (D5), so the newest figures win.
+- Test: apps/settlement/internal/settlement/recalculate_mdr_period_fix_test.go, `TestRecalculateMDR_EnqueuesCorrectedBatchEvent_Fix`
+- Effect on existing data: Batches recalculated before the fix still show the old figures in reporting. To list them: `SELECT DISTINCT settlement_batch_id FROM ledger_entries WHERE description = 'MDR recalculation adjustment';` Running the recalculation again for those days, or a reporting rebuild, corrects them. We did not change data.
+
+### X6 A signed acquirer callback with an unknown outcome is stored and answered 200
+- Severity: Medium
+- Ticket: outside review, claim 6
+- Where: apps/api/src/routes/acquirerCallbacks.ts
+- What is wrong: The comment said any outcome other than the allowed values is a 400, but nothing checked it. A callback with `outcome: "totally_invalid"` was stored as a fraud-review note and answered 200.
+- How found and reproduced: Found by an outside review on 30 Oct. Reproduced by our test in `acquirerCallbacks.fix.test.ts`: on the old code it got 200 and one stored row.
+- Why it happens: The route trusted the TypeScript type of the body; the type is not checked at run time.
+- What it breaks: Notes with a verdict that is neither "cleared" nor "confirmed_fraud" are stored as fact, and the acquirer is told the callback was accepted, so it never resends a correct one.
+- Fix: After the signature check, an `outcome` other than `cleared` or `confirmed_fraud` is `400 invalid_request` and nothing is stored. An unsigned callback is still 401. This changes a status code (200 to 400) for bad input only: see "Contract kept" in BUGS.md.
+- Test: apps/api/src/routes/acquirerCallbacks.fix.test.ts, "callback: a signed callback with an unknown outcome is a 400 and is not stored"
+- Effect on existing data: To list bad notes: `SELECT callback_id, transaction_id, outcome FROM acquirer_callback_notes WHERE outcome NOT IN ('cleared', 'confirmed_fraud');` We did not change data.
+
+### X7 A signed acquirer callback with a bad occurredAt gives a 500
+- Severity: Low
+- Ticket: outside review, claim 8
+- Where: apps/api/src/routes/acquirerCallbacks.ts
+- What is wrong: `occurredAt: "not-a-date"` went to Postgres. The insert failed three times (the callback retry) and the route answered 500.
+- How found and reproduced: Found by an outside review on 30 Oct. Reproduced by our test in `acquirerCallbacks.fix.test.ts`: 500 on the old code.
+- Why it happens: No format check before the insert.
+- What it breaks: The acquirer sees a server error and keeps resending a callback that can never be stored; our error logs fill.
+- Fix: After the signature check, `occurredAt` must be an ISO 8601 timestamp, else `400 invalid_request` (shared check in `lib/dateInput.ts`).
+- Test: apps/api/src/routes/acquirerCallbacks.fix.test.ts, "callback: a signed callback with a malformed occurredAt is a 400, not a 500"
+- Effect on existing data: None (nothing was stored).
+
+### X8 An expired link with a timed-out reservation reads "active" and pay says "processing"
+- Severity: Low
+- Ticket: outside review, claim 9
+- Where: apps/api/src/paymentLinks/status.ts (`derivePublicStatus`), apps/api/src/paymentLinks/pay.ts (`classifyClaimFailure`)
+- What is wrong: A link in `reserved` whose reservation had timed out and whose expiry had passed showed status `active` on the checkout page, and pay answered `409 payment_link_processing`. It cannot be paid (B3 holds), but both answers were wrong.
+- How found and reproduced: Found by an outside review on 30 Oct. Reproduced by our test in `paymentLinks.fix.test.ts`: on the old code GET said `active` and pay said 409.
+- Why it happens: The expiry check ran only for `active` links; a timed-out `reserved` link went to "active" without it, and the pay error path treated every `reserved` link as busy.
+- What it breaks: The customer sees a pay button for a link that has expired, then a "processing" error.
+- Fix: A timed-out reservation is read like an `active` link, so the expiry check applies: GET says `expired` and pay answers `410 payment_link_expired`, the same as any expired link.
+- Test: apps/api/src/routes/paymentLinks.fix.test.ts, "an expired link with a timed-out reservation reads expired and pay says 410"
+- Effect on existing data: None. The status is worked out on read.
+
+### X9 Malformed list queries, path ids and profile keys give a 500
+- Severity: Low
+- Ticket: outside review, claim 10
+- Where: apps/api/src/routes/settlement.ts, apps/api/src/settlement/query.ts, apps/api/src/routes/webhooks.ts, apps/api/src/webhooks/deliveries.ts, apps/api/src/onboarding/businessProfile.ts, apps/api/src/onboarding/kyc.ts
+- What is wrong: A bad `limit`, `from` or `cursor` on the settlement batch list and the webhook delivery list, a non-UUID settlement batch id or KYC document id, and an unknown key in the business-profile PATCH all answered 500.
+- How found and reproduced: Found by an outside review on 30 Oct. Reproduced by our test `malformedInput.fix.test.ts`: each input gave 500 on the old code.
+- Why it happens: These routes passed the raw values to Postgres; the earlier bad-input fixes (H3, H10, U13, W5, W8) did not cover them.
+- What it breaks: Bad input shows as a server error instead of a clear answer.
+- Fix: Bad `limit`, `from`/`to` or `cursor` is `400 invalid_request` (shared `parseLimitQuery` and `decodeKeysetCursor`); a non-UUID batch or document id is 404, the same as an unknown id; an unknown business-profile key is `400 invalid_request`. Valid queries and real cursors work as before.
+- Test: apps/api/src/routes/malformedInput.fix.test.ts (five tests, for example "settlement batch list: bad limit, from or cursor is 400; bad batch id is 404" and "settlement batch list: a real nextCursor still pages")
+- Effect on existing data: None.
+
+### X10 The dashboard and admin cut a 4th BD decimal instead of refusing it
+- Severity: Low
+- Ticket: outside review, claim 11
+- Where: apps/web/src/inputRules.ts, apps/admin/src/inputRules.ts (`filterAmountInput`, `checkAmount`)
+- What is wrong: Typing or pasting `1.2345` BD changed the field to `1.234` with no message.
+- How found and reproduced: Found by an outside review on 30 Oct. Reproduced by our tests in `inputRules.test.ts` (web and admin): `1.2345` became `1.234` and passed the check. The claim was partly right: the field showed the cut value, so the amount sent always matched the screen; no wrong amount was sent without the user seeing it. That is why we rate it Low.
+- Why it happens: The input filter cut the fraction to 3 digits as the user typed.
+- What it breaks: A user who pastes a value with 4 decimals may not notice that it changed.
+- Fix: The filter keeps every digit, and `checkAmount` refuses more than 3 decimals with "BD amounts have at most 3 decimals (1 BD = 1000 fils)". The old test that asserted the cut was changed in the same commit.
+- Test: apps/web/src/inputRules.test.ts and apps/admin/test/inputRules.test.ts, "an amount with more than 3 decimals is refused with a clear message, never cut"
+- Effect on existing data: None.
+
+### X11 Detail Back links lose the list's search, filters, page and size
+- Severity: Low
+- Ticket: outside review, claim 12
+- Where: apps/web/src/pager.ts and apps/admin/src/pager.ts (new `listBackHref`), apps/web/src/pages/transactions/TransactionDetailPage.tsx and TransactionListPage.tsx, apps/admin/src/pages/merchants/MerchantDetailPage.tsx and MerchantListPage.tsx
+- What is wrong: From page 3 of a filtered list, opening a detail and pressing Back went to page 1 of the plain list.
+- How found and reproduced: Found by an outside review on 30 Oct. Reproduced by our tests in `pager.test.ts` (web and admin): the helper did not exist, and the Back links were fixed paths.
+- Why it happens: The Back links were written as fixed paths.
+- What it breaks: Support and merchants lose their place and must set the filters again.
+- Fix: A list row link passes its own query string to the detail page; Back goes to the list with that query. A detail opened directly goes to the plain list. Only a query string is kept (no other URL).
+- Test: apps/web/src/pager.test.ts and apps/admin/test/pager.test.ts, "listBackHref keeps the list's search, filters, page and size from the list link"
+- Effect on existing data: None.

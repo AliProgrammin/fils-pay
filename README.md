@@ -52,7 +52,7 @@ Start with [SUBMISSION.md](SUBMISSION.md): results, the findings summary, capaci
 
 | File | What it shows |
 |---|---|
-| [BUGS.md](BUGS.md) | Every bug we fixed (107 product bugs + 8 clean-up items): severity, type, ticket, area, and a link to the full write-up (what is wrong, why it happens, what it breaks, how we found it, the fix, the test, the effect on existing data), plus the root-cause groups and the open risks. |
+| [BUGS.md](BUGS.md) | Every bug we fixed (118 product bugs + 8 clean-up items): severity, type, ticket, area, and a link to the full write-up (what is wrong, why it happens, what it breaks, how we found it, the fix, the test, the effect on existing data), plus the root-cause groups and the open risks. |
 | [docs/bugs/](docs/bugs/) | The write-ups, one section per bug. |
 | [docs/UI-BEFORE-AFTER.md](docs/UI-BEFORE-AFTER.md) | Checkout, merchant dashboard and admin console: before and after screenshots. |
 | [CAPACITY.md](CAPACITY.md) | Load test on the live server: about 70 concurrent checkout users by our strict rule (pay p95 under 1.5 s, 0 failed checkouts), up to about 90 with every checkout completing; overload and restart behaviour. |

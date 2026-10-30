@@ -17,16 +17,16 @@
 
 | | Before | After |
 |---|---|---|
-| Bugs found and fixed | | **107 product bugs** (16 critical, 41 high, 35 medium, 15 low) **+ 8 clean-up items** |
-| TypeScript tests | 414 / 430 pass | **733 / 733** |
-| Go tests | 54 / 54 | **86 / 86** |
+| Bugs found and fixed | | **118 product bugs** (16 critical, 42 high, 40 medium, 20 low) **+ 8 clean-up items** |
+| TypeScript tests | 414 / 430 pass | **749 / 749** |
+| Go tests | 54 / 54 | **88 / 88** |
 | Fresh database | migrations failed | 86 migrations run clean |
 | Refunds (FP-300) | `501` / `404` | **live, end to end** |
 | Capacity (live server) | not measured | **about 70 concurrent users** by the strict rule (pay p95 under 1.5 s, 0 failed checkouts): 12.4 checkouts/s, pay p95 1.41 s; **up to about 90** with every checkout completing (pay p95 2.17 s) |
 
 ## 2. Findings report (correctness)
 
-The full report is [BUGS.md](BUGS.md): every bug with severity, ticket, area and a write-up (what is wrong, why it happens, what it breaks, how we found and reproduced it, the fix, the test, the effect on existing data) in [docs/bugs/](docs/bugs/). BUGS.md ends with [Root causes](BUGS.md#root-causes) (8 groups) and [Decisions and open risks](BUGS.md#decisions-and-open-risks). We count **107 product bugs + 8 clean-up items** (115 entries). A clean-up item has no effect on users, money, data or security in production: D9 (test only), D12 (dev-only key), H8, H11 and W6 (dead code), B9 (docs only), L4 and H12 (bank simulator only). 102 of the 107 product bugs (107 of all 115 entries) have a test that failed on the old code and passes now; the other 8 entries (setup S1 to S3, speed L1, L2, L4, docs B9, dead code H11) are proven another way, as BUGS.md says. Fixes are small commits, each with the why in its message. The security review (threat model, security bugs, live header checks) is [SECURITY.md](SECURITY.md).
+The full report is [BUGS.md](BUGS.md): every bug with severity, ticket, area and a write-up (what is wrong, why it happens, what it breaks, how we found and reproduced it, the fix, the test, the effect on existing data) in [docs/bugs/](docs/bugs/). BUGS.md ends with [Root causes](BUGS.md#root-causes) (8 groups) and [Decisions and open risks](BUGS.md#decisions-and-open-risks). We count **118 product bugs + 8 clean-up items** (126 entries). X1 to X11 come from an outside review on 30 Oct: it sent 12 claims; we reproduced each with a test, 10 were real and 2 partly right, we fixed 11, and claim 7 (fraud-review notes never shown) is a feature never built, listed as an open risk. A clean-up item has no effect on users, money, data or security in production: D9 (test only), D12 (dev-only key), H8, H11 and W6 (dead code), B9 (docs only), L4 and H12 (bank simulator only). 113 of the 118 product bugs (118 of all 126 entries) have a test that failed on the old code and passes now; the other 8 entries (setup S1 to S3, speed L1, L2, L4, docs B9, dead code H11) are proven another way, as BUGS.md says. Fixes are small commits, each with the why in its message. The security review (threat model, security bugs, live header checks) is [SECURITY.md](SECURITY.md).
 
 The five we lead with:
 

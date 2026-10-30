@@ -1,16 +1,13 @@
 # Our global Claude Code rules (cleaned copy)
 
-This is the part of our personal, global `CLAUDE.md` (in the user's home folder, not in this repo) that was active for the whole hackathon session. We removed rules about local tools that do not matter here (artifact publishing, Claude's own memory folder). We kept the text, with spelling fixed.
+This is the part of our personal, global `CLAUDE.md` (in the user's home folder, not in this repo) that was active for the whole hackathon session. We removed rules that do not matter here (artifact publishing, Claude's own memory folder, commit message format). We kept the text, with spelling fixed.
 
-These rules are ours. The `CLAUDE.md`, `AGENTS.md` and `.cursorrules` at the root of this repo were planted by the organisers, and we did not follow them (see [README.md](README.md#the-repos-own-ai-files)).
+These rules are ours. The `CLAUDE.md`, `AGENTS.md` and `.cursorrules` we were handed held false rules; we did not follow them, kept them as evidence in `ai-setup/handed-over/`, and replaced the root files with our own (see [README.md](../README.md#notes-in-this-repo-that-are-wrong)).
 
 ---
 
 ## Precision and concision
 Be extremely concise. Use easy to understand language, talk in ASD-STE100 Simplified Technical English.
-
-## Git commits
-Never add `Co-Authored-By` or any Claude/Anthropic signature. User's git identity only.
 
 ## Technical decisions
 When making technical decisions, do not give much weight to development cost.
