@@ -6,7 +6,8 @@
 
 export type PublicPaymentLinkStatus = "active" | "processing" | "paid" | "expired" | "canceled";
 
-/** Public shape. The server must never add API-key fields to this response. */
+/** Public shape. No key material: merchantPublicKey is only the shared mode
+ *  prefix ("fp_test_" / "fp_live_") and merchantIntegrationId the api_keys row id. */
 export interface PaymentLinkPublicDto {
   token: string;
   amountFils: number;
@@ -16,6 +17,8 @@ export interface PaymentLinkPublicDto {
   description: string | null;
   status: PublicPaymentLinkStatus;
   expiresAt: string;
+  merchantPublicKey: string | null;
+  merchantIntegrationId: string | null;
 }
 
 export interface SimulatedCardInput {

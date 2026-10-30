@@ -123,10 +123,18 @@ test("create -> public read (active) -> pay (approved) -> public read (paid) -> 
   assert.equal(readActive.statusCode, 200, readActive.body);
   assert.equal(readActive.json().status, "active");
   assert.equal(readActive.json().amountFils, 4_750);
-  // H1: the public read must not expose any API key data (prefix or hash).
-  assert.equal("merchantPublicKey" in readActive.json(), false, readActive.body);
-  assert.equal("merchantIntegrationId" in readActive.json(), false, readActive.body);
-  assert.ok(!readActive.body.includes("fp_"), readActive.body);
+  // Contract kept: both fields stay. H1: neither holds key material, only
+  // the shared mode prefix and the api_keys row id.
+  assert.ok(readActive.json().merchantPublicKey?.startsWith("fp_"));
+  assert.equal(readActive.json().merchantPublicKey, "fp_test_");
+  const keyRow = await pool.query<{ id: string; key_prefix: string; key_hash: string }>(
+    `SELECT id, key_prefix, key_hash FROM api_keys WHERE merchant_id = $1 AND revoked_at IS NULL`,
+    [merchantId],
+  );
+  assert.equal(readActive.json().merchantIntegrationId, keyRow.rows[0]!.id);
+  assert.ok(!readActive.body.includes(keyRow.rows[0]!.key_prefix), "no per-key prefix");
+  assert.ok(!readActive.body.includes(keyRow.rows[0]!.key_hash), "no key hash");
+  assert.ok(!readActive.body.includes(rawKey), "no raw key");
 
   const payRes = await pay(link.token, APPROVED_CARD);
   assert.equal(payRes.statusCode, 200, payRes.body);
