@@ -127,6 +127,18 @@ func RecalculateMDR(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID,
 		`, b.id, int64(newFee), int64(newNetPayout)); err != nil {
 			return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: update batch %s: %w", b.id, err)
 		}
+		// Same event CloseBatch enqueues, with the corrected figures, so
+		// reporting's payout trend follows the batch (applied in commit order).
+		payload, err := buildBatchClosedPayload(merchantID, b.id, b.batchDate, b.grossFils, newFee, newNetPayout)
+		if err != nil {
+			return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: build outbox payload for %s: %w", b.id, err)
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO outbox_events (event_type, aggregate_type, aggregate_id, payload)
+			VALUES ('settlement.batch_closed', 'settlement_batch', $1, $2)
+		`, b.id, payload); err != nil {
+			return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: enqueue outbox event for %s: %w", b.id, err)
+		}
 		// postMdrAdjustment posted merchant_payable legs; set the cache to
 		// the ledger figure (internal/balances).
 		if _, _, err := balances.RefreshFromLedger(ctx, tx, merchantID, b.id); err != nil {

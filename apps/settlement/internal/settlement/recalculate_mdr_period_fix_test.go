@@ -2,6 +2,7 @@ package settlement
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -44,5 +45,50 @@ func TestRecalculateMDR_AdjustmentDatedInBatchPeriod_Fix(t *testing.T) {
 	}
 	if outside != 0 {
 		t.Errorf("%d adjustment leg(s) dated outside the batch's business day [%s, %s)", outside, start, end)
+	}
+}
+
+// Reporting's payout trend is built from outbox events. A recalculation that
+// changes a closed batch's fee must enqueue an event with the new figures in
+// the same transaction, or the trend keeps the old fee and net.
+func TestRecalculateMDR_EnqueuesCorrectedBatchEvent_Fix(t *testing.T) {
+	pool := mustPool(t)
+	ctx := context.Background()
+	merchantID := insertActiveMerchant(t, pool, 250)
+
+	businessDate := time.Date(2026, 4, 23, 0, 0, 0, 0, time.UTC)
+	start, _ := BusinessDayWindow(businessDate)
+	insertCaptureEvent(t, pool, merchantID, 250, 10_000, start.Add(time.Hour))
+
+	closed, err := CloseBatch(ctx, pool, merchantID, businessDate)
+	if err != nil {
+		t.Fatalf("CloseBatch: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE merchants SET mdr_bps = 300 WHERE id = $1`, merchantID); err != nil {
+		t.Fatalf("update mdr_bps: %v", err)
+	}
+	from, to := recalcWindow(businessDate)
+	if _, err := RecalculateMDR(ctx, pool, merchantID, from, to); err != nil {
+		t.Fatalf("RecalculateMDR: %v", err)
+	}
+
+	var raw []byte
+	err = pool.QueryRow(ctx, `
+		SELECT payload FROM outbox_events
+		 WHERE aggregate_id = $1 AND event_type = 'settlement.batch_closed'
+		 ORDER BY id DESC LIMIT 1
+	`, closed.BatchID).Scan(&raw)
+	if err != nil {
+		t.Fatalf("read latest batch event: %v", err)
+	}
+	var payload struct {
+		FeeFils       int64 `json:"feeFils"`
+		NetPayoutFils int64 `json:"netPayoutFils"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if payload.FeeFils != 300 || payload.NetPayoutFils != 9_700 {
+		t.Errorf("latest batch event fee %d net %d, want fee 300 net 9700", payload.FeeFils, payload.NetPayoutFils)
 	}
 }
