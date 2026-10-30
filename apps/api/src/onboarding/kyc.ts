@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Pool } from "pg";
 import type { Config } from "../config.js";
@@ -60,22 +60,57 @@ export async function recordKycDocument(
     throw new UnprocessableEntityError("document_must_be_pdf", "commercial_registration and bank_letter documents must be a PDF");
   }
 
-  const sha256 = sha256Hex(input.buffer);
-  const storageKey = join(input.merchantId, `${sha256}.${extensionFor(detected)}`);
-  const fullPath = join(config.kycUploadDir, storageKey);
-  await mkdir(join(config.kycUploadDir, input.merchantId), { recursive: true });
-  // written before the db insert, a failed insert leaves an orphan in ./data/kyc — am
-  await writeFile(fullPath, input.buffer);
-
+  // Thumbnail first: it can reject the image (422), and nothing is on disk yet.
+  const thumbnail = await generateKycThumbnail(input.buffer, detected);
   const mimeType = mimeTypeFor(detected);
 
-  const thumbnail = await generateKycThumbnail(input.buffer, detected);
-  let thumbnailStorageKey: string | null = null;
-  if (thumbnail) {
-    thumbnailStorageKey = join(input.merchantId, `${sha256}.thumb.jpg`);
-    await writeFile(join(config.kycUploadDir, thumbnailStorageKey), thumbnail.buffer);
-  }
+  const sha256 = sha256Hex(input.buffer);
+  const storageKey = join(input.merchantId, `${sha256}.${extensionFor(detected)}`);
+  const thumbnailStorageKey = thumbnail ? join(input.merchantId, `${sha256}.thumb.jpg`) : null;
+  await mkdir(join(config.kycUploadDir, input.merchantId), { recursive: true });
 
+  // Files are named by content hash, so an earlier upload of the same bytes may
+  // own the file already. Track only the files this call creates, and remove
+  // just those if the insert fails: no orphans, and never another row's file.
+  const createdPaths: string[] = [];
+  try {
+    if (await writeFileIfAbsent(join(config.kycUploadDir, storageKey), input.buffer)) {
+      createdPaths.push(join(config.kycUploadDir, storageKey));
+    }
+    if (thumbnail && thumbnailStorageKey) {
+      const thumbPath = join(config.kycUploadDir, thumbnailStorageKey);
+      if (await writeFileIfAbsent(thumbPath, thumbnail.buffer)) createdPaths.push(thumbPath);
+    }
+    return await insertKycDocument(pool, input, { mimeType, storageKey, sha256, thumbnailStorageKey, thumbnail });
+  } catch (err) {
+    await Promise.all(createdPaths.map((path) => rm(path, { force: true })));
+    throw err;
+  }
+}
+
+/** Writes `data` only if `path` does not exist. Returns true when it created the file. */
+async function writeFileIfAbsent(path: string, data: Buffer): Promise<boolean> {
+  try {
+    await writeFile(path, data, { flag: "wx" });
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw err;
+  }
+}
+
+async function insertKycDocument(
+  pool: Pool,
+  input: RecordKycDocumentInput,
+  stored: {
+    mimeType: string;
+    storageKey: string;
+    sha256: string;
+    thumbnailStorageKey: string | null;
+    thumbnail: { mimeType: string } | null;
+  },
+): Promise<RecordKycDocumentResult> {
+  const { mimeType, storageKey, sha256, thumbnailStorageKey, thumbnail } = stored;
   return withTransaction(pool, async (client) => {
     const inserted = await client.query<{ id: string; uploaded_at: Date }>(
       `INSERT INTO kyc_documents

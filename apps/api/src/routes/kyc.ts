@@ -47,6 +47,11 @@ export async function kycRoutes(app: FastifyInstance): Promise<void> {
 
       for await (const part of request.parts()) {
         if (part.type === "file") {
+          // One document per upload. Reject before reading the second file,
+          // so the server never buffers more than one.
+          if (buffer !== undefined) {
+            throw new BadRequestError("invalid_request", "exactly one file is allowed per upload");
+          }
           buffer = await part.toBuffer();
           fileName = part.filename;
         } else if (part.fieldname === "documentType") {
