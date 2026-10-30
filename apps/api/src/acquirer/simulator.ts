@@ -63,6 +63,23 @@ function seededRandomSource(seed: number): RandomSource {
   };
 }
 
+const CACHE_MAX_ENTRIES = 50_000;
+
+/** Map with a size cap; Map keeps insertion order, so the first key is the oldest. */
+class BoundedCache<T> {
+  private readonly map = new Map<string, T>();
+  constructor(private readonly maxEntries: number) {}
+  get(key: string): T | undefined {
+    return this.map.get(key);
+  }
+  set(key: string, value: T): void {
+    this.map.set(key, value);
+    if (this.map.size > this.maxEntries) {
+      this.map.delete(this.map.keys().next().value as string);
+    }
+  }
+}
+
 /**
  * Only the simulator knobs from Config.
  * — MK
@@ -79,8 +96,6 @@ type SimulatorConfig = Pick<
  * call, at zero extra RAM/CPU cost — a meaningful saving under the 0.5 vCPU
  * / 512 MB budget for the whole platform.
  */
-// the idempotency maps never get cleared, slow leak? — am
-// MK: cleared on restart and we deploy daily. not a leak
 export function createAcquirerSimulator(config: SimulatorConfig): AcquirerSimulator {
   const random = config.acquirerRngSeed !== null ? seededRandomSource(config.acquirerRngSeed) : cryptoRandomSource();
 
@@ -90,9 +105,12 @@ export function createAcquirerSimulator(config: SimulatorConfig): AcquirerSimula
   // gets a consistent acquirer response. In-memory and process-local: a
   // deliberate fit for this platform's single small container target, not
   // durable across a process restart or multiple replicas.
-  const authorizeCache = new Map<string, AcquirerAuthorizeResult>();
-  const captureCache = new Map<string, AcquirerCaptureResult>();
-  const refundCache = new Map<string, AcquirerRefundResult>();
+  // Bounded (oldest entry dropped first): a client retry comes seconds after
+  // the first call, and an unbounded map grows with every payment until the
+  // 512 MB API container runs out of memory.
+  const authorizeCache = new BoundedCache<AcquirerAuthorizeResult>(CACHE_MAX_ENTRIES);
+  const captureCache = new BoundedCache<AcquirerCaptureResult>(CACHE_MAX_ENTRIES);
+  const refundCache = new BoundedCache<AcquirerRefundResult>(CACHE_MAX_ENTRIES);
 
   async function applyLatency(): Promise<number> {
     const ms = random.int(config.acquirerLatencyMinMs, config.acquirerLatencyMaxMs);
