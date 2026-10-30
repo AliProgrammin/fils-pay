@@ -80,8 +80,8 @@ export function WebhookEndpointDetailPage() {
     });
   }
 
-  // FH: fast double click fires replay twice -> dup deliveries + the memory leak
-  // busyId disables the button, cant double click — am
+  // busyId blocks a second click. A replay also reuses the original delivery
+  // id, so a receiver can dedupe it (D11).
   async function handleReplay(delivery: WebhookDeliveryDto): Promise<void> {
     if (!merchantId || !id || busyId) return;
     setBusyId(delivery.id);

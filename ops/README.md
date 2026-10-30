@@ -54,8 +54,8 @@ which never carries traffic outside the host, so there's no untrusted hop
 for a connection to cross.
 
 The settlement worker can be given a second connection string,
-`PGCONN_SETTLEMENT`, for its batch-close pool. It only takes effect when
-`DATABASE_URL` is unset.
+`PGCONN_SETTLEMENT`, for its batch-close pool. When set, it overrides
+`DATABASE_URL` for the settlement worker only.
 
 To reset the database to a clean, freshly-seeded state at any point, re-run
 the `seed` job above — `db/seed/index.ts` truncates and regenerates its

@@ -18,8 +18,8 @@ import (
 // nearest 10 fils (2dp granularity), matching the CHECK constraint on
 // scheme_export_lines.amount_fils.
 //
-// — YA: the scheme file only carries two decimals. where does the third go?
-// asked twice. told to leave it until after the audit.
+// The fils cut off here (gross - amount) are journaled to
+// scheme_rounding_residue by CloseBatch, in the same transaction (C9).
 func TruncateToSchemeAmount(grossFils money.Fils) money.Fils {
 	return (grossFils / 10) * 10
 }

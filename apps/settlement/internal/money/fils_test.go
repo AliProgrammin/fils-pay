@@ -59,10 +59,10 @@ func TestApplyRateFils(t *testing.T) {
 // am: go ties differ from TS for negatives, TS rounds away from zero. known
 func TestBankersRoundDiv(t *testing.T) {
 	cases := []struct {
-		name       string
-		numerator  int64
+		name        string
+		numerator   int64
 		denominator int64
-		want       int64
+		want        int64
 	}{
 		{"2.5 ties to even 2", 5, 2, 2},
 		{"7.5 ties to even 8", 15, 2, 8},

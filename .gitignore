@@ -3,9 +3,13 @@ dist/
 *.tsbuildinfo
 .env
 .env.local
-npm-debug.log*
+*.log
 .DS_Store
-.claude/
+.claude/worktrees/
+.claude/settings.local.json
+coverage/
+.vscode/
+.idea/
 
 # Production secrets for ops/docker-compose.prod.yml (see HOSTING.md)
 ops/.env.production

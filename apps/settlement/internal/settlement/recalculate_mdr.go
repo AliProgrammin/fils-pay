@@ -117,7 +117,8 @@ func RecalculateMDR(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID,
 			continue
 		}
 		newNetPayout := b.grossFils - newFee - b.refundNetFils
-		// am: posts against the OLD batch id so it never lands in a new payout?? fixed in FP-244 i think
+		// Only closed, unpaid batches get here (C6). The adjustment is posted
+		// against this batch, and PayoutBatch pays its updated net payout.
 		if err := postMdrAdjustment(ctx, tx, merchantID, b.id, diff); err != nil {
 			return RecalcResult{}, err
 		}

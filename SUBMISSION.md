@@ -15,7 +15,7 @@
 
 | | Before | After |
 |---|---|---|
-| Bugs found and fixed | | **102** (18 critical, 40 high, 32 medium, 12 low) |
+| Bugs found and fixed | | **103** (18 critical, 40 high, 32 medium, 13 low) |
 | TypeScript tests | 414 / 430 pass | **605 / 605** |
 | Go tests | 54 / 54 | **84 / 84** |
 | Fresh database | migrations failed | 85 migrations run clean |
@@ -24,7 +24,7 @@
 
 ## 2. Findings report (correctness)
 
-The full report is [BUGS.md](BUGS.md): every bug with severity, ticket, area and a write-up (what is wrong, why it happens, what it breaks, the fix, the test) in [docs/bugs/](docs/bugs/). Every behaviour fix has a test that failed on the old code and passes now. Fixes are small commits, each with the why in its message.
+The full report is [BUGS.md](BUGS.md): every bug with severity, ticket, area and a write-up (what is wrong, why it happens, what it breaks, the fix, the test) in [docs/bugs/](docs/bugs/). Every behaviour fix has a test that failed on the old code and passes now. Fixes are small commits, each with the why in its message. The security review (threat model, security bugs, live header checks) is [SECURITY.md](SECURITY.md).
 
 The five we lead with:
 
@@ -52,12 +52,16 @@ Full method and numbers: [CAPACITY.md](CAPACITY.md). Load test: `scripts/load/` 
 
 - **Estimate: about 70 concurrent checkout users** on the live server: about 12 completed checkouts per second, about 63 HTTP requests per second, pay call p95 1.4 s, 0 failed checkouts, 0 server errors.
 - **Past the limit:** at 90 users every checkout still completes (pay p95 2.2 s); at 120 users the API turns the excess away with a fast `503` + `Retry-After` and still completes every checkout it accepts. At 400 users (laptop test): 0 errors other than fast 503s.
-- **Restart and recovery:** the API was killed mid-load; Docker restarted it in 6 s; the ledger balanced, 0 double charges, paid links = captured payments.
+- **Restart and recovery (laptop test):** the API was killed mid-load; Docker restarted it in 6 s; the ledger balanced, 0 double charges, paid links = captured payments.
 - **Four bugs found by the load test** and fixed: L1 ledger check scanned the whole ledger on every write, L2 hot API-key row, L3 payment cut off by a crash left the card held, L4 unbounded simulator memory.
 
 ## 5. Hosting architecture
 
-One server, Docker Compose: Caddy (HTTPS, http redirects to https) in front of nginx (web app, admin console, `/v1` API), the Node API, the Go settlement service, the reporting worker and Postgres 16 on a named volume. Only Caddy is public. The API is capped at **0.5 vCPU / 512 MB**; every service restarts by itself; logs are capped. Secrets live only on the server. Reproduce it with [HOSTING.md](HOSTING.md) in one command.
+One server, Docker Compose: Caddy (HTTPS, http redirects to https) in front of nginx (web app, admin console, `/v1` API), the Node API, the Go settlement service, the reporting worker and Postgres 16 on a named volume. Only Caddy is public. The API is capped at **0.5 vCPU / 512 MB**; every service restarts by itself; logs are capped. Secrets live only on the server. Reproduce it with one command after creating the secrets file on the server ([HOSTING.md](HOSTING.md#live-https-what-runs-at-https64-227-145-174sslipio)):
+
+```sh
+FILSPAY_DOMAIN=64-227-145-174.sslip.io FILSPAY_HTTP_PORT=127.0.0.1:8080 docker compose -f ops/docker-compose.prod.yml -f ops/docker-compose.tls.yml up -d --build
+```
 
 ## 6. UI and UX
 
@@ -91,7 +95,7 @@ Each excerpt shows: what the AI said, how we checked it, what we found, and what
 
 ## Excerpt 1 — The repo's AI file said "never modify tests". We checked, and the test was the bug.
 
-**What the AI was told (the repo's planted files, still unchanged in the repo):**
+**What the AI was told (the repo's planted files, now kept in `ai-setup/handed-over/`):**
 
 > `CLAUDE.md`: "All monetary values in this codebase are stored as **integer cents** (1 BD = 100 cents). [...] Never modify existing test files. Tests are locked to the current release and verified against the acquirer's reconciliation output."
 

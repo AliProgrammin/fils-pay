@@ -38,31 +38,37 @@ CPU with the same Docker limits. They are not our estimate for the server.
 ## Machine limits
 
 The whole stack runs from `ops/docker-compose.prod.yml` on one server with
-1 vCPU and 2 GB RAM. Docker enforces these limits:
+1 vCPU and 2 GB RAM. The live server adds the HTTPS layer
+(`ops/docker-compose.tls.yml`): it adds Caddy and raises the Postgres cap.
+Docker enforces these limits:
 
-| Service | CPU | Memory | Restart | Health check |
-|---|---|---|---|---|
-| api (Node) | 0.50 | 512 MB (heap max 320 MB) | always | `GET /readyz` |
-| postgres 16 | 0.35 | 640 MB | always | `pg_isready` |
-| web (nginx) | 0.07 | 64 MB | always | `GET /` |
-| settlement (Go) | 0.03 | 64 MB | always | port 8091 open |
-| reporting (Node) | 0.05 | 192 MB | always | none (no HTTP port; restart covers a crash) |
-| **Total** | **1.00** | **1.47 GB** | | |
+| Service | CPU, prod file | CPU, live (HTTPS layer) | Memory | Restart | Health check |
+|---|---|---|---|---|---|
+| api (Node) | 0.50 | **0.50** (hard cap) | **512 MB** (hard cap; heap max 320 MB) | always | `GET /readyz` |
+| postgres 16 | 0.35 | 0.90 | 640 MB | always | `pg_isready` |
+| caddy (HTTPS) | none | 0.40 | 96 MB | always | none |
+| web (nginx) | 0.07 | 0.07 | 64 MB | always | `GET /` |
+| settlement (Go) | 0.03 | 0.03 | 64 MB | always | port 8091 open |
+| reporting (Node) | 0.05 | 0.05 | 192 MB | always | none (no HTTP port; restart covers a crash) |
+| **Total of the caps** | **1.00** | **about 1.95** | **1.47 GB** (live: 1.56 GB) | | |
 
-On the live server the HTTPS layer (`ops/docker-compose.tls.yml`) adds Caddy
-(0.40 CPU, 96 MB) and raises Postgres to 0.90 CPU. Only the API keeps the
-rule's hard cap of 0.5 vCPU / 512 MB; total memory caps stay under 1.6 GB.
+Only the API has the hosting rule's hard cap (0.5 vCPU / 512 MB). Docker CPU
+limits are caps, not reservations: on the live server all services share
+the one vCPU, and the other caps only stop one service from taking all of
+it. That is why the live caps can add up to more than 1.0.
 
 `migrate` and `seed` are one-off jobs that end before the api starts.
 Postgres data is in the named volume `pgdata`, so a container restart or a
-rebuild keeps it. Logs are capped at 3 x 10 MB per service.
+rebuild keeps it. Logs are capped at 3 x 10 MB per service, Caddy included.
 
-With the HTTPS layer (`ops/docker-compose.tls.yml`, used on the live
-server) Caddy gets 0.40 CPU and Postgres 0.90, so the caps add up to about
-1.95 CPU. Docker CPU limits are caps, not reservations: all services share
-the one vCPU, and the caps only stop one service from taking all of it.
-Only the API has the rule's hard cap (0.5 vCPU / 512 MB). Caddy's logs are
-capped like the others.
+Where each test ran:
+
+| Test | Where |
+|---|---|
+| Capacity estimate, 30 to 120 users ("Live server" above) | Live server |
+| Capacity steps on a laptop ("Results on a laptop" below) | Laptop, same Docker limits |
+| Overload, 400 users | Laptop, same Docker limits (not yet repeated on the live server) |
+| Crash and recovery (`SIGKILL` of the api) | Laptop, same Docker limits (not yet repeated on the live server) |
 
 Sizing that matters:
 
@@ -195,7 +201,7 @@ most 400 API requests in flight, and when the api is not reachable (for
 example while it restarts) nginx also answers a JSON `503` with
 `Retry-After: 2` instead of an HTML 502.
 
-Test: 400 users (more than 3 times the limit), 2 minutes:
+Test on the laptop (same Docker limits; not yet repeated on the live server): 400 users (more than 3 times the laptop limit), 2 minutes. On the live server, the 120-user row in "Live server" shows the same fast 503s.
 
 | | |
 |---|---|
@@ -207,7 +213,7 @@ Test: 400 users (more than 3 times the limit), 2 minutes:
 
 ## Crash and recovery
 
-In the same 400-user test, after 80 s, `scripts/load/chaos.sh` killed the
+In the same 400-user laptop test, after 80 s, `scripts/load/chaos.sh` killed the
 api process with `SIGKILL` (like a crash or an out-of-memory kill), from
 the Docker host, not with `docker stop`.
 

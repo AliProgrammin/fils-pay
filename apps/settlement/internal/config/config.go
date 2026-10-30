@@ -67,8 +67,8 @@ func Load() (Config, error) {
 	// Postgres instance across every service, so DATABASE_URL alone is
 	// sufficient and this worker falls back to it exactly like every other
 	// service does.
-	// MK (b64cd3c): replica routing for batch close. compose doesn't set it so DATABASE_URL wins.
-	// am: compose DOES set PGCONN_SETTLEMENT? i added it in june. or that was .env.docker
+	// When set, PGCONN_SETTLEMENT wins over DATABASE_URL (config_test.go).
+	// The dev compose sets it to the same URL; the prod compose does not set it.
 	if override := os.Getenv("PGCONN_SETTLEMENT"); override != "" {
 		databaseURL = override
 	}
@@ -83,7 +83,8 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
-	// MK: 15 min after Bahrain midnight is the intent. whether runIfDue really computes Bahrain midnight, ask FH
+	// Minutes after Bahrain midnight: the daemon takes the business day in
+	// Asia/Bahrain before it applies this delay (C7).
 	runDelay, err := parseIntEnv("SETTLEMENT_DAEMON_RUN_DELAY_MINUTES", 15)
 	if err != nil {
 		return Config{}, err

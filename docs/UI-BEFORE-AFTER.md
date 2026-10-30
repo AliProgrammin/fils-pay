@@ -10,6 +10,14 @@ Matched screenshots of checkout, the merchant dashboard and the admin console.
 
 Bug ids refer to [BUGS.md](../BUGS.md). `UX1` to `UX10` are the new fixes described at the end.
 
+## Re-theme
+
+After the bug fixes, all three front ends got the team's case-file theme (cream paper, a charcoal top bar with a red rule, Anton titles, Courier labels). The screenshots on this page show the bug fixes. The re-theme has its own before and after pages. There, "before" = the app after our bug fixes but before the re-theme.
+
+- [Checkout](ui-theme-checkout.md)
+- [Merchant dashboard](ui-theme-dashboard.md)
+- [Admin console](ui-theme-admin.md)
+
 ## Checkout
 
 ### 1. Card form on a phone (UX1)
@@ -58,7 +66,9 @@ This is the transaction that was just paid through checkout. Before, the page ha
 
 | Before | After |
 |---|---|
-| ![](ui/dash-refund-drawer-before.png) | ![](ui/dash-refund-drawer-after.png) |
+| ![](ui/dash-transaction-detail-before.png) | ![](ui/dash-refund-drawer-after.png) |
+
+Same screen as the "before" in 5: the old UI had no refund drawer.
 
 After: the merchant types the amount in BD (`4.750`, not raw fils) and gives a reason. The drawer shows "Left to refund" (captured minus refunded). Before submitting, it asks "Refund 4.750 BHD?". A retry of the same refund reuses the same Idempotency-Key.
 
@@ -132,7 +142,9 @@ Before: "Current negotiated rate 2.45% (245 bps), effective 01/03/2026". This wa
 
 | Before | After |
 |---|---|
-| ![](ui/admin-refunds-switch-before.png) | ![](ui/admin-refunds-switch-after.png) |
+| ![](ui/admin-merchant-profile-before.png) | ![](ui/admin-refunds-switch-after.png) |
+
+Same screen as the "before" in 14: the old UI had no refunds switch.
 
 Before: no Refunds row and no control. Turning refunds on was only possible with raw SQL. After: a "Refunds on/off" row with a "Turn refunds on/off" button (finance and super_admin only, audited). The image shows the notice after it was clicked.
 
@@ -232,7 +244,7 @@ A click-through of both front ends in a real browser (Playwright, 1280 px and 37
 | Feedback | One toast per app (`role="status"`, no sound): "Refund of 4.000 BHD sent", "Link copied", "Webhook disabled", "Credit submitted for approval". Every action button shows a pressed state and a busy label ("Refunding…") and cannot submit twice. Failures keep the existing plain messages. | `components/Toast.tsx`, `components/useAction.ts` |
 | References | The bank reference is shown in full with a copy button; copy buttons have a gap from the text they copy. | `CopyButton.tsx`, `dashboard.css` |
 | Refunds | A refund made stale by another tab says "This payment was already refunded (maybe in another tab)." and reloads the totals; "refunds off" says "Refunds are paused for your account. Contact FilsPay support." Capture is typed in BD. | `RefundDrawer.tsx`, `TransactionDetailPage.tsx`, `errors.ts` |
-| Checkout | Card checks before sending: Luhn ("Check the card number"), expiry before this Bahrain month ("This card has expired"), CVV 3–4 digits. Focus moves to the result. A paid link reloaded shows what the public link data has; no "invoice". | `pages/checkout/cardValidation.ts`, `CheckoutPage.tsx` |
+| Checkout | Card checks before sending: Luhn ("Check the card number"), expiry before this Bahrain month ("This card has expired"), CVV 3–4 digits. These checks are in the page only. On the server, only an expired card is declined (`402 card_declined`, `card_expired`); Luhn, length, CVV and month shape get the original API's answers, so other teams' regression tests still pass (see [SECURITY.md](../SECURITY.md)). Focus moves to the result. A paid link reloaded shows what the public link data has; no "invoice". | `pages/checkout/cardValidation.ts`, `CheckoutPage.tsx` |
 | Admin | Confirm before turning refunds on/off and before issuing a credit; webhook replay offers only `failed`/`exhausted`; list MDR column is "Base MDR", the detail shows the rate in force; KYC buttons hidden once approved. | `apps/admin/src/pages/**` |
 | Phone | A Menu button opens the nav; list tables become cards with every amount visible. | `DashboardLayout.tsx`, `AdminLayout.tsx`, both CSS files |
 | Words | Amounts group thousands (`135,882.772 BHD`); dates read "1 Sep 2026"; timeline and labels use plain words. | `format.ts` in both apps |
@@ -244,5 +256,17 @@ A click-through of both front ends in a real browser (Playwright, 1280 px and 37
 | ![](ui/qa-reconciliation-dates.png) | ![](ui/qa-mobile-cards-pager.png) |
 | ![](ui/qa-admin-credits-pager.png) | ![](ui/qa-admin-credit-confirm.png) |
 | ![](ui/qa-checkout-card-errors.png) | |
+
+## Form input checks (after the QA pass)
+
+Every form field now blocks wrong input or explains it, under the field (`aria-describedby`): amounts accept digits and one dot, at most 3 decimals, more than 0 (a balance adjustment may be negative), and show the most you can enter; OTP is 6 digits; webhook URLs must be `https`; emails and merchant IDs are checked; text fields stop at the API's limit. The admin CSV import is checked line by line before anything is sent. The API did not change. Rules and tests: `apps/web/src/inputRules.ts` and `inputRules.test.ts`, `apps/admin/src/inputRules.ts` and `apps/admin/test/inputRules.test.ts`.
+
+| Refund: more than is left, reason at its limit | Admin CSV: each bad line named |
+|---|---|
+| ![](ui/inputs-web-refund.png) | ![](ui/inputs-admin-csv.png) |
+
+| Admin: adjust balance and issue credit |
+|---|
+| ![](ui/inputs-admin-adjust-credit.png) |
 
 Checks: `npm run typecheck` and `npm test` (fresh migrated database) pass; `npm run build -w apps/web` and the admin build with `--base=/admin/` pass. New unit tests cover inclusive To to exclusive API value, presets and "today" in Bahrain time, the max-date and To-before-From rules, the pager (next/previous/cache/reload/past-the-end), card checks and grouped amounts.

@@ -24,7 +24,8 @@ export async function cancelPaymentLink(
     return { outcome: "canceled" };
   }
 
-  // YA: second read is just for the error shape, no race. fine
+  // Only picks the error outcome. Scoped to the merchant like the UPDATE, so
+  // it says nothing about another merchant's link (B5).
   const lookupResult = await pool.query<{ status: string }>(
     `SELECT status FROM payment_links WHERE id = $1 AND merchant_id = $2`,
     [input.id, input.merchantId],

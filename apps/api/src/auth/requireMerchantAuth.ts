@@ -80,8 +80,8 @@ export const requireMerchantAuth: preHandlerHookHandler = async (request: Fastif
   // cookie's name and never looks at it). The grant resolves to the operator's
   // standing expressed in the merchant plane's own role vocabulary
   // (see admin/impersonation.ts), so the existing requireMerchantRole gates
-  // apply to it exactly as they do to a real merchant session — one authority
-  // model, no second "what may impersonation do" allowlist to drift from it.
+  // apply to it exactly as they do to a real merchant session. On top of
+  // that, a grant is read-only: only GET, HEAD and OPTIONS pass (A12).
   const impersonationToken = request.cookies[request.server.config.impersonationCookieName];
   if (impersonationToken) {
     const grant = await lookupImpersonationGrant(request.server.db, impersonationToken);

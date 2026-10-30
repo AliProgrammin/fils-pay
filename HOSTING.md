@@ -14,8 +14,11 @@ Files: `ops/docker-compose.prod.yml` (the stack), `ops/Dockerfile.web`
 (nginx with both front ends), `ops/nginx/filspay.conf`,
 `ops/.env.production.example` (settings), `scripts/smoke_hosted.sh` (test).
 
-Only the web container publishes a port. Postgres, the API and the
-settlement service are not reachable from outside.
+Postgres, the API, the settlement service and the reporting worker are
+never reachable from outside. Without HTTPS, only the web container
+publishes a port. With the HTTPS overlay (`ops/docker-compose.tls.yml`,
+see "Live HTTPS" below), only Caddy is public on ports 80 and 443, and the
+web container binds to `127.0.0.1:8080` on the server.
 
 You need Docker with Docker Compose v2, plus `curl` and `jq` for the test.
 
@@ -84,17 +87,65 @@ docker compose -f ops/docker-compose.prod.yml logs -f api # API logs
 docker compose -f ops/docker-compose.prod.yml up -d --build   # update after git pull
 ```
 
-**HTTPS.** The web container speaks plain http on port 80. Put TLS in front
-of it: the host's load balancer or a reverse proxy (Caddy, nginx, Traefik)
-that forwards to the web port. Then set `COOKIE_SECURE=true` and use the
-https address in `CHECKOUT_BASE_URL`.
+**HTTPS.** The web container speaks plain http. For HTTPS, use the Caddy
+overlay in the next section, or put the host's load balancer or another
+reverse proxy in front of the web port. Then set `COOKIE_SECURE=true` and
+use the https address in `CHECKOUT_BASE_URL`.
+
+## Live HTTPS (what runs at https://64-227-145-174.sslip.io)
+
+The live server (Dilmune Cloud, server `Orbit`, 1 vCPU / 2 GB, Ubuntu
+24.04) runs the prod stack plus the HTTPS overlay `ops/docker-compose.tls.yml`.
+Caddy (`ops/caddy/Caddyfile`) gets and renews the certificate, redirects
+http to https and adds the security headers. `sslip.io` turns the server's
+IP address into a domain name, so no DNS setup is needed.
+
+1. Copy the repo to the server (`git clone` or `rsync`).
+2. Create the secrets file **on the server**. It is never copied from a
+   laptop and never committed:
+
+   ```sh
+   cp ops/.env.production.example ops/.env.production
+   chmod 600 ops/.env.production
+   ```
+
+   Replace each `CHANGE_ME` with a fresh value from the `openssl rand`
+   command on its line (step 1). Use the same `POSTGRES_PASSWORD` in
+   `DATABASE_URL`. Set `CHECKOUT_BASE_URL=https://64-227-145-174.sslip.io`
+   and keep `COOKIE_SECURE=true` and `OTP_DEV_EXPOSE=true` (demo).
+3. From the repo root on the server, run this one command:
+
+   ```sh
+   FILSPAY_DOMAIN=64-227-145-174.sslip.io FILSPAY_HTTP_PORT=127.0.0.1:8080 docker compose -f ops/docker-compose.prod.yml -f ops/docker-compose.tls.yml up -d --build
+   ```
+
+   Caddy takes ports 80 and 443. The web container binds to
+   `127.0.0.1:8080`, so it is not public (ports that Docker publishes skip
+   the `ufw` firewall; binding to `127.0.0.1` keeps them private). Open only
+   ports 22, 80 and 443 in the firewall. For your own server, use
+   `<your-ip-with-dashes>.sslip.io` or your own domain.
+4. Check it, from any machine:
+
+   ```sh
+   BASE_URL=https://64-227-145-174.sslip.io scripts/smoke_hosted.sh
+   ```
+
+   The last line must be `RESULT: ALL PASS`. Use the same `-f` files for
+   `ps`, `logs` and updates, for example
+   `docker compose -f ops/docker-compose.prod.yml -f ops/docker-compose.tls.yml ps`.
 
 **Server size.** The stack is sized for one server with 1 vCPU and 2 GB
 RAM. `ops/docker-compose.prod.yml` sets CPU and memory limits on every
-service (the API gets 0.5 vCPU and 512 MB; all limits add up to 1.0 CPU and
-1.5 GB), restarts any service that stops (`restart: always`), and keeps the
-Postgres data in the `pgdata` volume. Load test results, the capacity
-estimate and how to rerun them: [CAPACITY.md](CAPACITY.md).
+service, restarts any service that stops (`restart: always`), and keeps the
+Postgres data in the `pgdata` volume. Only the API has the hosting rule's
+hard cap: **0.5 vCPU and 512 MB**. The other caps only stop one service from
+taking the whole machine. In the prod file alone they add up to 1.0 CPU and
+1.5 GB. The HTTPS overlay adds Caddy (0.40 CPU, 96 MB) and raises Postgres
+from 0.35 to 0.90 CPU. The caps then add up to about 1.95 CPU; they are
+caps, not reservations, and all services share the one vCPU. A first live
+run with Postgres at 0.30 served only about 30 users; at 0.90 it serves
+about 70. Load test results, the capacity estimate and how to rerun them:
+[CAPACITY.md](CAPACITY.md).
 
 ## 4. Smoke test
 
@@ -127,7 +178,10 @@ is a demo-only setting.
 | `support@filspay.test` | support |
 
 **Merchant dashboard** (`/dashboard/login`), password `FilsPaySeed!2026`.
-The login form asks for the merchant ID:
+Sign in with email and password. If the email belongs to more than one shop
+(`owner@alpharetail.example` is in Alpha Retail and Beta Digital), the page
+lists the shops by name and you pick one. The merchant ID is only needed for
+"Sign in to a specific shop":
 
 | Merchant | Merchant ID | Owner email |
 |---|---|---|

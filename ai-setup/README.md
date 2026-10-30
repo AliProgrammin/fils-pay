@@ -13,7 +13,7 @@ We used AI a lot. We did not trust it. Every behaviour fix had to pass a test th
 | [`claude/CLAUDE.md`](claude/CLAUDE.md) | Our project instructions for AI agents, in loadable Claude Code form (also the repo-root `CLAUDE.md`) |
 | [`claude/agents/`](claude/agents/) | The four agent roles we used, as Claude Code agent files: `auditor`, `fixer`, `blind-verifier`, `ui-qa` |
 
-The repo-root `CLAUDE.md`, `AGENTS.md` and `.cursorrules` now point to these rules. To use the agent roles in Claude Code, copy `ai-setup/claude/agents/` to `.claude/agents/`. The agent files package the prompt blocks we actually sent (see `verifier-prompts.md` for the real text).
+The repo-root `CLAUDE.md`, `AGENTS.md` and `.cursorrules` now point to these rules. The agent roles are also in [`.claude/agents/`](../.claude/agents/) (same files), so Claude Code loads them when it opens the repo. The agent files package the prompt blocks we actually sent (see `verifier-prompts.md` for the real text).
 
 ## Tools
 

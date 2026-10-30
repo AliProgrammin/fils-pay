@@ -145,8 +145,7 @@ export function MerchantDetailPage() {
     });
   }
 
-  // FH: this ends up in adjustMerchantBalanceCache (cache only)
-  // MK: it's the journaled one since Sep
+  // Posts a balanced ledger group and moves the cache with it (E5).
   async function handleAdjustBalance(): Promise<void> {
     if (!id) return;
     // Typed in BD like the credit form below; parsed to exact fils (no float).
@@ -444,9 +443,10 @@ export function MerchantDetailPage() {
             <span className="admin-danger-tag">Moves money</span>
           </div>
           <p className="admin-muted">
-            A direct correction to this merchant&apos;s cached payable balance, for when support has
-            confirmed the figure on screen is wrong and it needs to be right now rather than after the
-            next settlement cycle. Requires the <code>finance</code> or <code>super_admin</code> role.
+            A direct correction to this merchant&apos;s payable balance, for when support has confirmed
+            the figure on screen is wrong and it needs to be right now rather than after the next
+            settlement cycle. It is posted to the ledger, and the balance on screen moves with it.
+            Requires the <code>finance</code> or <code>super_admin</code> role.
           </p>
           <RequireRole
             allow={["finance", "super_admin"]}

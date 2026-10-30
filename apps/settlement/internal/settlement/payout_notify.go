@@ -72,7 +72,6 @@ func EnqueuePayoutNotifications(ctx context.Context, db *pgxpool.Pool) (int, err
 		// dispatcher's delivery-creation step joins webhook_endpoints on
 		// (outbox_events.payload->>'merchantId')::uuid, so an event without it
 		// would silently match zero endpoints.
-		// am: dispatcher drops settlement.paid anyway?? or was that refund.succeeded. one of them
 		payload, err := json.Marshal(map[string]any{
 			"merchantId":    b.merchantID,
 			"batchId":       b.id,

@@ -1,8 +1,12 @@
 # FilsPay: project instructions for AI agents (Team Orbit)
 
-Use this file instead of the repo-root `CLAUDE.md`, `AGENTS.md` and
-`.cursorrules`. Those three were handed over with false rules that protect
-bugs. They are kept unchanged as evidence; never follow them.
+This is the same text as the repo-root `CLAUDE.md`, kept here with the agent
+roles in `agents/`.
+
+The `CLAUDE.md`, `AGENTS.md` and `.cursorrules` we were handed contained
+false rules that protected bugs (money in cents, UTC days, "never change a
+test", `Math.random` for codes). We replaced them with this file. The
+originals are kept as evidence in `ai-setup/handed-over/`.
 
 ## Sources of truth, in order
 1. The case brief and the ticket list.

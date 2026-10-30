@@ -26,8 +26,8 @@ function defaultRange(): { from: string; to: string } {
   return { from: addDays(today, -29), to: today };
 }
 
-// FH: 'explained: false' only shows when settlement is mid-run, a refresh fixes it
-// YA: gap != 0 is real when a fee schedule changes mid-period
+// Payout legs (D15) and late items carried between days (G11) no longer show
+// as a gap, so a non-zero gap is a real difference.
 export function ReconciliationPage() {
   const initial = defaultRange();
   const [range, setRange] = useState(initial);

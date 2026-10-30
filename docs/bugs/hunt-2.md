@@ -1,7 +1,5 @@
 # Hunt 2 bug fixes
 
-H4 is in hunt-2-h4.md.
-
 ### H1 Public payment-link page leaks API key data
 - Severity: High
 - Ticket: none
@@ -35,6 +33,16 @@ H4 is in hunt-2-h4.md.
 - What it breaks: A client's mistake looks like a server crash. It fills the error log, sets off alerts, and hides real 500s.
 - Fix: Check input in the routes and answer with the repo's existing codes: `400 invalid_request` for from/to/limit/cursor/id, `400 invalid_amount` for amounts (the same rule as refunds: a positive safe integer). One shared cursor decoder (`lib/pagination.ts`) checks that the timestamp is a real Postgres timestamp and the id is a UUID before the SQL runs. Numeric limits still clamp as before (`limit=0` gives 1 row). Success responses do not change.
 - Test: apps/api/src/routes/transactions.fix.test.ts, the five "H3: ..." tests (bad list input, real cursor still pages, non-UUID id on every `/:id` route, bad amounts on authorize and capture, payment-link list).
+
+### H4 Payment-link captures never get the negotiated discount in the ledger
+- Severity: High (money)
+- Ticket: H4
+- Where: apps/api/src/payments/capture.ts, apps/api/src/payments/discountAdjustment.ts, apps/api/src/routes/transactions.ts (capture route), apps/api/src/paymentLinks/pay.ts, apps/api/src/fees/estimate.ts
+- What is wrong: The discount legs (debit platform_fee_revenue, credit merchant_payable) were posted only by the merchant capture route, in a separate DB transaction after the capture committed. A payment-link payment calls captureTransaction directly, so it never got the discount legs. Settlement (batch.go) always takes the discount off the payout fee. So each paid link for a discounted merchant left merchant_payable too low by the discount. Example: Alpha Retail, 275 bps MDR, 75 bps discount, 100.000 BD link: the ledger charged 2,750 fils, the payout charged 2,729, so payable was 21 fils negative after each payout.
+- Why it happens: The discount was a post-commit step in one caller, not part of the capture. Any other caller of captureTransaction skipped it. Also, on the route, if the post-commit step failed, the capture was already committed but the client got a 500; a retry replayed the 200 and ran the discount step again. And the route used a different rounding order (fee first, then discount) from settlement (discount first, then fee, discounted_fee.go), so at some amounts the two differed by 1 fils (602 fils: ledger 15, payout 14).
+- What it breaks: merchant_payable drifts from the real payouts for every discounted merchant that uses payment links, and can go negative. Reconciliation shows false gaps. The pending estimate disagreed with settlement by 1 fils at some amounts.
+- Fix: captureTransaction posts the discount legs itself, inside the same DB transaction as the capture, with the same description ("capture: negotiated discount adjustment"). The discount is MDR fee minus netCaptureFeeFils, and netCaptureFeeFils uses the same rule and rounding as settlement's ComputeSettlementFee. So the ledger net fee always equals the fee the payout deducts. A replayed capture returns its cached response before any ledger write, so the discount is posted exactly once. The post-commit call in the capture route is removed (and the old applyCaptureDiscountAdjustment with it). estimateFeeFils uses the same helper. API paths and response shapes do not change. Refunds need no change: processRefund already reads the net fee (fee credits minus discount debits) from the ledger.
+- Test: apps/api/src/payments/discountAdjustment.test.ts (net fee equals the Go ComputeSettlementFee table; a link capture posts 21 fils of discount and payable = 100,000 - 2,729; the 602-fil rounding case follows settlement; a replayed capture posts the discount once; a full refund of a discounted link payment reverses 2,729 and leaves payable 0). apps/settlement/internal/settlement/discount_payout_test.go (the same legs, then CloseBatch and PayoutBatch: batch fee 2,729 and merchant_payable 0).
 
 ### H5 KYC image decompression bomb
 - Severity: Medium
@@ -98,3 +106,13 @@ H4 is in hunt-2-h4.md.
 - What it breaks: clients get a server error for their own mistake; on the pay path the link also stays reserved until the timeout.
 - Fix: reject amounts of 0 or less with 400 `invalid_amount`; require a string `pan`; map Postgres 22021 to 400 `invalid_request` in the one error handler.
 - Test: apps/api/src/routes/transactions.fix.test.ts, the three "H10" tests
+
+### H11 Dead v1 transaction routes with an unauthenticated capture endpoint
+- Severity: Low
+- Ticket: none (found in the final clean-up)
+- Where: apps/api/src/v1/routes/transactions.ts and apps/api/src/v1/fees/calculateFee.ts (both removed)
+- What is wrong: `apps/api/src/v1/` held a second `POST /:id/capture` route with no login, no merchant check and no idempotency. It took `amountFils` from the request body as is, and worked out the fee with its own half-up rounding (`calculateMdrFeeV1`) from `merchants.mdr_bps`, not the rate in force and not the platform's round-half-to-even rule. The handover said "`apps/api/src/v1/` is the partner API. Leave it alone".
+- Why it happens: `app.ts` never registers this tree, and nothing imports it. The live `/v1/transactions` routes are in apps/api/src/routes/transactions.ts. Comments in the files argued about whether it was dead; no one removed it.
+- What it breaks: Nothing today. But it was one import away from an unauthenticated, unscoped capture of any merchant's transaction, with the wrong fee. The handover note invited the next developer to wire it up for "a partner".
+- Fix: Removed `apps/api/src/v1/` and the comment in `app.ts` that pointed at it. No live route, path, body or response changed.
+- Test: `npm run typecheck` passes; `git grep -n "transactionRoutesV1\|calculateMdrFeeV1"` finds nothing; the full API suite passes with the same routes as before (`apps/api/src/app.ts` unchanged except the comment).

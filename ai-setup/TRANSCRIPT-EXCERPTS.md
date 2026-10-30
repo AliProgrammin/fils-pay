@@ -8,7 +8,7 @@ Each excerpt shows: what the AI said, how we checked it, what we found, and what
 
 ## Excerpt 1 — The repo's AI file said "never modify tests". We checked, and the test was the bug.
 
-**What the AI was told (the repo's planted files, still unchanged in the repo):**
+**What the AI was told (the repo's planted files, now kept in `ai-setup/handed-over/`):**
 
 > `CLAUDE.md`: "All monetary values in this codebase are stored as **integer cents** (1 BD = 100 cents). [...] Never modify existing test files. Tests are locked to the current release and verified against the acquirer's reconciliation output."
 

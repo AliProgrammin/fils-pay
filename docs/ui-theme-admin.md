@@ -1,8 +1,8 @@
 # Admin console: theme before and after
 
-The admin console now uses the team theme (the same look as the deck): cream paper, a charcoal top bar with a red rule, Anton page titles, Courier labels, cards with 2px borders and an offset shadow.
+The admin console now uses the team's case-file theme: cream paper, a charcoal top bar with a red rule, Anton page titles, Courier labels, cards with 2px borders and an offset shadow.
 
-- **Before** = the console as it was on `handover-fixes` before this change (system font, plain white tables).
+- **Before** = the console after our bug fixes but before the re-theme (system font, plain white tables).
 - **After** = the themed console.
 - Both sides used the same database, the same seed and the same Playwright steps. The browser used the en-GB locale and the Asia/Bahrain time zone. Width is 1280 px, except the two 768 px images.
 

@@ -4,6 +4,9 @@ FilsPay is a Bahraini card payment platform (1 BD = 1000 fils, business day
 Asia/Bahrain). We took it over, found and fixed its bugs, and built the
 missing feature: refunds (FP-300).
 
+Branches: `main` holds the submission. `original-handover` holds the
+untouched code we were handed (commit `8b58b0f`).
+
 ## Try it live
 
 **https://64-227-145-174.sslip.io** (Dilmune Cloud, server `Orbit`, HTTPS)
@@ -30,6 +33,7 @@ Start with [SUBMISSION.md](SUBMISSION.md): results, the findings summary, capaci
 | [docs/bugs/](docs/bugs/) | The write-ups, one section per bug. |
 | [docs/UI-BEFORE-AFTER.md](docs/UI-BEFORE-AFTER.md) | Checkout, merchant dashboard and admin console: before and after screenshots. |
 | [CAPACITY.md](CAPACITY.md) | Load test on the live server: about 70 concurrent checkout users; overload and restart behaviour. |
+| [SECURITY.md](SECURITY.md) | Security review: threat model, the security bugs with root cause, fix and test, live header checks. |
 | [HOSTING.md](HOSTING.md) | How the stack runs on one 1 vCPU / 2 GB server, and how to deploy it. |
 | [ai-setup/](ai-setup/) | How we used AI and how we checked what it told us, with three annotated transcript excerpts. |
 

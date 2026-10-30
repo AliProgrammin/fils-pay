@@ -20,7 +20,7 @@ func TestLoad_RejectsBadDaemonTiming_Fix(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			withEnv(t, map[string]string{
-				"DATABASE_URL":                            "postgres://a/db",
+				"DATABASE_URL": "postgres://a/db",
 				"SETTLEMENT_DAEMON_POLL_INTERVAL_SECONDS": c.poll,
 				"SETTLEMENT_DAEMON_RUN_DELAY_MINUTES":     c.delay,
 			})
@@ -34,7 +34,7 @@ func TestLoad_RejectsBadDaemonTiming_Fix(t *testing.T) {
 
 func TestLoad_AcceptsDaemonTimingBounds_Fix(t *testing.T) {
 	withEnv(t, map[string]string{
-		"DATABASE_URL":                            "postgres://a/db",
+		"DATABASE_URL": "postgres://a/db",
 		"SETTLEMENT_DAEMON_POLL_INTERVAL_SECONDS": "1",
 		"SETTLEMENT_DAEMON_RUN_DELAY_MINUTES":     "1439",
 	})

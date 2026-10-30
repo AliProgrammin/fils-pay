@@ -19,6 +19,7 @@ func UpdateLifetimePayoutMonitoringEstimate(ctx context.Context, tx pgx.Tx, merc
 	`, merchantID, int64(netPayoutFils))
 	return err
 }
+
 // EstimateMonthlyPayout returns an approximate total payout for the
 // given merchant over the last 30 calendar days, used by the ops
 // dashboard to flag merchants whose settlement run is unusually large

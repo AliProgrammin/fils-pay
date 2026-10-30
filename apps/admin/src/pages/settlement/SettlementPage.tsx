@@ -102,8 +102,8 @@ export function SettlementPage() {
     });
   }
 
-  // after clicking rebuild on staging alpha's balance jumped to like 3x?? — am
-  // MK: staging data is junk. cache-only, safe to click
+  // Rebuild sets each cached balance to the ledger's merchant_payable, under a
+  // row lock, and keeps manual credits (C1, C10, G4).
   async function handleRebuild(): Promise<void> {
     await runRebuild(async () => {
       setRebuildError(null);
@@ -132,7 +132,7 @@ export function SettlementPage() {
     });
   }
 
-  // FH: ADMIN.md says this is safe
+  // Recalculates only closed, unpaid batches, at the rate in force (C6).
   async function handleRecalculateMdr(event: React.FormEvent): Promise<void> {
     event.preventDefault();
     const idProblem = checkUuid(mdrMerchantId);

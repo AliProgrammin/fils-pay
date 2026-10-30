@@ -44,9 +44,8 @@ export async function recordKycDocument(
   config: Config,
   input: RecordKycDocumentInput,
 ): Promise<RecordKycDocumentResult> {
-  // MK: magic-byte detection is the real gate. never trust fileName
-  // polyglot pdf/jpeg files pass both checks?? — am
-  // MK: a polyglot is still a real pdf to the reviewer. parked
+  // The detected bytes are the only type check; the client fileName is
+  // never trusted, also not for the PDF-only rule below (A10).
   const detected = detectFileType(input.buffer);
   if (!detected) {
     throw new UnprocessableEntityError("invalid_file_type");

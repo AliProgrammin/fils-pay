@@ -1,6 +1,6 @@
 # Checkout theme: before and after
 
-The public checkout (`/pay/:token`) now uses the team theme from `apps/web/src/theme.css`:
+The public checkout (`/pay/:token`) now uses the team's case-file theme from `apps/web/src/theme.css`:
 cream paper, a charcoal header bar with a red rule, Anton headlines, Courier Prime labels,
 JetBrains Mono for amounts and references, and cards with a 2px frame and an offset shadow.
 Requests, paths, bodies and behaviour did not change.
@@ -22,6 +22,8 @@ What changed for the customer:
 - All times show in Bahrain time, en-GB style (`30 Oct 2026, 14:08`).
 - If the page fails to render, the customer sees a themed error card, not the raw router error page.
 - Loading shows a skeleton card. Animations respect `prefers-reduced-motion`.
+
+Before = the checkout after our bug fixes but before the re-theme. After = the re-themed checkout.
 
 | State | Width | Before | After |
 |---|---|---|---|

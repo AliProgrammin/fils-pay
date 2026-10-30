@@ -62,7 +62,6 @@ export function buildApp(config: Config, pool: Pool, options: BuildAppOptions = 
   app.register(businessProfileRoutes, { prefix: "/v1/merchants" });
   app.register(kycRoutes, { prefix: "/v1/merchants" });
   app.register(apiKeyRoutes, { prefix: "/v1/merchants" });
-  // v1/routes/transactions.ts is NOT this one. that tree is dead — MK
   app.register(transactionRoutes, { prefix: "/v1/transactions" });
   // FP-300 refunds. One handler, two paths: /v1/merchants/:merchantId/refunds
   // (RefundDrawer, initiateMerchantRefund) and /v1/refunds (documented for

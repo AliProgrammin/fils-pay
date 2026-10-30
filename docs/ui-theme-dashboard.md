@@ -1,8 +1,11 @@
 # Merchant dashboard: theme before and after
 
-The merchant dashboard (`apps/web`, `/dashboard/*`) now uses the FilsPay case-file theme from `apps/web/src/theme.css`: cream paper, Anton headlines, Courier labels, JetBrains Mono amounts, a charcoal top bar with a red rule, and cards with a 2 px border and a small offset shadow.
+The merchant dashboard (`apps/web`, `/dashboard/*`) now uses the team's case-file theme from `apps/web/src/theme.css`: cream paper, Anton headlines, Courier labels, JetBrains Mono amounts, a charcoal top bar with a red rule, and cards with a 2 px border and a small offset shadow.
 
-All screenshots come from the running app (seeded data, finance user of Alpha Retail Co). Width is 1280 px unless the name ends in `-375`.
+All screenshots come from the running app (seeded data, finance user of Alpha Retail Co). Width is 1280 px, except the 375 px table below.
+
+- **Before** = the app after our bug fixes but before the re-theme.
+- **After** = the re-themed app.
 
 | Screen | Before | After | What changed |
 |---|---|---|---|
@@ -21,7 +24,23 @@ All screenshots come from the running app (seeded data, finance user of Alpha Re
 | Unknown URL | [before](ui/theme-dash-not-found-before.png) | [after](ui/theme-dash-not-found-after.png) | Themed 404 page with links to the dashboard and to sign-in, not the raw router error. `/` now goes to the dashboard (or to login) |
 | Unknown `/pay/...` URL | raw router error | [after](ui/theme-dash-not-found-pay-after.png) | Text for customers, with no links into the merchant dashboard |
 
-At 375 px: [login](ui/theme-dash-login-375-after.png), [transactions](ui/theme-dash-transactions-375-after.png), [refund](ui/theme-dash-refund-375-after.png), [refund confirmation](ui/theme-dash-refund-confirm-375-after.png), [payment links](ui/theme-dash-payment-links-375-after.png), [settlement](ui/theme-dash-settlement-375-after.png), [reconciliation](ui/theme-dash-reconciliation-375-after.png), [overview](ui/theme-dash-overview-375-after.png), [404](ui/theme-dash-not-found-375-after.png). The `-375-before.png` files show the old look at the same width. At 375 px the page does not scroll sideways. A wide table scrolls inside its own frame, and the nav bar scrolls sideways.
+### At 375 px (phone)
+
+At 375 px the page does not scroll sideways. A wide table scrolls inside its own frame, and the nav bar scrolls sideways.
+
+| Screen | Before | After |
+|---|---|---|
+| Login | [before](ui/theme-dash-login-375-before.png) | [after](ui/theme-dash-login-375-after.png) |
+| Login, email in two shops | [before](ui/theme-dash-login-shops-375-before.png) | [after](ui/theme-dash-login-shops-375-after.png) |
+| Login, code step | none | [after](ui/theme-dash-login-otp-375-after.png) |
+| Transactions | [before](ui/theme-dash-transactions-375-before.png) | [after](ui/theme-dash-transactions-375-after.png) |
+| Transaction and refund drawer | [before](ui/theme-dash-refund-375-before.png) | [after](ui/theme-dash-refund-375-after.png) |
+| Refund confirmation | browser `confirm()` | [after](ui/theme-dash-refund-confirm-375-after.png) |
+| Payment links | [before](ui/theme-dash-payment-links-375-before.png) | [after](ui/theme-dash-payment-links-375-after.png) |
+| Settlement batches | [before](ui/theme-dash-settlement-375-before.png) | [after](ui/theme-dash-settlement-375-after.png) |
+| Reconciliation | [before](ui/theme-dash-reconciliation-375-before.png) | [after](ui/theme-dash-reconciliation-375-after.png) |
+| Overview | [before](ui/theme-dash-overview-375-before.png) | [after](ui/theme-dash-overview-375-after.png) |
+| Unknown URL | none | [after](ui/theme-dash-not-found-375-after.png) |
 
 ## Behaviour notes
 

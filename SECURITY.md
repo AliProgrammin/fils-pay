@@ -51,7 +51,7 @@ webhooks merchants trust.
 ## 3. Findings
 
 Severity is from BUGS.md. All test paths are under `apps/api/src/` unless
-the path starts with `scripts/`.
+the path starts with `scripts/` or `apps/`.
 
 ### Authentication
 
@@ -120,7 +120,7 @@ Checked and correct (no bug): API keys and session tokens come from
 | L3 | High | Crash between authorize and finalize left the link stuck with a card hold. | Same `Idempotency-Key` retry finishes the payment. | `routes/paymentLinks.resume.test.ts`, `scripts/load/chaos.sh` |
 | B7 | Medium | Capture idempotency hash ignored the transaction id. | Hash includes `transactionId`. | `payments/capture.fix.test.ts` |
 | E9 | Critical | Same adjustment CSV could be applied twice. | Unique content hash; 409 on repeat. | `routes/adminAdjustmentImport.test.ts` |
-| E4 | Medium | Ledger rows could be updated, deleted or truncated. | Append-only triggers. | `db/ledgerAppendOnly.fix.test.ts` |
+| E4 | Medium | Ledger rows could be updated, deleted or truncated. | Append-only triggers. | `apps/api/src/db/ledgerAppendOnly.fix.test.ts` |
 | E5 | Medium | "Adjust balance" changed the cache, not the ledger. | Post a balanced ledger group. | `routes/adminBalanceAdjustments.test.ts` |
 
 ### Input validation and file uploads
@@ -152,6 +152,9 @@ Checked and correct (no bug): API keys and session tokens come from
 Card data: the card number goes only to the acquirer simulator. The
 `transactions` insert has no card columns (`payments/authorize.ts`).
 
+Card checks: the checkout page checks the number (Luhn and length), the CVV
+(3 to 4 digits) and the expiry before it sends anything. The server checks only one card rule: an expired card gets `402 card_declined` with `declineReason: card_expired`, as a real bank would answer. A card is valid through the end of its expiry month on the Bahrain calendar; a 2-digit year means 20YY; a month or year that is not a valid number is never declined as expired; the test card numbers ending `0002`, `0119` and `0069` keep their fixed answers first. The server does not reject a card for Luhn, length, CVV or month shape: the original API accepted those, and other teams' regression tests may depend on its answers (`acquirer/simulator.ts`, `routes/cardValidation.fix.test.ts`).
+
 ## 4. Hosting security
 
 | Control | Where | Checked how | Result |
@@ -160,6 +163,7 @@ Card data: the card number goes only to the acquirer simulator. The
 | TLS | Caddy, Let's Encrypt | Live: `openssl s_client` | TLS 1.3, Let's Encrypt cert for the host, valid to 28 Jan 2027. We did not test which old TLS versions are refused. |
 | HTTP to HTTPS | Caddy default | Live: `curl http://...` | `308` to `https://`. |
 | HSTS | `ops/caddy/Caddyfile` | Live headers | `strict-transport-security: max-age=31536000`. |
+| Browser security headers | `ops/caddy/Caddyfile` (commit `8470fff`) | Live: `curl -sI https://64-227-145-174.sslip.io/dashboard/login` | `content-security-policy` (`default-src 'self'`, `script-src 'self'`, `frame-ancestors 'none'`), `x-content-type-options: nosniff`, `x-frame-options: DENY`, `referrer-policy: strict-origin-when-cross-origin`, `permissions-policy: camera=(), microphone=(), geolocation=()`. No `server` header (Caddy removes it; nginx has `server_tokens off`). Fixed: before, these headers were missing and `server` showed `nginx/1.27.5`. |
 | Cookies | `routes/auth.ts`, `routes/adminAuth.ts` | Live: merchant login | `HttpOnly; Secure; SameSite=Lax`, `Max-Age=600` while the OTP is pending. |
 | OTP enforced | A1 fix | Live: pending cookie on `/v1/transactions` | `401 unauthenticated`. |
 | Callback signature enforced | B2 fix | Live: unsigned callback with a valid body | `401 invalid_signature`. |
@@ -188,16 +192,13 @@ Card data: the card number goes only to the acquirer simulator. The
   database. The append-only ledger trigger (E4) stops normal writes, but an
   owner role can drop a trigger.
 - **`ops/.env.docker` is a tracked dev file.** It has sandbox values, for
-  example a sandbox `ACQUIRER_CALLBACK_SIGNING_SECRET`. Its comment says it is
-  gitignored; that is false. Production uses `ops/.env.production`. We did
+  example a sandbox `ACQUIRER_CALLBACK_SIGNING_SECRET`. Its header comment
+  now says it is tracked. Production uses `ops/.env.production`. We did
   not confirm the live secret differs (that needs server access).
 - **Stuck link authorizations are not auto-voided.** After a crash between
   authorize and finalize, only a retry with the same `Idempotency-Key`
   finishes the payment (L3). If the customer never retries, the link stays
   reserved and the card hold stays until the hold expires. No job voids it.
-- **Missing browser security headers.** Live responses have no
-  `Content-Security-Policy`, `X-Content-Type-Options` or `X-Frame-Options`.
-  The `server` header shows `nginx/1.27.5`.
 - **SSH (port 22) is open** on the server. We did not check its settings.
 - **Impersonation start is open to every admin role**, by design (support
   needs it). It is safe only while the read-only rules (A8, A12) hold.

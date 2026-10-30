@@ -85,8 +85,8 @@ export function MerchantListPage() {
     );
   }
 
-  // only approves the under_review ones (filtered) — am
-  // FH: sends every selected id, the server doesn't check status
+  // Sends every selected id; the server approves only the under_review ones
+  // and writes a review row for each (A11).
   async function approveSelected(): Promise<void> {
     await runBulk(async () => {
       setBulkError(null);

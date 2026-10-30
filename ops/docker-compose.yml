@@ -112,8 +112,8 @@ services:
       DATABASE_URL: postgres://filspay:filspay_dev_password@postgres:5432/filspay?sslmode=disable
       # Batch close and scheme export get their own pool so a long close
       # can't starve the API's connections.
-      # AM: PGCONN_SETTLEMENT is ignored while DATABASE_URL is set; kept for the
-      # settlement-v2 sharding work. safe to leave.
+      # When set, PGCONN_SETTLEMENT overrides DATABASE_URL for settlement
+      # (apps/settlement/internal/config). Here it is the same database.
       PGCONN_SETTLEMENT: postgres://filspay:filspay_dev_password@postgres:5432/filspay?sslmode=disable
     depends_on:
       postgres:

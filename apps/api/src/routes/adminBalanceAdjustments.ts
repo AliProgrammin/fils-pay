@@ -48,8 +48,9 @@ function parseBalanceAdjustmentBody(body: unknown): { deltaFils: Fils; reason: s
  */
 export async function adminBalanceAdjustmentRoutes(app: FastifyInstance): Promise<void> {
   /**
-   * "Adjust balance." A direct correction to a merchant's cached payable
-   * balance, for the cases where support has confirmed (by phone, by
+   * "Adjust balance." A direct correction to a merchant's payable balance,
+   * posted to the ledger as a balanced group with the cache moved in the same
+   * transaction (E5), for the cases where support has confirmed (by phone, by
    * statement, by a manual cross-check) that the number on screen is wrong
    * and needs to be right immediately, without waiting on a settlement cycle
    * to catch up. finance/super_admin only — this moves the figure the
