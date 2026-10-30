@@ -8,10 +8,26 @@
 # curl, jq, psql, openssl, node, go.
 #
 #   API_URL=http://localhost:3100 DATABASE_URL=postgres://... scripts/demo_refund.sh
+#
+# Refuses a DATABASE_URL whose host is not localhost/127.0.0.1 unless
+# DEMO_ALLOW_REMOTE=1.
 set -uo pipefail
 
 API_URL="${API_URL:-http://localhost:3000}"
 : "${DATABASE_URL:?set DATABASE_URL to the seeded database}"
+# W4: this script writes demo rows for the seed merchant and runs run-batch.
+# Only on a local database, unless DEMO_ALLOW_REMOTE=1 says otherwise.
+DB_HOST="$(node -e 'try { console.log(new URL(process.argv[1]).hostname) } catch { console.log("") }' "$DATABASE_URL")"
+case "$DB_HOST" in
+  localhost | 127.0.0.1 | "[::1]") ;;
+  *)
+    if [ "${DEMO_ALLOW_REMOTE:-}" != "1" ]; then
+      echo "demo_refund: refusing: DATABASE_URL host '${DB_HOST}' is not localhost or 127.0.0.1." >&2
+      echo "This script writes demo rows and runs run-batch. Set DEMO_ALLOW_REMOTE=1 to run it anyway." >&2
+      exit 1
+    fi
+    ;;
+esac
 RECEIVER_PORT="${RECEIVER_PORT:-4599}"
 MERCHANT_NAME="Alpha Retail Co"
 OWNER_EMAIL="owner@alpharetail.example"
