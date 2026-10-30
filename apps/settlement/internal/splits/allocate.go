@@ -139,6 +139,17 @@ func PayoutSplitBatch(ctx context.Context, db *pgxpool.Pool, batchID uuid.UUID) 
 		if err != nil {
 			return SplitPayoutResult{}, err
 		}
+
+		// Each child is paid separately, so each gets its own disbursement
+		// instruction, in the same transaction as its legs (migration 0091).
+		_, err = tx.Exec(ctx, `
+			INSERT INTO settlement_payout_disbursements (settlement_batch_id, child_merchant_id, amount_fils, disbursement_reference)
+			VALUES ($1, $2, $3, 'disb_' || gen_random_uuid())
+			ON CONFLICT (settlement_batch_id, child_merchant_id) DO NOTHING
+		`, batchID, s.ChildMerchantID, int64(s.AllocatedFils))
+		if err != nil {
+			return SplitPayoutResult{}, err
+		}
 		totalAllocated += s.AllocatedFils
 	}
 

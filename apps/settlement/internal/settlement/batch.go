@@ -436,6 +436,19 @@ func PayoutBatch(ctx context.Context, db *pgxpool.Pool, batchID uuid.UUID) (Payo
 		if err != nil {
 			return PayoutResult{}, fmt.Errorf("settlement: PayoutBatch: post payout legs: %w", err)
 		}
+
+		// Record the payout-rail disbursement instruction in the same
+		// transaction as the legs, so every paid batch has one, whether or
+		// not the merchant has a webhook endpoint. One row per batch
+		// (unique index, migration 0091).
+		_, err = tx.Exec(ctx, `
+			INSERT INTO settlement_payout_disbursements (settlement_batch_id, amount_fils, disbursement_reference)
+			VALUES ($1, $2, 'disb_' || gen_random_uuid())
+			ON CONFLICT (settlement_batch_id, child_merchant_id) DO NOTHING
+		`, batchID, netPayout)
+		if err != nil {
+			return PayoutResult{}, fmt.Errorf("settlement: PayoutBatch: record disbursement: %w", err)
+		}
 	}
 
 	// Runs unconditionally, including for a zero-payout batch: adding zero
