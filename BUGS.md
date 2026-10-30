@@ -221,7 +221,7 @@ The ledger is append-only (E4), so we did not edit or delete past rows, and we d
 - Demo set-up, not production: the one-time code is shown on screen (`OTP_DEV_EXPOSE=true`), there is no SMS or email sender, the demo passwords are public, and the bank is a simulator. Safeguard: turn off `OTP_DEV_EXPOSE` and connect a real notifier before real use.
 - No limit on wrong passwords per account or per IP (OTP guesses are limited by A7). Safeguard: a per-account and per-IP counter with lock-out.
 - All services share one database owner role, so an owner can drop the append-only ledger trigger. Safeguard: one role per service, with no DDL rights.
-- `ops/.env.docker` is tracked (sandbox values only; the live secret is different). SSH on port 22 is open and its settings were not checked.
+- `ops/.env.docker` is tracked (sandbox values only; the live secret is different). SSH on port 22 is open, keys only (no password login, no root login; checked with `sshd -T`).
 - "View as merchant" can be started by every admin role, by design. It is safe only while the read-only rules (A8, A12) hold. Safeguard: keep a test that every write route refuses an impersonation session.
 - The seed's marketplace discount formula differs from capture's fee function (`netCaptureFeeFils`). This can give a small rounding drift for discounted merchants in seed data. Not proven by a test, not fixed.
 - The TS platform volume reader gets the new BIGINT column (C4) as a string. JavaScript `>=` still compares it correctly, but its type says `number`. Not changed.
