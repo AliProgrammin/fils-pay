@@ -177,3 +177,21 @@ test("parallel wrong admin OTP guesses cannot exceed max_attempts", async () => 
     `${guessesChecked} guesses were checked; the limit is ${config.otpMaxAttempts}`,
   );
 });
+
+test("OTP verify re-sets the session cookie with the full session lifetime, not the 10-minute pending one", async () => {
+  const email = `cookie-${randomUUID()}@auth-fix.test`;
+  const m = await createMerchantWithUser(email);
+  const { cookie, devOtpCode } = await login(m.merchantId, email);
+
+  const verify = await app.inject({
+    method: "POST",
+    url: "/v1/auth/otp/verify",
+    cookies: { [config.cookieName]: cookie },
+    payload: { code: devOtpCode },
+  });
+  assert.equal(verify.statusCode, 200, verify.body);
+  const reissued = verify.cookies.find((c) => c.name === config.cookieName);
+  assert.ok(reissued, "verify must set the session cookie again");
+  assert.equal(reissued.value, cookie, "the session token is not rotated, so the cookie keeps the same value");
+  assert.equal(reissued.maxAge, config.sessionTtlHours * 3_600);
+});
