@@ -1,6 +1,6 @@
 # FilsPay: bugs found, fixed and explained
 
-Every code fix below has a test that failed on the old code and passes now, the smallest change that works, its own commit, and a plain-English explanation (what is wrong, why it happens, what it breaks). The few documentation-only fixes (false comments and docs) say so in their entry.
+Every behaviour fix below has a test that failed on the old code and passes now, the smallest change that works, its own commit, and a plain-English explanation (what is wrong, why it happens, what it breaks). The few documentation, performance and dead-code fixes use the check that fits and say so in their entry.
 
 **95 bugs fixed**: 18 critical, 37 high, 28 medium, 12 low.
 
@@ -13,9 +13,9 @@ When an existing test asserted the buggy behaviour, we changed it in the same co
 | | Before | After |
 |---|---|---|
 | Fresh database | migrations stop at 0054 | 84 migrations + seed pass |
-| TypeScript tests | 414 / 430 pass | 588 / 588 pass |
+| TypeScript tests | 414 / 430 pass | 595 / 595 pass |
 | Go tests | 54 / 54 pass | 84 / 84 pass |
-| Refunds (FP-300) | `501 Not Implemented` | end to end: API, ledger, fees, webhook, timeline, reports, Go close and payout, reconciliation |
+| Refunds (FP-300) | `501 Not Implemented` | end to end: API, ledger, fees, payouts, webhook, timeline, reports, reconciliation |
 
 Run the refunds proof yourself: `scripts/demo_refund.sh` (see the comment at the top for setup). It ends in `RESULT: ALL PASS`.
 
@@ -98,6 +98,7 @@ How we found them: three independent audit rounds, then a separate agent that sa
 | E4 | Medium | Ledger can be edited or wiped without error | E4 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e4-ledger-can-be-edited-or-wiped-without-error) |
 | E5 | Medium | "Adjust balance" changes only the cached balance, not the ledger | E5 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e5-adjust-balance-changes-only-the-cached-balance-not-the-ledger) |
 | E6 | Medium | Refund summary view joins the wrong column and double counts captures | E6 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e6-refund-summary-view-joins-the-wrong-column-and-double-counts-captures) |
+| G11 | Medium | A late capture or refund makes two days fail reconciliation | none (regression from G2; reproduced on a migrated and seeded DB with the Go CLI and the API) | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g11-a-late-capture-or-refund-makes-two-days-fail-reconciliation) |
 | G4 | Medium | merchant_balances drifts after every rebuild | none (evidence: docs | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g4-merchantbalances-drifts-after-every-rebuild) |
 | H3 | Medium | Bad input gives a 500, not a 400 | none | Payments and API | [explain](docs/bugs/hunt-2.md#h3-bad-input-gives-a-500-not-a-400) |
 | H5 | Medium | KYC image decompression bomb | none | Payments and API | [explain](docs/bugs/hunt-2.md#h5-kyc-image-decompression-bomb) |
@@ -107,7 +108,6 @@ How we found them: three independent audit rounds, then a separate agent that sa
 | U5 | Medium | Admin "Rebuild analytics" counts events twice | R5 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u5-admin-rebuild-analytics-counts-events-twice) |
 | U6 | Medium | Payout trend stays "closed" after the batch is paid | R6 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u6-payout-trend-stays-closed-after-the-batch-is-paid) |
 | U7 | Medium | Merchants are logged out 10 minutes after login | R7 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u7-merchants-are-logged-out-10-minutes-after-login) |
-| G11 | Medium | A late capture or refund makes two days fail reconciliation | none (regression from G2) | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g11-a-late-capture-or-refund-makes-two-days-fail-reconciliation) |
 | B9 | Low | Ops docs say the settlement daemon falls back to `dev-token` | none | Payments and links | [explain](docs/bugs/wave-b.md#b9-ops-docs-say-the-settlement-daemon-falls-back-to-dev-token) |
 | D13 | Low | Report export summary had no login check | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d13-report-export-summary-had-no-login-check) |
 | E7 | Low | Dashboard crashes on a negative amount | E7 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e7-dashboard-crashes-on-a-negative-amount) |
