@@ -28,8 +28,11 @@ export function DashboardLayout() {
   return (
     <div className="dash-shell">
       <header className="dash-header">
-        <div className="dash-brand">FilsPay</div>
-        <nav className="dash-nav">
+        <div className="dash-brand">
+          <span className="dash-brand-name">FilsPay</span>
+          <span className="dash-brand-tag">Merchant</span>
+        </div>
+        <nav className="dash-nav" aria-label="Dashboard">
           <NavLink to="/dashboard/transactions">Transactions</NavLink>
           <NavLink to="/dashboard/payment-links">Payment links</NavLink>
           {/* Every webhook route — including the plain list read — is
@@ -46,10 +49,13 @@ export function DashboardLayout() {
         </nav>
         <div className="dash-identity">
           {me ? (
-            <span>
-              {me.email} <span className="dash-role-chip">{me.role}</span>
-              <span className="dash-muted"> · {me.merchant.displayName}</span>
-            </span>
+            <>
+              <span className="dash-identity-text">
+                <span className="dash-identity-shop">{me.merchant.displayName}</span>
+                <span className="dash-identity-email">{me.email}</span>
+              </span>
+              <span className="dash-role-chip">{me.role}</span>
+            </>
           ) : null}
           <button type="button" className="dash-button" onClick={() => void handleSignOut()}>
             Log out
@@ -57,9 +63,8 @@ export function DashboardLayout() {
         </div>
       </header>
 
-      {error ? <p className="dash-error" role="alert">{error}</p> : null}
-
       <main className="dash-main">
+        {error ? <p className="dash-error" role="alert">{error}</p> : null}
         <Outlet />
       </main>
     </div>

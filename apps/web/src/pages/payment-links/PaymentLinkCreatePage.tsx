@@ -75,11 +75,16 @@ export function PaymentLinkCreatePage() {
 
   return (
     <section>
-      <h1>New payment link</h1>
+      <div className="dash-page-head">
+        <div>
+          <p className="dash-kicker">Payment links · new</p>
+          <h1>New payment link</h1>
+        </div>
+      </div>
 
       {error ? <p className="dash-error" role="alert">{error}</p> : null}
 
-      <form className="dash-form" onSubmit={(e) => void handleSubmit(e)}>
+      <form className="dash-form dash-card" onSubmit={(e) => void handleSubmit(e)}>
         <label>
           Amount (BD)
           <input
@@ -109,12 +114,12 @@ export function PaymentLinkCreatePage() {
             onChange={(e) => setExpiresAt(e.target.value)}
           />
         </label>
-        <button type="submit" className="dash-button" disabled={submitting}>
+        <button type="submit" className="dash-button dash-button-primary" disabled={submitting}>
           {submitting ? "Creating..." : "Create payment link"}
         </button>
       </form>
 
-      <p>
+      <p className="dash-back">
         <Link to="/dashboard/payment-links">Back to payment links</Link>
       </p>
     </section>

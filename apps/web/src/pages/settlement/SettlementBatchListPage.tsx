@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listSettlementBatches } from "../../api/settlement.js";
+import { StatusChip } from "../../components/StatusChip.js";
 import { describeError } from "../../api/client.js";
 import { Pagination } from "../../components/Pagination.js";
-import { bhd, dateTime } from "../../format.js";
+import { bhd, calendarDate, dateTime } from "../../format.js";
 import type { SettlementBatchDto, SettlementBatchStatus } from "../../types.js";
 
 const STATUSES: SettlementBatchStatus[] = ["open", "closed", "paid"];
@@ -63,15 +64,20 @@ export function SettlementBatchListPage() {
 
   return (
     <section>
-      <h1>Settlement batches</h1>
+      <div className="dash-page-head">
+        <div>
+          <p className="dash-kicker">Payouts · daily batches</p>
+          <h1>Settlement batches</h1>
+        </div>
+      </div>
 
       <fieldset className="dash-filters">
         <legend>Batch date</legend>
-        <label>
+        <label className="dash-field">
           From
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         </label>
-        <label>
+        <label className="dash-field">
           To (exclusive)
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </label>
@@ -80,7 +86,7 @@ export function SettlementBatchListPage() {
       <fieldset className="dash-filters">
         <legend>Status</legend>
         {STATUSES.map((status) => (
-          <label key={status}>
+          <label key={status} className="dash-pill">
             <input
               type="checkbox"
               checked={statuses.includes(status)}
@@ -93,45 +99,47 @@ export function SettlementBatchListPage() {
 
       {error ? <p className="dash-error" role="alert">{error}</p> : null}
 
-      <table className="dash-table">
-        <thead>
-          <tr>
-            <th>Batch date</th>
-            <th>Status</th>
-            <th>Gross</th>
-            <th>Fee</th>
-            <th>Refunds</th>
-            <th>Net payout</th>
-            <th>Closed</th>
-            <th>Paid</th>
-          </tr>
-        </thead>
-        <tbody>
-          {batches.map((batch) => (
-            <tr key={batch.id}>
-              <td>
-                <Link to={`/dashboard/settlement/${batch.id}`}>{batch.batchDate}</Link>
-              </td>
-              <td>
-                <span className={`dash-status dash-status-${batch.status}`}>{batch.status}</span>
-              </td>
-              <td>{bhd(batch.grossFils)}</td>
-              <td>{bhd(batch.feeFils)}</td>
-              <td>{bhd(batch.refundFeeReversedFils - batch.refundFils)}</td>
-              <td>{bhd(batch.netPayoutFils)}</td>
-              <td>{dateTime(batch.closedAt)}</td>
-              <td>{dateTime(batch.paidAt)}</td>
-            </tr>
-          ))}
-          {batches.length === 0 && !loading ? (
+      <div className="dash-table-wrap">
+        <table className="dash-table">
+          <thead>
             <tr>
-              <td colSpan={8}>No settlement batches match these filters.</td>
+              <th>Batch date</th>
+              <th>Status</th>
+              <th className="dash-num">Gross</th>
+              <th className="dash-num">Fee</th>
+              <th className="dash-num">Refunds</th>
+              <th className="dash-num">Net payout</th>
+              <th>Closed</th>
+              <th>Paid</th>
             </tr>
-          ) : null}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {batches.map((batch) => (
+              <tr key={batch.id}>
+                <td className="dash-nowrap">
+                  <Link to={`/dashboard/settlement/${batch.id}`}>{calendarDate(batch.batchDate)}</Link>
+                </td>
+                <td>
+                  <StatusChip status={batch.status} />
+                </td>
+                <td className="dash-num">{bhd(batch.grossFils)}</td>
+                <td className="dash-num">{bhd(batch.feeFils)}</td>
+                <td className="dash-num">{bhd(batch.refundFeeReversedFils - batch.refundFils)}</td>
+                <td className="dash-num dash-strong">{bhd(batch.netPayoutFils)}</td>
+                <td className="dash-nowrap">{dateTime(batch.closedAt)}</td>
+                <td className="dash-nowrap">{dateTime(batch.paidAt)}</td>
+              </tr>
+            ))}
+            {batches.length === 0 && !loading ? (
+              <tr>
+                <td colSpan={8} className="dash-empty">No settlement batches match these filters.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
 
-      {loading ? <p>Loading...</p> : null}
+      {loading ? <p className="dash-loading" role="status">Loading...</p> : null}
 
       <Pagination nextCursor={nextCursor} loading={loading} onLoadMore={() => void load(nextCursor)} />
     </section>

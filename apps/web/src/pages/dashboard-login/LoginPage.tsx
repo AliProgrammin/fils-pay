@@ -8,9 +8,30 @@ import {
   writeLastMerchantId,
 } from "../../auth/DashboardAuthContext.js";
 import type { DashboardLoginResponse } from "../../types.js";
+import { timeOfDay } from "../../format.js";
 import "../../dashboard.css";
 
 type Step = { kind: "credentials" } | { kind: "otp"; challenge: DashboardLoginResponse };
+
+interface ShopChoice {
+  merchantId: string;
+  displayName: string;
+}
+
+/** The `shops` list a `409 merchant_id_required` carries, or `null` when the
+ *  body has none (an older API) so the page falls back to the ID field. */
+function readShops(body: Record<string, unknown>): ShopChoice[] | null {
+  const shops = body.shops;
+  if (!Array.isArray(shops) || shops.length === 0) return null;
+  const valid = shops.filter(
+    (shop): shop is ShopChoice =>
+      typeof shop === "object" &&
+      shop !== null &&
+      typeof (shop as ShopChoice).merchantId === "string" &&
+      typeof (shop as ShopChoice).displayName === "string",
+  );
+  return valid.length === shops.length ? valid : null;
+}
 
 /**
  * Two-step merchant login: email + password (+ optional merchant ID)
@@ -24,6 +45,10 @@ type Step = { kind: "credentials" } | { kind: "otp"; challenge: DashboardLoginRe
  * API answers `409 merchant_id_required` and the field appears. The field is
  * also shown when a merchant ID was used for the last successful sign-in
  * (remembered in `localStorage`), or when the user asks for it.
+ *
+ * When the `409` body lists the matching `shops`, the page shows them as
+ * buttons instead; choosing one sends the same login again with that shop's
+ * merchant ID. Without a list it falls back to the Merchant ID field.
  */
 export function LoginPage() {
   const { status, refresh } = useDashboardAuth();
@@ -40,6 +65,10 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [shops, setShops] = useState<ShopChoice[] | null>(null);
+  // The merchant ID the pending session was created with, remembered after
+  // the OTP step succeeds.
+  const [loginMerchantId, setLoginMerchantId] = useState<string | undefined>(undefined);
 
   const redirectTo = (location.state as { from?: string } | null)?.from ?? "/dashboard/transactions";
 
@@ -55,25 +84,32 @@ export function LoginPage() {
 
   function backToCredentials(message: string | null): void {
     setStep({ kind: "credentials" });
+    setShops(null);
     setCode("");
     setError(message);
   }
 
-  async function handleCredentials(event: React.FormEvent): Promise<void> {
-    event.preventDefault();
+  async function submitCredentials(merchantIdToSend: string | undefined): Promise<void> {
     setSubmitting(true);
     setError(null);
     setNotice(null);
     try {
-      const challenge = await login({ merchantId: sentMerchantId(), email, password });
+      const challenge = await login({ merchantId: merchantIdToSend, email, password });
+      setLoginMerchantId(merchantIdToSend);
+      setShops(null);
       setStep({ kind: "otp", challenge });
       setPassword("");
     } catch (err) {
       if (err instanceof ApiError && err.statusCode === 409 && err.code === "merchant_id_required") {
-        setShowMerchantId(true);
-        setError(
-          "This email is used by more than one shop. Enter the merchant ID of the shop you want to sign in to.",
-        );
+        const choices = readShops(err.body);
+        if (choices) {
+          setShops(choices);
+        } else {
+          setShowMerchantId(true);
+          setError(
+            "This email is used by more than one shop. Enter the merchant ID of the shop you want to sign in to.",
+          );
+        }
       } else if (err instanceof ApiError && err.statusCode === 401 && err.code === "invalid_credentials") {
         setError("The email or password is not correct.");
       } else {
@@ -82,6 +118,11 @@ export function LoginPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function handleCredentials(event: React.FormEvent): void {
+    event.preventDefault();
+    void submitCredentials(sentMerchantId());
   }
 
   // after otp we get logged out after ~10 min. cookie ttl never extended? — am
@@ -93,7 +134,7 @@ export function LoginPage() {
     setNotice(null);
     try {
       await verifyOtp({ code });
-      writeLastMerchantId(sentMerchantId() ?? "");
+      writeLastMerchantId(loginMerchantId ?? "");
       // The session cookie is now authenticated server-side; re-read `me` so
       // the rest of the dashboard renders from the server's answer, not from
       // the verify response we happen to be holding.
@@ -133,104 +174,155 @@ export function LoginPage() {
   }
 
   return (
-    <main className="dash-centered">
-      <h1>FilsPay dashboard</h1>
-      <p className="dash-muted">Merchant sign-in.</p>
+    <div className="dash-login">
+      <div className="dash-login-bar">
+        <div className="dash-brand">
+          <span className="dash-brand-name">FilsPay</span>
+          <span className="dash-brand-tag">Merchant</span>
+        </div>
+      </div>
 
-      {error ? <p className="dash-error" role="alert">{error}</p> : null}
-      {notice ? <p className="dash-notice">{notice}</p> : null}
+      <main className="dash-login-main">
+        <section>
+          <p className="dash-kicker">FilsPay · merchant dashboard</p>
+          <h1>Sign in to your shop.</h1>
+          <p className="dash-login-lede">
+            Payments, refunds, payment links and payouts for your business, in Bahraini dinar.
+          </p>
+        </section>
 
-      {step.kind === "credentials" ? (
-        <form onSubmit={(e) => void handleCredentials(e)} className="dash-form">
-          <label>
-            Email
-            <input
-              type="email"
-              autoComplete="username"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </label>
-          <label>
-            Password
-            <input
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </label>
-          {showMerchantId ? (
+        <section className="dash-login-card" aria-labelledby="dash-login-title">
+          <h2 id="dash-login-title">{step.kind === "credentials" ? "Merchant sign-in" : "Enter your code"}</h2>
+
+          {error ? <p className="dash-error" role="alert">{error}</p> : null}
+          {notice ? <p className="dash-notice" role="status">{notice}</p> : null}
+
+          {step.kind === "credentials" && shops ? (
             <>
+              <p className="dash-callout" role="alert">
+                This email is used by more than one shop. Choose the shop you want to sign in to.
+              </p>
+              <fieldset className="dash-shop-list">
+                <legend>Your shops</legend>
+                {shops.map((shop) => (
+                  <button
+                    key={shop.merchantId}
+                    type="button"
+                    className="dash-shop"
+                    disabled={submitting}
+                    onClick={() => void submitCredentials(shop.merchantId)}
+                  >
+                    <span>{shop.displayName}</span>
+                    <span className="dash-shop-arrow" aria-hidden="true">
+                      Sign in &rarr;
+                    </span>
+                  </button>
+                ))}
+              </fieldset>
+            </>
+          ) : null}
+
+          {step.kind === "credentials" ? (
+            <form onSubmit={handleCredentials} className="dash-form">
               <label>
-                Merchant ID
+                Email
                 <input
-                  type="text"
+                  type="email"
+                  autoComplete="username"
                   required
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder="00000000-0000-0000-0000-000000000000"
-                  value={merchantId}
-                  onChange={(e) => setMerchantId(e.target.value)}
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setShops(null);
+                  }}
                 />
               </label>
-              <p className="dash-muted dash-hint">
-                The UUID issued when your account was created. Your API integration
-                already uses this value.
-              </p>
-              <button type="button" className="dash-text-button" onClick={() => setShowMerchantId(false)}>
-                Sign in without a merchant ID
+              <label>
+                Password
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setShops(null);
+                  }}
+                />
+              </label>
+              {showMerchantId ? (
+                <>
+                  <label>
+                    Merchant ID
+                    <input
+                      type="text"
+                      required
+                      autoComplete="off"
+                      spellCheck={false}
+                      placeholder="00000000-0000-0000-0000-000000000000"
+                      value={merchantId}
+                      onChange={(e) => setMerchantId(e.target.value)}
+                    />
+                  </label>
+                  <p className="dash-muted dash-hint">
+                    The UUID issued when your account was created. Your API integration
+                    already uses this value.
+                  </p>
+                  <button type="button" className="dash-text-button" onClick={() => setShowMerchantId(false)}>
+                    Sign in without a merchant ID
+                  </button>
+                </>
+              ) : (
+                <button type="button" className="dash-text-button" onClick={() => setShowMerchantId(true)}>
+                  Sign in to a specific shop
+                </button>
+              )}
+              <button type="submit" className="dash-button dash-button-primary" disabled={submitting}>
+                {submitting ? "Signing in..." : "Continue"}
               </button>
-            </>
+            </form>
           ) : (
-            <button type="button" className="dash-text-button" onClick={() => setShowMerchantId(true)}>
-              Sign in to a specific shop
-            </button>
+            <form onSubmit={(e) => void handleOtp(e)} className="dash-form">
+              <p>
+                A one-time code was issued for <strong>{email}</strong>. It expires at{" "}
+                {timeOfDay(step.challenge.otpExpiresAt)} (Bahrain time).
+              </p>
+              {step.challenge.devOtpCode ? (
+                <p className="dash-muted dash-dev-code">
+                  Development code: <code>{step.challenge.devOtpCode}</code>
+                </p>
+              ) : null}
+              <label>
+                One-time code
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  required
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                />
+              </label>
+              <button type="submit" className="dash-button dash-button-primary" disabled={submitting}>
+                {submitting ? "Verifying..." : "Verify"}
+              </button>
+              <div className="dash-otp-secondary">
+                <button
+                  type="button"
+                  className="dash-button"
+                  disabled={submitting}
+                  onClick={() => void handleResend()}
+                >
+                  Resend code
+                </button>
+                <button type="button" className="dash-button" onClick={() => backToCredentials(null)}>
+                  Start over
+                </button>
+              </div>
+            </form>
           )}
-          <button type="submit" className="dash-button" disabled={submitting}>
-            {submitting ? "Signing in..." : "Continue"}
-          </button>
-        </form>
-      ) : (
-        <form onSubmit={(e) => void handleOtp(e)} className="dash-form">
-          <p>
-            A one-time code was issued for <strong>{email}</strong>. It expires at{" "}
-            {new Date(step.challenge.otpExpiresAt).toLocaleTimeString()}.
-          </p>
-          {step.challenge.devOtpCode ? (
-            <p className="dash-muted">
-              Development code: <code>{step.challenge.devOtpCode}</code>
-            </p>
-          ) : null}
-          <label>
-            One-time code
-            <input
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              required
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-            />
-          </label>
-          <button type="submit" className="dash-button" disabled={submitting}>
-            {submitting ? "Verifying..." : "Verify"}
-          </button>
-          <button
-            type="button"
-            className="dash-button"
-            disabled={submitting}
-            onClick={() => void handleResend()}
-          >
-            Resend code
-          </button>
-          <button type="button" className="dash-button" onClick={() => backToCredentials(null)}>
-            Start over
-          </button>
-        </form>
-      )}
-    </main>
+        </section>
+      </main>
+    </div>
   );
 }

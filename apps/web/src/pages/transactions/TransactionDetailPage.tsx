@@ -11,6 +11,8 @@ import { RequireRole } from "../../auth/RequireRole.js";
 import { bhd, dash, dateTime } from "../../format.js";
 import type { TransactionDto, TransactionEventDto } from "../../types.js";
 import { RefundDrawer } from "./RefundDrawer.js";
+import { useConfirmDialog } from "../../components/ConfirmDialog.js";
+import { StatusChip } from "../../components/StatusChip.js";
 
 type LoadState =
   | { kind: "loading" }
@@ -35,6 +37,7 @@ export function TransactionDetailPage() {
   const [submitting, setSubmitting] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [captureAmount, setCaptureAmount] = useState("");
+  const [confirmDialog, confirm] = useConfirmDialog();
 
   const load = useCallback(async () => {
     if (!id) {
@@ -88,10 +91,15 @@ export function TransactionDetailPage() {
 
   /** Only offered while status is authorized. */
   async function handleVoid(): Promise<void> {
-    if (!id) return;
-    if (!window.confirm("Void this authorization? The held funds are released and cannot be captured afterwards.")) {
-      return;
-    }
+    if (!id || state.kind !== "loaded") return;
+    const confirmed = await confirm({
+      title: "Void this authorization?",
+      amount: bhd(state.txn.amountFils),
+      message: "The held funds are released and cannot be captured afterwards.",
+      confirmLabel: "Void",
+      cancelLabel: "Keep it",
+    });
+    if (!confirmed) return;
     setSubmitting(true);
     setActionError(null);
     try {
@@ -108,7 +116,7 @@ export function TransactionDetailPage() {
   }
 
   if (state.kind === "loading") {
-    return <p>Loading...</p>;
+    return <p className="dash-loading" role="status">Loading...</p>;
   }
   if (state.kind === "not_found") {
     return (
@@ -136,35 +144,36 @@ export function TransactionDetailPage() {
 
   return (
     <section>
-      <h1>Transaction</h1>
-      <p className="dash-muted">
-        <code>{txn.id}</code>
-      </p>
+      {confirmDialog}
+      <div className="dash-page-head">
+        <div>
+          <p className="dash-kicker">Transaction record · {dash(txn.reference)}</p>
+          <h1>Transaction</h1>
+        </div>
+      </div>
 
-      <dl className="dash-dl">
-        <dt>Status</dt>
-        <dd>
-          <span className={`dash-status dash-status-${txn.status}`}>{txn.status}</span>
-        </dd>
-        <dt>Authorized amount</dt>
-        <dd>{bhd(txn.amountFils)}</dd>
-        <dt>Captured amount</dt>
-        <dd>{bhd(txn.capturedFils)}</dd>
-        <dt>Refunded amount</dt>
-        <dd>{bhd(txn.refundedFils)}</dd>
-        <dt>Currency</dt>
-        <dd>{txn.currency}</dd>
-        <dt>Reference</dt>
-        <dd>{dash(txn.reference)}</dd>
-        <dt>Acquirer reference</dt>
-        <dd>
-          <code>{txn.acquirerReference}</code>
-        </dd>
-        <dt>Occurred at</dt>
-        <dd>{dateTime(txn.occurredAt)}</dd>
-        <dt>Created at</dt>
-        <dd>{dateTime(txn.createdAt)}</dd>
-      </dl>
+      <div className="dash-card dash-hero">
+        <div className="dash-figure dash-figure-main">
+          <span className="dash-figure-label">Captured</span>
+          <span className="dash-figure-value">{bhd(txn.capturedFils)}</span>
+        </div>
+        <div className="dash-figure">
+          <span className="dash-figure-label">Authorized</span>
+          <span className="dash-figure-value">{bhd(txn.amountFils)}</span>
+        </div>
+        <div className="dash-figure">
+          <span className="dash-figure-label">Refunded</span>
+          <span className={txn.refundedFils > 0 ? "dash-figure-value dash-negative" : "dash-figure-value"}>
+            {bhd(txn.refundedFils)}
+          </span>
+        </div>
+        <div className="dash-figure">
+          <span className="dash-figure-label">Status</span>
+          <span>
+            <StatusChip status={txn.status} />
+          </span>
+        </div>
+      </div>
 
       {/* Capture and void are hidden from `support` — a support agent looks
           things up, they don't move money. The API enforces the same rule
@@ -188,7 +197,7 @@ export function TransactionDetailPage() {
                       onChange={(e) => setCaptureAmount(e.target.value)}
                     />
                   </label>
-                  <button type="submit" className="dash-button" disabled={submitting}>
+                  <button type="submit" className="dash-button dash-button-primary" disabled={submitting}>
                     {submitting ? "Capturing..." : "Capture"}
                   </button>
                   <button
@@ -201,7 +210,7 @@ export function TransactionDetailPage() {
                   </button>
                 </form>
               ) : (
-                <button type="button" className="dash-button" onClick={() => setCaptureOpen(true)}>
+                <button type="button" className="dash-button dash-button-primary" onClick={() => setCaptureOpen(true)}>
                   Capture
                 </button>
               )
@@ -210,7 +219,7 @@ export function TransactionDetailPage() {
             {voidable ? (
               <button
                 type="button"
-                className="dash-button"
+                className="dash-button dash-button-danger"
                 disabled={submitting}
                 onClick={() => void handleVoid()}
               >
@@ -223,43 +232,67 @@ export function TransactionDetailPage() {
 
       <RefundDrawer txn={txn} onRefunded={load} />
 
-      <h2>Event timeline</h2>
-      <table className="dash-table">
-        <thead>
-          <tr>
-            <th>Occurred</th>
-            <th>Event</th>
-            <th>Amount</th>
-            <th>Actor</th>
-          </tr>
-        </thead>
-        <tbody>
-          {/* Already ordered oldest-first by the endpoint — never re-sorted
-              here, so the page can't disagree with the API about history. */}
-          {events.map((event) => (
-            <tr key={event.id}>
-              <td>{dateTime(event.occurredAt)}</td>
-              <td>{event.eventType}</td>
-              <td>{event.amountFils === null ? "—" : bhd(event.amountFils)}</td>
-              <td>
-                {event.actorType}
-                {event.actorId ? (
-                  <div className="dash-muted">
-                    <code>{event.actorId}</code>
-                  </div>
-                ) : null}
-              </td>
-            </tr>
-          ))}
-          {events.length === 0 ? (
-            <tr>
-              <td colSpan={4}>No events recorded.</td>
-            </tr>
-          ) : null}
-        </tbody>
-      </table>
+      <h2>Details</h2>
+      <dl className="dash-dl">
+        <dt>Currency</dt>
+        <dd>{txn.currency}</dd>
+        <dt>Reference</dt>
+        <dd>{dash(txn.reference)}</dd>
+        <dt>Acquirer reference</dt>
+        <dd>
+          <code>{txn.acquirerReference}</code>
+        </dd>
+        <dt>Transaction ID</dt>
+        <dd>
+          <code>{txn.id}</code>
+        </dd>
+        <dt>Occurred at</dt>
+        <dd>{dateTime(txn.occurredAt)}</dd>
+        <dt>Created at</dt>
+        <dd>{dateTime(txn.createdAt)}</dd>
+      </dl>
 
-      <p>
+      <h2>Event timeline</h2>
+      <div className="dash-table-wrap">
+        <table className="dash-table">
+          <thead>
+            <tr>
+              <th>Occurred</th>
+              <th>Event</th>
+              <th className="dash-num">Amount</th>
+              <th>Actor</th>
+            </tr>
+          </thead>
+          <tbody>
+            {/* Already ordered oldest-first by the endpoint — never re-sorted
+                here, so the page can't disagree with the API about history. */}
+            {events.map((event) => (
+              <tr key={event.id}>
+                <td className="dash-nowrap">{dateTime(event.occurredAt)}</td>
+                <td>
+                  <code>{event.eventType}</code>
+                </td>
+                <td className="dash-num">{event.amountFils === null ? "—" : bhd(event.amountFils)}</td>
+                <td>
+                  {event.actorType}
+                  {event.actorId ? (
+                    <div className="dash-muted">
+                      <code>{event.actorId}</code>
+                    </div>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+            {events.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="dash-empty">No events recorded.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="dash-back">
         <Link to="/dashboard/transactions">Back to transactions</Link>
       </p>
     </section>

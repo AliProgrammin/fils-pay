@@ -5,9 +5,11 @@ import {
   listWebhookEndpoints,
   updateWebhookEndpoint,
 } from "../../api/webhooks.js";
+import { StatusChip } from "../../components/StatusChip.js";
 import { describeError } from "../../api/client.js";
 import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
 import { dateTime } from "../../format.js";
+import { useConfirmDialog } from "../../components/ConfirmDialog.js";
 import type { WebhookEndpointDto } from "../../types.js";
 
 /**
@@ -26,6 +28,7 @@ export function WebhookEndpointListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [confirmDialog, confirm] = useConfirmDialog();
 
   const load = useCallback(async () => {
     if (!merchantId) return;
@@ -66,13 +69,13 @@ export function WebhookEndpointListPage() {
     if (!merchantId) return;
     // A hard delete — the endpoint row is gone, while its delivery log
     // outlives it. Irreversible, so it asks first.
-    if (
-      !window.confirm(
-        `Delete ${endpoint.url}? This cannot be undone, and its secret cannot be recovered.`,
-      )
-    ) {
-      return;
-    }
+    const confirmed = await confirm({
+      title: "Delete this endpoint?",
+      message: `Delete ${endpoint.url}? This cannot be undone, and its secret cannot be recovered.`,
+      confirmLabel: "Delete",
+      cancelLabel: "Keep it",
+    });
+    if (!confirmed) return;
     setBusyId(endpoint.id);
     setError(null);
     try {
@@ -87,68 +90,73 @@ export function WebhookEndpointListPage() {
 
   return (
     <section>
-      <h1>Webhook endpoints</h1>
-
-      <p>
-        <Link className="dash-button-link" to="/dashboard/webhooks/new">
+      {confirmDialog}
+      <div className="dash-page-head">
+        <div>
+          <p className="dash-kicker">Developers · event delivery</p>
+          <h1>Webhook endpoints</h1>
+        </div>
+        <Link className="dash-button-link dash-button-primary" to="/dashboard/webhooks/new">
           New endpoint
         </Link>
-      </p>
+      </div>
 
       {error ? <p className="dash-error" role="alert">{error}</p> : null}
 
-      <table className="dash-table">
-        <thead>
-          <tr>
-            <th>URL</th>
-            <th>Secret prefix</th>
-            <th>Status</th>
-            <th>Created</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {endpoints.map((endpoint) => (
-            <tr key={endpoint.id}>
-              <td>
-                <Link to={`/dashboard/webhooks/${endpoint.id}`}>{endpoint.url}</Link>
-              </td>
-              <td>
-                <code>{endpoint.secretPrefix}</code>
-              </td>
-              <td>
-                <span className={`dash-status dash-status-${endpoint.status}`}>{endpoint.status}</span>
-              </td>
-              <td>{dateTime(endpoint.createdAt)}</td>
-              <td>
-                <button
-                  type="button"
-                  className="dash-button"
-                  disabled={busyId === endpoint.id}
-                  onClick={() => void handleToggle(endpoint)}
-                >
-                  {endpoint.status === "active" ? "Disable" : "Enable"}
-                </button>{" "}
-                <button
-                  type="button"
-                  className="dash-button"
-                  disabled={busyId === endpoint.id}
-                  onClick={() => void handleDelete(endpoint)}
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
-          {endpoints.length === 0 && !loading && !error ? (
+      <div className="dash-table-wrap">
+        <table className="dash-table">
+          <thead>
             <tr>
-              <td colSpan={5}>No webhook endpoints registered.</td>
+              <th>URL</th>
+              <th>Secret prefix</th>
+              <th>Status</th>
+              <th>Created</th>
+              <th>Actions</th>
             </tr>
-          ) : null}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {endpoints.map((endpoint) => (
+              <tr key={endpoint.id}>
+                <td>
+                  <Link to={`/dashboard/webhooks/${endpoint.id}`}>{endpoint.url}</Link>
+                </td>
+                <td>
+                  <code>{endpoint.secretPrefix}</code>
+                </td>
+                <td>
+                  <StatusChip status={endpoint.status} />
+                </td>
+                <td className="dash-nowrap">{dateTime(endpoint.createdAt)}</td>
+                <td className="dash-nowrap">
+                  <button
+                    type="button"
+                    className="dash-button dash-button-small"
+                    disabled={busyId === endpoint.id}
+                    onClick={() => void handleToggle(endpoint)}
+                  >
+                    {endpoint.status === "active" ? "Disable" : "Enable"}
+                  </button>{" "}
+                  <button
+                    type="button"
+                    className="dash-button dash-button-small dash-button-danger"
+                    disabled={busyId === endpoint.id}
+                    onClick={() => void handleDelete(endpoint)}
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {endpoints.length === 0 && !loading && !error ? (
+              <tr>
+                <td colSpan={5} className="dash-empty">No webhook endpoints registered.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
 
-      {loading ? <p>Loading...</p> : null}
+      {loading ? <p className="dash-loading" role="status">Loading...</p> : null}
     </section>
   );
 }

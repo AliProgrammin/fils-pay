@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listTransactions } from "../../api/transactions.js";
+import { StatusChip } from "../../components/StatusChip.js";
 import { describeError } from "../../api/client.js";
 import { Pagination } from "../../components/Pagination.js";
 import { bhd, dash, dateTime, dayStartIso } from "../../format.js";
-import { classNames, pluralize, truncateMiddle } from "../../utils/helpers.js";
+import { pluralize, truncateMiddle } from "../../utils/helpers.js";
 import type { TransactionDto, TransactionStatus } from "../../types.js";
 
 const STATUSES: TransactionStatus[] = [
@@ -83,29 +84,34 @@ export function TransactionListPage() {
 
   return (
     <section>
-      <h1>Transactions</h1>
+      <div className="dash-page-head">
+        <div>
+          <p className="dash-kicker">Payments · case log</p>
+          <h1>Transactions</h1>
+        </div>
+      </div>
 
       <fieldset className="dash-filters">
         <legend>Status</legend>
         {STATUSES.map((status) => (
-          <label key={status}>
+          <label key={status} className="dash-pill">
             <input
               type="checkbox"
               checked={statuses.includes(status)}
               onChange={() => toggleStatus(status)}
             />
-            {status}
-          </label>
+            {status.replace(/_/g, " ")}
+            </label>
         ))}
       </fieldset>
 
       <fieldset className="dash-filters">
         <legend>Filter</legend>
-        <label>
+        <label className="dash-field">
           From
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         </label>
-        <label>
+        <label className="dash-field">
           {/* Exclusive, because the endpoint's own predicate is
               `occurred_at < to` — labelled rather than quietly shifted by a
               day here, which would make this page and the API disagree about
@@ -113,7 +119,7 @@ export function TransactionListPage() {
           To (exclusive)
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </label>
-        <label>
+        <label className="dash-field">
           Search
           <input
             type="search"
@@ -126,45 +132,50 @@ export function TransactionListPage() {
 
       {error ? <p className="dash-error" role="alert">{error}</p> : null}
 
-      <p>{pluralize(transactions.length, "transaction")} loaded</p>
+      <p className="dash-toolbar">
+        <span>{pluralize(transactions.length, "transaction")} loaded</span>
+        <span>Amounts in BHD</span>
+      </p>
 
-      <table className="dash-table">
-        <thead>
-          <tr>
-            <th>Occurred</th>
-            <th>Reference</th>
-            <th>Status</th>
-            <th>Authorized</th>
-            <th>Captured</th>
-            <th>Acquirer reference</th>
-          </tr>
-        </thead>
-        <tbody>
-          {transactions.map((txn) => (
-            <tr key={txn.id}>
-              <td>
-                <Link to={`/dashboard/transactions/${txn.id}`}>{dateTime(txn.occurredAt)}</Link>
-              </td>
-              <td>{dash(txn.reference)}</td>
-              <td>
-                <span className={classNames("dash-status", `dash-status-${txn.status}`)}>{txn.status}</span>
-              </td>
-              <td>{bhd(txn.amountFils)}</td>
-              <td>{bhd(txn.capturedFils)}</td>
-              <td>
-                <code>{truncateMiddle(txn.acquirerReference, 20)}</code>
-              </td>
-            </tr>
-          ))}
-          {transactions.length === 0 && !loading ? (
+      <div className="dash-table-wrap">
+        <table className="dash-table">
+          <thead>
             <tr>
-              <td colSpan={6}>No transactions match these filters.</td>
+              <th>Occurred</th>
+              <th>Reference</th>
+              <th>Status</th>
+              <th className="dash-num">Authorized</th>
+              <th className="dash-num">Captured</th>
+              <th>Acquirer reference</th>
             </tr>
-          ) : null}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {transactions.map((txn) => (
+              <tr key={txn.id}>
+                <td className="dash-nowrap">
+                  <Link to={`/dashboard/transactions/${txn.id}`}>{dateTime(txn.occurredAt)}</Link>
+                </td>
+                <td>{dash(txn.reference)}</td>
+                <td>
+                  <StatusChip status={txn.status} />
+                </td>
+                <td className="dash-num">{bhd(txn.amountFils)}</td>
+                <td className="dash-num">{bhd(txn.capturedFils)}</td>
+                <td>
+                  <code>{truncateMiddle(txn.acquirerReference, 20)}</code>
+                </td>
+              </tr>
+            ))}
+            {transactions.length === 0 && !loading ? (
+              <tr>
+                <td colSpan={6} className="dash-empty">No transactions match these filters.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
 
-      {loading ? <p>Loading...</p> : null}
+      {loading ? <p className="dash-loading" role="status">Loading...</p> : null}
 
       <Pagination nextCursor={nextCursor} loading={loading} onLoadMore={() => void load(nextCursor)} />
     </section>

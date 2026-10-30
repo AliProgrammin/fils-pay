@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getReconciliation } from "../../api/settlement.js";
 import { ApiError, describeError } from "../../api/client.js";
-import { bhd } from "../../format.js";
+import { bhd, calendarDate } from "../../format.js";
 import type { ReconciliationReport } from "../../types.js";
 
 /**
@@ -79,10 +79,15 @@ export function ReconciliationPage() {
 
   return (
     <section>
-      <h1>Reconciliation</h1>
+      <div className="dash-page-head">
+        <div>
+          <p className="dash-kicker">Ledger vs payouts · every fil accounted</p>
+          <h1>Reconciliation</h1>
+        </div>
+      </div>
 
       <form
-        className="dash-form dash-form-inline"
+        className="dash-form dash-form-inline dash-filters"
         onSubmit={(e) => {
           e.preventDefault();
           setApplied({ from, to });
@@ -96,7 +101,7 @@ export function ReconciliationPage() {
           To (exclusive)
           <input type="date" required value={to} onChange={(e) => setTo(e.target.value)} />
         </label>
-        <button type="submit" className="dash-button" disabled={loading}>
+        <button type="submit" className="dash-button dash-button-primary" disabled={loading}>
           {loading ? "Loading..." : "Run report"}
         </button>
       </form>
@@ -108,34 +113,38 @@ export function ReconciliationPage() {
           {/* A nonzero gap is shown as a nonzero gap. This page never rounds
               it away, hides it behind a tolerance, or explains it as expected —
               the endpoint reports honestly and so does this. */}
-          <p>
+          <div className="dash-recon-head">
             {report.explained ? (
-              <span className="dash-badge dash-badge-ok">Reconciled — no gap</span>
+              <span className="dash-stamp dash-stamp-ok">Reconciled — no gap</span>
             ) : (
-              <span className="dash-badge dash-badge-gap">Gap: {bhd(report.gapFils)}</span>
+              <span className="dash-stamp dash-stamp-gap">Gap: {bhd(report.gapFils)}</span>
             )}
-          </p>
+            <span className="dash-figure">
+              <span className="dash-figure-label">Period (Bahrain business days)</span>
+              <span>
+                {calendarDate(report.periodFrom)} to {calendarDate(report.periodTo)} (exclusive)
+              </span>
+            </span>
+          </div>
 
-          <dl className="dash-dl">
-            <dt>Period</dt>
-            <dd>
-              {report.periodFrom} to {report.periodTo} (exclusive)
-            </dd>
+          <dl className="dash-dl dash-dl-money">
             <dt>Ledger merchant payable (net)</dt>
-            <dd>{bhd(report.ledgerMerchantPayableNetFils)}</dd>
+            <dd className="dash-money">{bhd(report.ledgerMerchantPayableNetFils)}</dd>
             <dt>Settlement net payout</dt>
-            <dd>{bhd(report.settlementNetPayoutFils)}</dd>
+            <dd className="dash-money">{bhd(report.settlementNetPayoutFils)}</dd>
             <dt>Pending, not yet batched</dt>
-            <dd>{bhd(report.pendingUnbatchedFils)}</dd>
+            <dd className="dash-money">{bhd(report.pendingUnbatchedFils)}</dd>
             <dt>Happened in this period, settled by a later batch</dt>
-            <dd>{bhd(report.carriedToLaterBatchFils)}</dd>
+            <dd className="dash-money">{bhd(report.carriedToLaterBatchFils)}</dd>
             <dt>Happened earlier, settled by a batch in this period</dt>
-            <dd>{bhd(report.carriedFromEarlierDaysFils)}</dd>
-            <dt>Gap</dt>
-            <dd>{bhd(report.gapFils)}</dd>
+            <dd className="dash-money">{bhd(report.carriedFromEarlierDaysFils)}</dd>
+            <dt className="dash-dl-total">Gap</dt>
+            <dd className={report.gapFils === 0 ? "dash-money dash-dl-total" : "dash-money dash-dl-total dash-negative"}>
+              {bhd(report.gapFils)}
+            </dd>
           </dl>
 
-          <p className="dash-muted">
+          <p className="dash-note">
             Gap = ledger merchant payable − settlement net payout − pending
             unbatched − settled by a later batch + happened earlier. A zero gap
             means every captured fil is accounted for in either a settled batch
@@ -145,7 +154,7 @@ export function ReconciliationPage() {
         </>
       ) : null}
 
-      {loading && !report ? <p>Loading...</p> : null}
+      {loading && !report ? <p className="dash-loading" role="status">Loading...</p> : null}
     </section>
   );
 }

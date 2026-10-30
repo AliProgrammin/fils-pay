@@ -17,12 +17,17 @@ import { SettlementBatchListPage } from "./pages/settlement/SettlementBatchListP
 import { SettlementBatchDetailPage } from "./pages/settlement/SettlementBatchDetailPage.js";
 import { ReconciliationPage } from "./pages/settlement/ReconciliationPage.js";
 import { OverviewPage } from "./pages/overview/OverviewPage.js";
+import { NotFoundPage, RouteErrorPage } from "./pages/NotFoundPage.js";
 
 // MK: /refunds route removed until FP-212
 export const router = createBrowserRouter([
-  { path: "/pay/:token", element: <CheckoutPage /> },
+  { path: "/pay/:token", element: <CheckoutPage />, errorElement: <RouteErrorPage /> },
+  // "/" has no page of its own: /dashboard sends a signed-in user to their
+  // transactions, and the auth guard sends everyone else to the login page.
+  { path: "/", element: <Navigate to="/dashboard" replace /> },
 
   {
+    errorElement: <RouteErrorPage />,
     // The session provider wraps the dashboard subtree only — never
     // /pay/:token above it, which is public, cookie-free, and must keep
     // making exactly zero auth calls. Login sits inside the provider (it
@@ -101,4 +106,6 @@ export const router = createBrowserRouter([
       },
     ],
   },
+
+  { path: "*", element: <NotFoundPage />, errorElement: <RouteErrorPage /> },
 ]);

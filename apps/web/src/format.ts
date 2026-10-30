@@ -17,9 +17,66 @@ export function dash(value: string | number | null | undefined): string {
   return value === null || value === undefined || value === "" ? "—" : String(value);
 }
 
-/** Browser-local rendering, not Asia/Bahrain. */
+/**
+ * Every date and time on the dashboard is shown in Asia/Bahrain, the business
+ * time zone the rest of the platform uses, whatever the viewer's browser is
+ * set to. One formatter each, so no page invents its own style.
+ */
+const BAHRAIN_DATE_TIME = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Bahrain",
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+const BAHRAIN_TIME = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Bahrain",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+// A plain calendar date (YYYY-MM-DD) has no zone; format it as-is in UTC so
+// it never shifts by a day.
+const CALENDAR_DATE = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "UTC",
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+});
+
+/** Formats with a three-letter month everywhere (some engines write "Sept"). */
+function shortMonth(format: Intl.DateTimeFormat, date: Date): string {
+  return format
+    .formatToParts(date)
+    .map((part) => (part.type === "month" ? part.value.slice(0, 3) : part.value))
+    .join("");
+}
+
+/** `"30 Aug 2026, 07:05"` in Asia/Bahrain, or `—` when absent. */
 export function dateTime(iso: string | null | undefined): string {
-  return iso ? new Date(iso).toLocaleString() : "—";
+  if (!iso) return "—";
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "—" : shortMonth(BAHRAIN_DATE_TIME, date);
+}
+
+/** `"07:05"` in Asia/Bahrain, or `—` when absent. */
+export function timeOfDay(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "—" : BAHRAIN_TIME.format(date);
+}
+
+/** A business date (`"2026-08-30"`) as `"30 Aug 2026"`. Anything that is not
+ *  a YYYY-MM-DD date is returned unchanged rather than guessed at. */
+export function calendarDate(value: string | null | undefined): string {
+  if (!value) return "—";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? value : shortMonth(CALENDAR_DATE, date);
 }
 
 /**

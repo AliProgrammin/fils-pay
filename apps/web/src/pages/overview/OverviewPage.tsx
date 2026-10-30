@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getPayoutTrends, getTopLinks, getVolumes } from "../../api/analytics.js";
 import { describeError } from "../../api/client.js";
+import { StatusChip } from "../../components/StatusChip.js";
 import { StalenessBadge } from "../../components/StalenessBadge.js";
-import { bhd, dash, dateTime } from "../../format.js";
+import { bhd, calendarDate, dash, dateTime } from "../../format.js";
 import { formatCount } from "../../utils/helpers.js";
 import type { PayoutTrendsResponse, TopLinksResponse, VolumesResponse } from "../../types.js";
 
@@ -67,10 +68,15 @@ export function OverviewPage() {
 
   return (
     <section>
-      <h1>Overview</h1>
+      <div className="dash-page-head">
+        <div>
+          <p className="dash-kicker">Analytics · refreshed every minute</p>
+          <h1>Overview</h1>
+        </div>
+      </div>
 
       <form
-        className="dash-form dash-form-inline"
+        className="dash-form dash-form-inline dash-filters"
         onSubmit={(e) => {
           e.preventDefault();
           void load();
@@ -94,91 +100,100 @@ export function OverviewPage() {
             onChange={(e) => setTopLinksLimit(Number(e.target.value))}
           />
         </label>
-        <button type="submit" className="dash-button" disabled={loading}>
+        <button type="submit" className="dash-button dash-button-primary" disabled={loading}>
           {loading ? "Refreshing..." : "Refresh"}
         </button>
       </form>
 
       {error ? <p className="dash-error" role="alert">{error}</p> : null}
+      {loading && !volumes ? <p className="dash-loading" role="status">Loading...</p> : null}
 
       <h2>
         Captured volume{" "}
         {volumes ? <StalenessBadge readModelAsOf={volumes.readModelAsOf} live={volumes.live} /> : null}
       </h2>
-      <table className="dash-table">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Captured</th>
-            <th>Gross</th>
-            <th>Voided</th>
-            <th>Refunded</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {volumes?.points.map((point) => (
-            <tr key={point.date}>
-              <td>{point.date}</td>
-              <td>{formatCount(point.capturedCount)}</td>
-              <td>{bhd(point.capturedGrossFils)}</td>
-              <td>{formatCount(point.voidedCount)}</td>
-              <td>
-                {formatCount(point.refundCount)} / {bhd(point.refundGrossFils)}
-              </td>
-              <td className="dash-bar-cell">
-                {/* A plain CSS bar, scaled to the window's own peak — no
-                    charting library, no new dependency. */}
-                <span
-                  className="dash-bar"
-                  style={{ width: `${(point.capturedGrossFils / peakGross) * 100}%` }}
-                />
-              </td>
-            </tr>
-          ))}
-          {volumes && volumes.points.length === 0 ? (
+      <div className="dash-table-wrap">
+        <table className="dash-table">
+          <thead>
             <tr>
-              <td colSpan={6}>No captured volume in this window.</td>
+              <th>Date</th>
+              <th className="dash-num">Captured</th>
+              <th className="dash-num">Gross</th>
+              <th className="dash-num">Voided</th>
+              <th className="dash-num">Refunded</th>
+              <th>
+                <span className="dash-visually-hidden">Gross, relative to the peak day</span>
+              </th>
             </tr>
-          ) : null}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {volumes?.points.map((point) => (
+              <tr key={point.date}>
+                <td className="dash-nowrap">{calendarDate(point.date)}</td>
+                <td className="dash-num">{formatCount(point.capturedCount)}</td>
+                <td className="dash-num">{bhd(point.capturedGrossFils)}</td>
+                <td className="dash-num">{formatCount(point.voidedCount)}</td>
+                <td className="dash-num">
+                  {formatCount(point.refundCount)} / {bhd(point.refundGrossFils)}
+                </td>
+                <td className="dash-bar-cell">
+                  {/* A plain CSS bar, scaled to the window's own peak — no
+                      charting library, no new dependency. */}
+                  <span
+                    className="dash-bar"
+                    style={{ width: `${(point.capturedGrossFils / peakGross) * 100}%` }}
+                  />
+                </td>
+              </tr>
+            ))}
+            {volumes && volumes.points.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="dash-empty">No captured volume in this window.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
 
       <h2>
         Payout trends{" "}
         {payouts ? <StalenessBadge readModelAsOf={payouts.readModelAsOf} live={payouts.live} /> : null}
       </h2>
-      <table className="dash-table">
-        <thead>
-          <tr>
-            <th>Batch date</th>
-            <th>Status</th>
-            <th>Gross</th>
-            <th>Fee</th>
-            <th>Net payout</th>
-            <th>Paid</th>
-          </tr>
-        </thead>
-        <tbody>
-          {payouts?.points.map((point) => (
-            <tr key={point.settlementBatchId}>
-              <td>
-                <Link to={`/dashboard/settlement/${point.settlementBatchId}`}>{point.batchDate}</Link>
-              </td>
-              <td>{point.status}</td>
-              <td>{bhd(point.grossFils)}</td>
-              <td>{bhd(point.feeFils)}</td>
-              <td>{bhd(point.netPayoutFils)}</td>
-              <td>{dateTime(point.paidAt)}</td>
-            </tr>
-          ))}
-          {payouts && payouts.points.length === 0 ? (
+      <div className="dash-table-wrap">
+        <table className="dash-table">
+          <thead>
             <tr>
-              <td colSpan={6}>No settled batches in this window.</td>
+              <th>Batch date</th>
+              <th>Status</th>
+              <th className="dash-num">Gross</th>
+              <th className="dash-num">Fee</th>
+              <th className="dash-num">Net payout</th>
+              <th>Paid</th>
             </tr>
-          ) : null}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {payouts?.points.map((point) => (
+              <tr key={point.settlementBatchId}>
+                <td>
+                  <Link to={`/dashboard/settlement/${point.settlementBatchId}`}>{calendarDate(point.batchDate)}</Link>
+                </td>
+                <td>
+                  <StatusChip status={point.status} />
+                </td>
+                <td className="dash-num">{bhd(point.grossFils)}</td>
+                <td className="dash-num">{bhd(point.feeFils)}</td>
+                <td className="dash-num">{bhd(point.netPayoutFils)}</td>
+                <td className="dash-nowrap">{dateTime(point.paidAt)}</td>
+              </tr>
+            ))}
+            {payouts && payouts.points.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="dash-empty">No settled batches in this window.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
 
       <h2>
         Top paid links{" "}
@@ -186,35 +201,37 @@ export function OverviewPage() {
           <StalenessBadge readModelAsOf={topLinks.readModelAsOf} live={topLinks.live} />
         ) : null}
       </h2>
-      <table className="dash-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Reference</th>
-            <th>Description</th>
-            <th>Amount</th>
-            <th>Paid at</th>
-          </tr>
-        </thead>
-        <tbody>
-          {topLinks?.links.map((link, index) => (
-            <tr key={link.id}>
-              <td>{index + 1}</td>
-              <td>
-                <Link to={`/dashboard/payment-links/${link.id}`}>{dash(link.reference)}</Link>
-              </td>
-              <td>{dash(link.description)}</td>
-              <td>{bhd(link.amountFils)}</td>
-              <td>{dateTime(link.paidAt)}</td>
-            </tr>
-          ))}
-          {topLinks && topLinks.links.length === 0 ? (
+      <div className="dash-table-wrap">
+        <table className="dash-table">
+          <thead>
             <tr>
-              <td colSpan={5}>No paid payment links in this window.</td>
+              <th>#</th>
+              <th>Reference</th>
+              <th>Description</th>
+              <th className="dash-num">Amount</th>
+              <th>Paid at</th>
             </tr>
-          ) : null}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {topLinks?.links.map((link, index) => (
+              <tr key={link.id}>
+                <td>{index + 1}</td>
+                <td>
+                  <Link to={`/dashboard/payment-links/${link.id}`}>{dash(link.reference)}</Link>
+                </td>
+                <td>{dash(link.description)}</td>
+                <td className="dash-num">{bhd(link.amountFils)}</td>
+                <td className="dash-nowrap">{dateTime(link.paidAt)}</td>
+              </tr>
+            ))}
+            {topLinks && topLinks.links.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="dash-empty">No paid payment links in this window.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

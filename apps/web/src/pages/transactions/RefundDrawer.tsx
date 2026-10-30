@@ -5,6 +5,7 @@ import { describeError } from "../../api/client.js";
 import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
 import { RequireRole } from "../../auth/RequireRole.js";
 import { bhd } from "../../format.js";
+import { useConfirmDialog } from "../../components/ConfirmDialog.js";
 import type { TransactionDto } from "../../types.js";
 import { RefundKeyKeeper, parseRefundAmount, refundableFils } from "./refundForm.js";
 
@@ -27,6 +28,7 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const keys = useRef(new RefundKeyKeeper());
+  const [confirmDialog, confirm] = useConfirmDialog();
 
   const merchantId = me?.merchant.id;
   const maxFils = refundableFils(txn);
@@ -45,13 +47,13 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
       setError("Enter a reason for the refund");
       return;
     }
-    if (
-      !window.confirm(
-        `Refund ${bhd(parsed.amountFils)}? The money goes back to the cardholder and cannot be recalled.`,
-      )
-    ) {
-      return;
-    }
+    const confirmed = await confirm({
+      title: "Refund this payment?",
+      amount: bhd(parsed.amountFils),
+      message: "The money goes back to the cardholder and cannot be recalled.",
+      confirmLabel: "Refund",
+    });
+    if (!confirmed) return;
 
     setSubmitting(true);
     setError(null);
@@ -79,38 +81,55 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
 
   return (
     <RequireRole allow={["owner", "finance"]}>
-      <div className="dash-actions">
-        {error ? <p className="dash-error" role="alert">{error}</p> : null}
-        {open ? (
-          <form className="dash-form dash-form-inline" onSubmit={(e) => void handleRefund(e)}>
-            <label>
-              Amount (BD)
-              <input
-                type="text"
-                inputMode="decimal"
-                placeholder={formatBhd(toFils(maxFils))}
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-              />
-            </label>
-            <label>
-              Reason
-              <input type="text" maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
-            </label>
-            <p className="dash-muted">Left to refund: {bhd(maxFils)}</p>
-            <button type="submit" className="dash-button" disabled={submitting}>
-              {submitting ? "Refunding..." : "Refund"}
-            </button>
-            <button type="button" className="dash-button" disabled={submitting} onClick={() => setOpen(false)}>
-              Cancel
-            </button>
-          </form>
-        ) : (
-          <button type="button" className="dash-button" onClick={() => setOpen(true)}>
+      {confirmDialog}
+      {open ? (
+        <section className="dash-panel" aria-labelledby="dash-refund-title">
+          <div className="dash-panel-head">
+            <h2 className="dash-panel-title" id="dash-refund-title">
+              Refund this payment
+            </h2>
+            <span className="dash-panel-meta">
+              Left to refund <strong>{bhd(maxFils)}</strong>
+            </span>
+          </div>
+          <div className="dash-panel-body">
+            {error ? <p className="dash-error" role="alert">{error}</p> : null}
+            <form className="dash-form dash-form-inline" onSubmit={(e) => void handleRefund(e)}>
+              <label>
+                Amount (BD)
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder={formatBhd(toFils(maxFils))}
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                />
+              </label>
+              <label className="dash-grow">
+                Reason
+                <input type="text" maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
+              </label>
+              <button type="submit" className="dash-button dash-button-primary" disabled={submitting}>
+                {submitting ? "Refunding..." : "Refund"}
+              </button>
+              <button type="button" className="dash-button" disabled={submitting} onClick={() => setOpen(false)}>
+                Cancel
+              </button>
+            </form>
+            <p className="dash-muted dash-panel-note">
+              Type the amount in BD, up to {bhd(maxFils)}. The money goes back to the cardholder
+              and cannot be recalled.
+            </p>
+          </div>
+        </section>
+      ) : (
+        <div className="dash-actions">
+          {error ? <p className="dash-error" role="alert">{error}</p> : null}
+          <button type="button" className="dash-button dash-button-danger" onClick={() => setOpen(true)}>
             Refund
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </RequireRole>
   );
 }

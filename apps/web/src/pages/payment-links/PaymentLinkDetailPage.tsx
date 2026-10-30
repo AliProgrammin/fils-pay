@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { cancelPaymentLink, listPaymentLinks } from "../../api/paymentLinks.js";
+import { StatusChip } from "../../components/StatusChip.js";
 import { describeError } from "../../api/client.js";
 import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
 import { RequireRole } from "../../auth/RequireRole.js";
 import { bhd, dash, dateTime } from "../../format.js";
+import { useConfirmDialog } from "../../components/ConfirmDialog.js";
 import type { PaymentLinkDto } from "../../types.js";
 
 /** The list endpoint's own maximum page size. */
@@ -39,6 +41,7 @@ export function PaymentLinkDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmDialog, confirm] = useConfirmDialog();
 
   const load = useCallback(async () => {
     if (!merchantId || !id) return;
@@ -56,8 +59,15 @@ export function PaymentLinkDetailPage() {
   }, [load]);
 
   async function handleCancel(): Promise<void> {
-    if (!merchantId || !id) return;
-    if (!window.confirm("Cancel this payment link? It can no longer be paid.")) return;
+    if (!merchantId || !id || state.kind !== "loaded") return;
+    const confirmed = await confirm({
+      title: "Cancel this payment link?",
+      amount: bhd(state.link.amountFils),
+      message: "It can no longer be paid.",
+      confirmLabel: "Cancel link",
+      cancelLabel: "Keep link",
+    });
+    if (!confirmed) return;
     setSubmitting(true);
     setActionError(null);
     try {
@@ -83,7 +93,7 @@ export function PaymentLinkDetailPage() {
     }
   }
 
-  if (state.kind === "loading") return <p>Loading...</p>;
+  if (state.kind === "loading") return <p className="dash-loading" role="status">Loading...</p>;
   if (state.kind === "error") {
     return (
       <section>
@@ -108,20 +118,34 @@ export function PaymentLinkDetailPage() {
 
   return (
     <section>
-      <h1>Payment link</h1>
-      <p className="dash-muted">
-        <code>{link.id}</code>
-      </p>
+      {confirmDialog}
+      <div className="dash-page-head">
+        <div>
+          <p className="dash-kicker">Payment link · {dash(link.reference)}</p>
+          <h1>Payment link</h1>
+        </div>
+      </div>
+
+      <div className="dash-card dash-hero">
+        <div className="dash-figure dash-figure-main">
+          <span className="dash-figure-label">Amount</span>
+          <span className="dash-figure-value">{bhd(link.amountFils)}</span>
+        </div>
+        <div className="dash-figure">
+          <span className="dash-figure-label">Status</span>
+          <span>
+            <StatusChip status={link.status} />
+          </span>
+        </div>
+        <div className="dash-figure">
+          <span className="dash-figure-label">Expires</span>
+          <span>{dateTime(link.expiresAt)}</span>
+        </div>
+      </div>
 
       <dl className="dash-dl">
-        <dt>Amount</dt>
-        <dd>{bhd(link.amountFils)}</dd>
         <dt>Currency</dt>
         <dd>{link.currency}</dd>
-        <dt>Status</dt>
-        <dd>
-          <span className={`dash-status dash-status-${link.status}`}>{link.status}</span>
-        </dd>
         <dt>Reference</dt>
         <dd>{dash(link.reference)}</dd>
         <dt>Description</dt>
@@ -134,6 +158,10 @@ export function PaymentLinkDetailPage() {
         <dd>{dateTime(link.paidAt)}</dd>
         <dt>Canceled at</dt>
         <dd>{dateTime(link.canceledAt)}</dd>
+        <dt>Link ID</dt>
+        <dd>
+          <code>{link.id}</code>
+        </dd>
         <dt>Transaction</dt>
         <dd>
           {link.transactionId ? (
@@ -151,7 +179,11 @@ export function PaymentLinkDetailPage() {
           <a href={link.url} target="_blank" rel="noreferrer">
             {link.url}
           </a>{" "}
-          <button type="button" className="dash-button" onClick={() => void handleCopy(link.url)}>
+          <button
+            type="button"
+            className="dash-button dash-button-small"
+            onClick={() => void handleCopy(link.url)}
+          >
             {copied ? "Copied" : "Copy link"}
           </button>
         </dd>
@@ -163,7 +195,7 @@ export function PaymentLinkDetailPage() {
         <RequireRole allow={["owner", "finance"]}>
           <button
             type="button"
-            className="dash-button"
+            className="dash-button dash-button-danger"
             disabled={submitting}
             onClick={() => void handleCancel()}
           >
@@ -172,7 +204,7 @@ export function PaymentLinkDetailPage() {
         </RequireRole>
       ) : null}
 
-      <p>
+      <p className="dash-back">
         <Link to="/dashboard/payment-links">Back to payment links</Link>
       </p>
     </section>

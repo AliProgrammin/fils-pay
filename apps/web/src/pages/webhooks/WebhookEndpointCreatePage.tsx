@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createWebhookEndpoint } from "../../api/webhooks.js";
+import { StatusChip } from "../../components/StatusChip.js";
 import { describeError } from "../../api/client.js";
 import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
 import { dateTime } from "../../format.js";
@@ -55,7 +56,12 @@ export function WebhookEndpointCreatePage() {
   if (created) {
     return (
       <section>
-        <h1>Endpoint created</h1>
+        <div className="dash-page-head">
+          <div>
+            <p className="dash-kicker">Webhooks · created</p>
+            <h1>Endpoint created</h1>
+          </div>
+        </div>
 
         <div className="dash-confirm">
           <h2>Signing secret — shown once</h2>
@@ -83,14 +89,16 @@ export function WebhookEndpointCreatePage() {
             <code>{created.secretPrefix}</code>
           </dd>
           <dt>Status</dt>
-          <dd>{created.status}</dd>
+          <dd>
+            <StatusChip status={created.status} />
+          </dd>
           <dt>Created at</dt>
           <dd>{dateTime(created.createdAt)}</dd>
         </dl>
 
         <button
           type="button"
-          className="dash-button"
+          className="dash-button dash-button-primary"
           onClick={() => navigate(`/dashboard/webhooks/${created.id}`, { replace: true })}
         >
           I&apos;ve saved it — continue
@@ -101,11 +109,16 @@ export function WebhookEndpointCreatePage() {
 
   return (
     <section>
-      <h1>New webhook endpoint</h1>
+      <div className="dash-page-head">
+        <div>
+          <p className="dash-kicker">Webhooks · new</p>
+          <h1>New webhook endpoint</h1>
+        </div>
+      </div>
 
       {error ? <p className="dash-error" role="alert">{error}</p> : null}
 
-      <form className="dash-form" onSubmit={(e) => void handleSubmit(e)}>
+      <form className="dash-form dash-card" onSubmit={(e) => void handleSubmit(e)}>
         <label>
           Endpoint URL
           <input
@@ -116,12 +129,12 @@ export function WebhookEndpointCreatePage() {
             onChange={(e) => setUrl(e.target.value)}
           />
         </label>
-        <button type="submit" className="dash-button" disabled={submitting}>
+        <button type="submit" className="dash-button dash-button-primary" disabled={submitting}>
           {submitting ? "Creating..." : "Create endpoint"}
         </button>
       </form>
 
-      <p>
+      <p className="dash-back">
         <Link to="/dashboard/webhooks">Back to webhook endpoints</Link>
       </p>
     </section>

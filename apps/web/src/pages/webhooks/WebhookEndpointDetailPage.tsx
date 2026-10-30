@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { listDeliveries, listWebhookEndpoints, replayDelivery } from "../../api/webhooks.js";
+import { StatusChip } from "../../components/StatusChip.js";
 import { describeError } from "../../api/client.js";
 import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
 import { Pagination } from "../../components/Pagination.js";
@@ -120,7 +121,12 @@ export function WebhookEndpointDetailPage() {
 
   return (
     <section>
-      <h1>Webhook endpoint</h1>
+      <div className="dash-page-head">
+        <div>
+          <p className="dash-kicker">Webhooks · endpoint</p>
+          <h1>Webhook endpoint</h1>
+        </div>
+      </div>
 
       {endpoint ? (
         <dl className="dash-dl">
@@ -132,7 +138,7 @@ export function WebhookEndpointDetailPage() {
           </dd>
           <dt>Status</dt>
           <dd>
-            <span className={`dash-status dash-status-${endpoint.status}`}>{endpoint.status}</span>
+            <StatusChip status={endpoint.status} />
           </dd>
           <dt>Created at</dt>
           <dd>{dateTime(endpoint.createdAt)}</dd>
@@ -146,7 +152,7 @@ export function WebhookEndpointDetailPage() {
       <fieldset className="dash-filters">
         <legend>Status</legend>
         {DELIVERY_STATUSES.map((status) => (
-          <label key={status}>
+          <label key={status} className="dash-pill">
             <input
               type="checkbox"
               checked={statuses.includes(status)}
@@ -159,86 +165,86 @@ export function WebhookEndpointDetailPage() {
 
       {error ? <p className="dash-error" role="alert">{error}</p> : null}
 
-      <table className="dash-table">
-        <thead>
-          <tr>
-            <th>Created</th>
-            <th>Event</th>
-            <th>Status</th>
-            <th>Attempts</th>
-            <th>Response</th>
-            <th>Last attempt</th>
-            <th>Next attempt</th>
-            <th>Replay of</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {deliveries.map((delivery) => {
-            // Replaying a `pending` row is pointless — it is already queued,
-            // and the dispatcher leaves a row `pending` between retries. And a
-            // replay against a disabled endpoint is rejected `409` server-side,
-            // so the button is hidden rather than offered and refused, since
-            // the endpoint's own state is already known on this page.
-            const replayable =
-              (delivery.status === "succeeded" || delivery.status === "exhausted") &&
-              endpoint?.status === "active";
-            return (
-              <tr key={delivery.id}>
-                <td>{dateTime(delivery.createdAt)}</td>
-                <td>{delivery.eventType}</td>
-                <td>
-                  <span className={`dash-status dash-status-${delivery.status}`}>
-                    {delivery.status}
-                  </span>
-                </td>
-                <td>{delivery.attemptCount}</td>
-                <td>
-                  {dash(delivery.responseStatusCode)}
-                  {delivery.responseBodyExcerpt ? (
-                    <details>
-                      <summary>body</summary>
-                      <pre className="dash-pre">{delivery.responseBodyExcerpt}</pre>
-                    </details>
-                  ) : null}
-                </td>
-                <td>{dateTime(delivery.lastAttemptedAt)}</td>
-                <td>{dateTime(delivery.nextAttemptAt)}</td>
-                <td>
-                  {delivery.replayOfDeliveryId ? (
-                    <span className="dash-muted">
-                      replay of <code>{delivery.replayOfDeliveryId}</code>
-                    </span>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-                <td>
-                  {replayable ? (
-                    <button
-                      type="button"
-                      className="dash-button"
-                      disabled={busyId === delivery.id}
-                      onClick={() => void handleReplay(delivery)}
-                    >
-                      Replay
-                    </button>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-          {deliveries.length === 0 && !loading && !error ? (
+      <div className="dash-table-wrap">
+        <table className="dash-table">
+          <thead>
             <tr>
-              <td colSpan={9}>No deliveries match these filters.</td>
+              <th>Created</th>
+              <th>Event</th>
+              <th>Status</th>
+              <th className="dash-num">Attempts</th>
+              <th>Response</th>
+              <th>Last attempt</th>
+              <th>Next attempt</th>
+              <th>Replay of</th>
+              <th>Actions</th>
             </tr>
-          ) : null}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {deliveries.map((delivery) => {
+              // Replaying a `pending` row is pointless — it is already queued,
+              // and the dispatcher leaves a row `pending` between retries. And a
+              // replay against a disabled endpoint is rejected `409` server-side,
+              // so the button is hidden rather than offered and refused, since
+              // the endpoint's own state is already known on this page.
+              const replayable =
+                (delivery.status === "succeeded" || delivery.status === "exhausted") &&
+                endpoint?.status === "active";
+              return (
+                <tr key={delivery.id}>
+                  <td className="dash-nowrap">{dateTime(delivery.createdAt)}</td>
+                  <td>{delivery.eventType}</td>
+                  <td>
+                    <StatusChip status={delivery.status} />
+                  </td>
+                  <td className="dash-num">{delivery.attemptCount}</td>
+                  <td>
+                    {dash(delivery.responseStatusCode)}
+                    {delivery.responseBodyExcerpt ? (
+                      <details>
+                        <summary>body</summary>
+                        <pre className="dash-pre">{delivery.responseBodyExcerpt}</pre>
+                      </details>
+                    ) : null}
+                  </td>
+                  <td className="dash-nowrap">{dateTime(delivery.lastAttemptedAt)}</td>
+                  <td className="dash-nowrap">{dateTime(delivery.nextAttemptAt)}</td>
+                  <td>
+                    {delivery.replayOfDeliveryId ? (
+                      <span className="dash-muted">
+                        replay of <code>{delivery.replayOfDeliveryId}</code>
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td>
+                    {replayable ? (
+                      <button
+                        type="button"
+                        className="dash-button dash-button-small"
+                        disabled={busyId === delivery.id}
+                        onClick={() => void handleReplay(delivery)}
+                      >
+                        Replay
+                      </button>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            {deliveries.length === 0 && !loading && !error ? (
+              <tr>
+                <td colSpan={9} className="dash-empty">No deliveries match these filters.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
 
-      {loading ? <p>Loading...</p> : null}
+      {loading ? <p className="dash-loading" role="status">Loading...</p> : null}
 
       <Pagination
         nextCursor={nextCursor}
@@ -246,7 +252,7 @@ export function WebhookEndpointDetailPage() {
         onLoadMore={() => void loadDeliveries(nextCursor)}
       />
 
-      <p>
+      <p className="dash-back">
         <Link to="/dashboard/webhooks">Back to webhook endpoints</Link>
       </p>
     </section>

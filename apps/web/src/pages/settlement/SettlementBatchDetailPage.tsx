@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getSettlementBatch, getSettlementBatchTransactions } from "../../api/settlement.js";
 import { ApiError, describeError } from "../../api/client.js";
-import { bhd, dash, dateTime } from "../../format.js";
+import { bhd, calendarDate, dash, dateTime } from "../../format.js";
 import type { SettlementBatchDetailDto, SettlementBatchTransactionDto } from "../../types.js";
+import { StatusChip } from "../../components/StatusChip.js";
+import { truncateMiddle } from "../../utils/helpers.js";
 
 type LoadState =
   | { kind: "loading" }
@@ -59,7 +61,7 @@ export function SettlementBatchDetailPage() {
     };
   }, [id]);
 
-  if (state.kind === "loading") return <p>Loading...</p>;
+  if (state.kind === "loading") return <p className="dash-loading" role="status">Loading...</p>;
   if (state.kind === "not_found") {
     return (
       <section>
@@ -84,30 +86,49 @@ export function SettlementBatchDetailPage() {
 
   return (
     <section>
-      <h1>Settlement batch {batch.batchDate}</h1>
-      <p className="dash-muted">
-        <code>{batch.id}</code>
-      </p>
+      <div className="dash-page-head">
+        <div>
+          <p className="dash-kicker">Settlement batch · {calendarDate(batch.batchDate)}</p>
+          <h1>Settlement batch</h1>
+        </div>
+      </div>
+
+      <div className="dash-card dash-hero">
+        <div className="dash-figure dash-figure-main">
+          <span className="dash-figure-label">Net payout</span>
+          <span className="dash-figure-value">{bhd(batch.netPayoutFils)}</span>
+        </div>
+        <div className="dash-figure">
+          <span className="dash-figure-label">Gross</span>
+          <span className="dash-figure-value">{bhd(batch.grossFils)}</span>
+        </div>
+        <div className="dash-figure">
+          <span className="dash-figure-label">Status</span>
+          <span>
+            <StatusChip status={batch.status} />
+          </span>
+        </div>
+      </div>
 
       <dl className="dash-dl">
-        <dt>Status</dt>
-        <dd>
-          <span className={`dash-status dash-status-${batch.status}`}>{batch.status}</span>
-        </dd>
         <dt>Gross</dt>
-        <dd>{bhd(batch.grossFils)}</dd>
+        <dd className="dash-money">{bhd(batch.grossFils)}</dd>
         <dt>Fee</dt>
-        <dd>{bhd(batch.feeFils)}</dd>
+        <dd className="dash-money">{bhd(batch.feeFils)}</dd>
         <dt>Refunds</dt>
-        <dd>{bhd(-batch.refundFils)}</dd>
+        <dd className="dash-money">{bhd(-batch.refundFils)}</dd>
         <dt>Fee reversed on refunds</dt>
-        <dd>{bhd(batch.refundFeeReversedFils)}</dd>
-        <dt>Net payout</dt>
-        <dd>{bhd(batch.netPayoutFils)}</dd>
+        <dd className="dash-money">{bhd(batch.refundFeeReversedFils)}</dd>
+        <dt className="dash-dl-total">Net payout</dt>
+        <dd className="dash-money dash-dl-total">{bhd(batch.netPayoutFils)}</dd>
         <dt>Closed at</dt>
         <dd>{dateTime(batch.closedAt)}</dd>
         <dt>Paid at</dt>
         <dd>{dateTime(batch.paidAt)}</dd>
+        <dt>Batch ID</dt>
+        <dd>
+          <code>{batch.id}</code>
+        </dd>
         <dt>Included transactions</dt>
         <dd>{batch.includedTransactionCount}</dd>
         <dt>Capture events in this batch</dt>
@@ -125,48 +146,52 @@ export function SettlementBatchDetailPage() {
       </dl>
 
       <h2>Included transactions</h2>
-      <table className="dash-table">
-        <thead>
-          <tr>
-            <th>Line</th>
-            <th>Transaction</th>
-            <th>Reference</th>
-            <th>Status</th>
-            <th>Authorized</th>
-            <th>Captured</th>
-            <th>Scheme amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          {lines.map((line) => (
-            <tr key={`${line.transactionId}-${line.lineSequence}`}>
-              <td>{line.lineSequence}</td>
-              <td>
-                <Link to={`/dashboard/transactions/${line.transactionId}`}>
-                  <code>{line.transactionId}</code>
-                </Link>
-              </td>
-              <td>{dash(line.reference)}</td>
-              <td>{line.status}</td>
-              <td>{bhd(line.authorizedFils)}</td>
-              <td>{bhd(line.capturedFils)}</td>
-              <td>{bhd(line.schemeAmountFils)}</td>
-            </tr>
-          ))}
-          {lines.length === 0 ? (
+      <div className="dash-table-wrap">
+        <table className="dash-table">
+          <thead>
             <tr>
-              <td colSpan={7}>No scheme export lines in this batch.</td>
+              <th>Line</th>
+              <th>Transaction</th>
+              <th>Reference</th>
+              <th>Status</th>
+              <th className="dash-num">Authorized</th>
+              <th className="dash-num">Captured</th>
+              <th className="dash-num">Scheme amount</th>
             </tr>
-          ) : null}
-        </tbody>
-      </table>
-      <p className="dash-muted">
-        The scheme amount is the card-network export figure, quantized to two
+          </thead>
+          <tbody>
+            {lines.map((line) => (
+              <tr key={`${line.transactionId}-${line.lineSequence}`}>
+                <td>{line.lineSequence}</td>
+                <td>
+                  <Link to={`/dashboard/transactions/${line.transactionId}`}>
+                    <code>{truncateMiddle(line.transactionId, 18)}</code>
+                  </Link>
+                </td>
+                <td>{dash(line.reference)}</td>
+                <td>
+                  <StatusChip status={line.status} />
+                </td>
+                <td className="dash-num">{bhd(line.authorizedFils)}</td>
+                <td className="dash-num">{bhd(line.capturedFils)}</td>
+                <td className="dash-num">{bhd(line.schemeAmountFils)}</td>
+              </tr>
+            ))}
+            {lines.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="dash-empty">No scheme export lines in this batch.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+      <p className="dash-note">
+      The scheme amount is the card-network export figure, quantized to two
         decimal places at that boundary — it can be up to 9 fils below the
         captured amount by design.
       </p>
 
-      <p>
+      <p className="dash-back">
         <Link to="/dashboard/settlement">Back to settlement batches</Link>
       </p>
     </section>
