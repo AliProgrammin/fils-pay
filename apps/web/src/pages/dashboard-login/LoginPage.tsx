@@ -13,20 +13,17 @@ import "../../dashboard.css";
 type Step = { kind: "credentials" } | { kind: "otp"; challenge: DashboardLoginResponse };
 
 /**
- * Two-step merchant login: merchantId + email + password
+ * Two-step merchant login: email + password (+ optional merchant ID)
  * creates a *pending* session and issues an OTP challenge; the OTP step is
  * what actually authenticates it. Neither step is told which credential was
- * wrong — the API answers a single generic `invalid_credentials`, and this
- * screen repeats it verbatim rather than guessing at something more specific.
+ * wrong — the API answers a single generic `invalid_credentials`.
  *
- * The Merchant ID field is a raw pasted UUID. This is a genuine rough edge,
- * not a preference: `merchant_users.email` is unique per merchant rather than
- * globally (Phase 1 schema), so an email alone cannot identify a user, and no
- * merchant slug or subdomain concept exists anywhere in the platform to infer
- * the id from. `localStorage` remembering the last-used value is the whole
- * mitigation available without new backend work; a lookup-by-email endpoint
- * or a per-merchant subdomain would be the real fix, and both are out of
- * scope for a frontend-only phase.
+ * The Merchant ID field is hidden by default: the API finds the user by
+ * email + password. `merchant_users.email` is unique per merchant, not
+ * globally, so when the email + password match users in several shops the
+ * API answers `409 merchant_id_required` and the field appears. The field is
+ * also shown when a merchant ID was used for the last successful sign-in
+ * (remembered in `localStorage`), or when the user asks for it.
  */
 export function LoginPage() {
   const { status, refresh } = useDashboardAuth();
@@ -36,6 +33,7 @@ export function LoginPage() {
   const [step, setStep] = useState<Step>({ kind: "credentials" });
   // MK: remembers the last merchantId in localStorage. not a secret
   const [merchantId, setMerchantId] = useState(() => readLastMerchantId());
+  const [showMerchantId, setShowMerchantId] = useState(() => readLastMerchantId() !== "");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -47,6 +45,12 @@ export function LoginPage() {
 
   if (status === "authenticated") {
     return <Navigate to={redirectTo} replace />;
+  }
+
+  /** The merchant ID to send: only when the field is shown and filled in. */
+  function sentMerchantId(): string | undefined {
+    const trimmed = merchantId.trim();
+    return showMerchantId && trimmed !== "" ? trimmed : undefined;
   }
 
   function backToCredentials(message: string | null): void {
@@ -61,11 +65,20 @@ export function LoginPage() {
     setError(null);
     setNotice(null);
     try {
-      const challenge = await login({ merchantId: merchantId.trim(), email, password });
+      const challenge = await login({ merchantId: sentMerchantId(), email, password });
       setStep({ kind: "otp", challenge });
       setPassword("");
     } catch (err) {
-      setError(describeError(err));
+      if (err instanceof ApiError && err.statusCode === 409 && err.code === "merchant_id_required") {
+        setShowMerchantId(true);
+        setError(
+          "This email is used by more than one shop. Enter the merchant ID of the shop you want to sign in to.",
+        );
+      } else if (err instanceof ApiError && err.statusCode === 401 && err.code === "invalid_credentials") {
+        setError("The email or password is not correct.");
+      } else {
+        setError(describeError(err));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -80,7 +93,7 @@ export function LoginPage() {
     setNotice(null);
     try {
       await verifyOtp({ code });
-      writeLastMerchantId(merchantId.trim());
+      writeLastMerchantId(sentMerchantId() ?? "");
       // The session cookie is now authenticated server-side; re-read `me` so
       // the rest of the dashboard renders from the server's answer, not from
       // the verify response we happen to be holding.
@@ -124,27 +137,11 @@ export function LoginPage() {
       <h1>FilsPay dashboard</h1>
       <p className="dash-muted">Merchant sign-in.</p>
 
-      {error ? <p className="dash-error">{error}</p> : null}
+      {error ? <p className="dash-error" role="alert">{error}</p> : null}
       {notice ? <p className="dash-notice">{notice}</p> : null}
 
       {step.kind === "credentials" ? (
         <form onSubmit={(e) => void handleCredentials(e)} className="dash-form">
-          <label>
-            Merchant ID
-            <input
-              type="text"
-              required
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="00000000-0000-0000-0000-000000000000"
-              value={merchantId}
-              onChange={(e) => setMerchantId(e.target.value)}
-            />
-          </label>
-          <p className="dash-muted dash-hint">
-            The UUID issued when your account was created. Your API integration
-            already uses this value.
-          </p>
           <label>
             Email
             <input
@@ -165,6 +162,33 @@ export function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
             />
           </label>
+          {showMerchantId ? (
+            <>
+              <label>
+                Merchant ID
+                <input
+                  type="text"
+                  required
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="00000000-0000-0000-0000-000000000000"
+                  value={merchantId}
+                  onChange={(e) => setMerchantId(e.target.value)}
+                />
+              </label>
+              <p className="dash-muted dash-hint">
+                The UUID issued when your account was created. Your API integration
+                already uses this value.
+              </p>
+              <button type="button" className="dash-text-button" onClick={() => setShowMerchantId(false)}>
+                Sign in without a merchant ID
+              </button>
+            </>
+          ) : (
+            <button type="button" className="dash-text-button" onClick={() => setShowMerchantId(true)}>
+              Sign in to a specific shop
+            </button>
+          )}
           <button type="submit" className="dash-button" disabled={submitting}>
             {submitting ? "Signing in..." : "Continue"}
           </button>

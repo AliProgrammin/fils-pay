@@ -11,14 +11,16 @@ import type {
  * different tables, different role enum. Nothing here touches the admin
  * plane.
  *
- * `login` requires an explicit `merchantId` because merchant_users.email is
- * unique *per merchant*, not globally, so an email alone cannot identify a
- * user. A success here only creates a *pending* session; nothing is
+ * `merchantId` is optional in `login`: without it the API finds the user by
+ * email + password. merchant_users.email is unique *per merchant*, not
+ * globally, so when the email + password match users in several shops the
+ * API answers `409 merchant_id_required` and the caller must send
+ * `merchantId`. A success here only creates a *pending* session; nothing is
  * authenticated until `verifyOtp`.
  */
 /** Step 1 of 2. The session is pending until verifyOtp succeeds. */
 export function login(input: {
-  merchantId: string;
+  merchantId?: string;
   email: string;
   password: string;
 }): Promise<DashboardLoginResponse> {

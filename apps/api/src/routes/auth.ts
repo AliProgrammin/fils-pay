@@ -10,7 +10,7 @@ import {
   revokeSession,
 } from "../auth/sessions.js";
 import { withTransaction } from "../db/withTransaction.js";
-import { BadRequestError, GoneError, TooManyRequestsError, UnauthorizedError } from "../lib/errors.js";
+import { BadRequestError, ConflictError, GoneError, TooManyRequestsError, UnauthorizedError } from "../lib/errors.js";
 
 /**
  * A pre-computed argon2id hash of a fixed, never-used dummy password, at
@@ -43,8 +43,10 @@ interface MerchantUserRow {
 }
 
 /**
- * Merchant login is two-step: POST /login checks merchantId+email+password
- * and issues a pending session cookie bound to an OTP challenge; POST
+ * Merchant login is two-step: POST /login checks email+password (plus an
+ * optional merchantId; without it the user is found by email, and 409
+ * merchant_id_required comes back when the email + password match more than
+ * one shop) and issues a pending session cookie bound to an OTP challenge; POST
  * /otp/verify promotes it. A pending session authenticates nothing until
  * promoted.
  */
@@ -52,26 +54,55 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   /** POST /v1/auth/login — step 1. */
   app.post<{ Body: LoginBody }>("/login", async (request, reply) => {
     const { merchantId, email, password } = request.body ?? {};
-    if (!merchantId || !email || !password) {
+    if (!email || !password) {
       throw new BadRequestError("invalid_request", "merchantId, email and password are required");
     }
 
-    const userResult = await app.db.query<MerchantUserRow>(
-      `SELECT mu.id, mu.merchant_id, mu.email, mu.role, mu.password_hash
-         FROM merchant_users mu
-         JOIN merchants m ON m.id = mu.merchant_id
-        WHERE mu.merchant_id = $1 AND mu.email = $2 AND m.status = 'active'`,
-      [merchantId, email],
-    );
-    const user = userResult.rows[0];
+    // With merchantId: at most one row. Without it: every active-merchant row
+    // for this email (merchant_users is unique per (merchant_id, email)).
+    const userResult = merchantId
+      ? await app.db.query<MerchantUserRow>(
+          `SELECT mu.id, mu.merchant_id, mu.email, mu.role, mu.password_hash
+             FROM merchant_users mu
+             JOIN merchants m ON m.id = mu.merchant_id
+            WHERE mu.merchant_id = $1 AND mu.email = $2 AND m.status = 'active'`,
+          [merchantId, email],
+        )
+      : await app.db.query<MerchantUserRow>(
+          `SELECT mu.id, mu.merchant_id, mu.email, mu.role, mu.password_hash
+             FROM merchant_users mu
+             JOIN merchants m ON m.id = mu.merchant_id
+            WHERE mu.email = $1 AND m.status = 'active'
+            ORDER BY mu.created_at, mu.id`,
+          [email],
+        );
+    const candidates = userResult.rows;
 
-    // timing-safe: hashes against a dummy when the user is missing. correct — FH
-    const passwordOk = await verifyPassword(user ? user.password_hash : DUMMY_PASSWORD_HASH, password);
+    // timing-safe: hashes against a dummy when no user exists, so a missing
+    // user and a wrong password take comparable time.
+    if (candidates.length === 0) {
+      await verifyPassword(DUMMY_PASSWORD_HASH, password);
+    }
+    const matches: MerchantUserRow[] = [];
+    for (const candidate of candidates) {
+      if (await verifyPassword(candidate.password_hash, password)) {
+        matches.push(candidate);
+      }
+    }
 
     // The same generic message in every failure case (no row, or wrong
     // password) — the response never discloses which part was wrong.
-    if (!user || !passwordOk) {
+    const user = matches[0];
+    if (!user) {
       throw new UnauthorizedError("invalid_credentials");
+    }
+    // Only reachable with a correct password: the email + password match
+    // users in several shops, so the client must say which one.
+    if (matches.length > 1) {
+      throw new ConflictError(
+        "merchant_id_required",
+        "This email signs in to more than one shop. Give the merchant ID of the shop.",
+      );
     }
 
     // The OTP and session belong to the user whose password was just checked.
