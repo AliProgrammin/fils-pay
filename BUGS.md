@@ -13,7 +13,7 @@ When an existing test asserted the buggy behaviour, we changed it in the same co
 | | Before | After |
 |---|---|---|
 | Fresh database | migrations stop at 0054 | 86 migrations + seed pass |
-| TypeScript tests | 414 / 430 pass | 711 / 711 pass |
+| TypeScript tests | 414 / 430 pass | 732 / 732 pass |
 | Go tests | 54 / 54 pass | 86 / 86 pass |
 | Refunds (FP-300) | `POST /v1/refunds` returned `501`; the dashboard drawer posted to an unregistered path (`404`) | end to end: API, ledger, fees, payouts, webhook, timeline, reports, reconciliation |
 
