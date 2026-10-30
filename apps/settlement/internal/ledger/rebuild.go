@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/filspay/settlement/internal/balances"
 	"github.com/filspay/settlement/internal/money"
 )
 
@@ -35,51 +36,15 @@ func RebuildMerchantBalance(ctx context.Context, db *pgxpool.Pool, merchantID uu
 	return diff.Rebuilt, nil
 }
 
-// rebuildMerchantInTx locks merchantID's merchant_balances row (creating it
-// if missing) BEFORE it reads the ledger, then overwrites the cache with the
-// ledger sum. The lock makes a concurrent CloseBatch/PayoutBatch cache delta
-// either finish first (and its ledger legs are then seen) or wait and apply
-// on top of the rebuilt figure — never be clobbered.
+// rebuildMerchantInTx sets merchantID's cache to its ledger merchant_payable
+// balance (balances.RefreshFromLedger, the same step settlement runs after
+// every posting) and reports the before/after figures.
 func rebuildMerchantInTx(ctx context.Context, tx pgx.Tx, merchantID uuid.UUID) (RebuildDiff, error) {
-	_, err := tx.Exec(ctx, `
-		INSERT INTO merchant_balances (merchant_id, cached_payable_fils, updated_at)
-		VALUES ($1, 0, now())
-		ON CONFLICT (merchant_id) DO NOTHING
-	`, merchantID)
+	before, after, err := balances.RefreshFromLedger(ctx, tx, merchantID, uuid.Nil)
 	if err != nil {
-		return RebuildDiff{}, fmt.Errorf("ledger: rebuild %s: ensure cache row: %w", merchantID, err)
+		return RebuildDiff{}, fmt.Errorf("ledger: rebuild: %w", err)
 	}
-
-	var cachedBefore int64
-	err = tx.QueryRow(ctx, `
-		SELECT cached_payable_fils FROM merchant_balances WHERE merchant_id = $1 FOR UPDATE
-	`, merchantID).Scan(&cachedBefore)
-	if err != nil {
-		return RebuildDiff{}, fmt.Errorf("ledger: rebuild %s: lock cached balance: %w", merchantID, err)
-	}
-
-	var rebuilt int64
-	err = tx.QueryRow(ctx, `
-		SELECT COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount_fils ELSE -amount_fils END), 0)
-		  FROM ledger_entries
-		 WHERE merchant_id = $1 AND account_id = 'merchant_payable'
-	`, merchantID).Scan(&rebuilt)
-	if err != nil {
-		return RebuildDiff{}, fmt.Errorf("ledger: rebuild %s: recompute balance: %w", merchantID, err)
-	}
-
-	_, err = tx.Exec(ctx, `
-		UPDATE merchant_balances SET cached_payable_fils = $2, updated_at = now() WHERE merchant_id = $1
-	`, merchantID, rebuilt)
-	if err != nil {
-		return RebuildDiff{}, fmt.Errorf("ledger: rebuild %s: write rebuilt balance: %w", merchantID, err)
-	}
-
-	return RebuildDiff{
-		MerchantID:   merchantID,
-		CachedBefore: money.Fils(cachedBefore),
-		Rebuilt:      money.Fils(rebuilt),
-	}, nil
+	return RebuildDiff{MerchantID: merchantID, CachedBefore: before, Rebuilt: after}, nil
 }
 
 // RebuildDiff is the before/after state for one merchant, printed by the

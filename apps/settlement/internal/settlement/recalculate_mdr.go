@@ -126,10 +126,9 @@ func RecalculateMDR(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID,
 		`, b.id, int64(newFee), int64(newNetPayout)); err != nil {
 			return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: update batch %s: %w", b.id, err)
 		}
-		// A fee increase (diff > 0) reduces net payout owed, so the cache
-		// moves by -diff — the same signed-delta idiom ApplyBatchClose
-		// already exposes for a batch close's own net payout.
-		if err := balances.ApplyBatchClose(ctx, tx, merchantID, b.id, -diff); err != nil {
+		// postMdrAdjustment posted merchant_payable legs; set the cache to
+		// the ledger figure (internal/balances).
+		if _, _, err := balances.RefreshFromLedger(ctx, tx, merchantID, b.id); err != nil {
 			return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: apply cache delta for %s: %w", b.id, err)
 		}
 		adjusted = append(adjusted, BatchAdjustment{

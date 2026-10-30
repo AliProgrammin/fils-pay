@@ -371,11 +371,13 @@ func TestCloseBatch_SchemeExportLineTruncation(t *testing.T) {
 	}
 }
 
-// TestCloseAndPayout_MerchantBalancesIncremental verifies
-// merchant_balances is maintained incrementally through close+payout: it
-// gains net_payout_fils at close, then loses the same amount at payout,
-// netting to zero once both steps have run in the same pass — exactly
-// the arithmetic internal/balances describes.
+// TestCloseAndPayout_MerchantBalancesIncremental verifies merchant_balances
+// through close+payout. G4: the cache means the ledger's merchant_payable,
+// so after close it equals the ledger figure (here the captures' gross minus
+// fee, which is also this batch's net), and after payout it is 0. It used to
+// assert "cache == net after close" because close added +net to the cache;
+// that only matched the ledger when the cache started at 0, and after any
+// rebuild it left the cache high by the day's net.
 func TestCloseAndPayout_MerchantBalancesIncremental(t *testing.T) {
 	pool := mustPool(t)
 	const mdrBps = 250
@@ -398,8 +400,16 @@ func TestCloseAndPayout_MerchantBalancesIncremental(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query merchant_balances after close: %v", err)
 	}
-	if money.Fils(afterClose) != closeResult.NetPayoutFils {
-		t.Errorf("cached_payable_fils after close = %d, want %d (the batch's net_payout_fils)", afterClose, closeResult.NetPayoutFils)
+	var ledgerAfterClose int64
+	err = pool.QueryRow(context.Background(), `
+		SELECT COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount_fils ELSE -amount_fils END), 0)
+		  FROM ledger_entries WHERE merchant_id = $1 AND account_id = 'merchant_payable'
+	`, merchantID).Scan(&ledgerAfterClose)
+	if err != nil {
+		t.Fatalf("query ledger merchant_payable after close: %v", err)
+	}
+	if afterClose != ledgerAfterClose {
+		t.Errorf("cached_payable_fils after close = %d, want %d (the ledger's merchant_payable)", afterClose, ledgerAfterClose)
 	}
 
 	payoutResult, err := PayoutBatch(context.Background(), pool, closeResult.BatchID)

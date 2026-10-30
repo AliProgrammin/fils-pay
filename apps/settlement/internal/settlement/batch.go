@@ -363,8 +363,10 @@ func CloseBatch(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID, bus
 		return BatchResult{}, fmt.Errorf("settlement: CloseBatch: enqueue outbox event: %w", err)
 	}
 
-	// Step 14: incrementally update the merchant_balances cache.
-	if err := balances.ApplyBatchClose(ctx, tx, merchantID, batchID, netPayout); err != nil {
+	// Step 14: set the merchant_balances cache to the ledger's
+	// merchant_payable (internal/balances). Close posts no merchant_payable
+	// leg, so the old "+net at close" counted money the ledger did not have.
+	if _, _, err := balances.RefreshFromLedger(ctx, tx, merchantID, batchID); err != nil {
 		return BatchResult{}, fmt.Errorf("settlement: CloseBatch: apply balance cache delta: %w", err)
 	}
 
@@ -466,7 +468,7 @@ func PayoutBatch(ctx context.Context, db *pgxpool.Pool, batchID uuid.UUID) (Payo
 		return PayoutResult{}, fmt.Errorf("settlement: PayoutBatch: update batch status: %w", err)
 	}
 
-	if err := balances.ApplyPayout(ctx, tx, merchantID, batchID, money.Fils(netPayout)); err != nil {
+	if _, _, err := balances.RefreshFromLedger(ctx, tx, merchantID, batchID); err != nil {
 		return PayoutResult{}, fmt.Errorf("settlement: PayoutBatch: apply balance cache delta: %w", err)
 	}
 

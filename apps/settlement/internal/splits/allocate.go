@@ -115,7 +115,6 @@ func PayoutSplitBatch(ctx context.Context, db *pgxpool.Pool, batchID uuid.UUID) 
 		shares[i].AllocatedFils = share
 	}
 
-	var totalAllocated money.Fils
 	for _, s := range shares {
 		if s.AllocatedFils <= 0 {
 			continue // ledger_entries.amount_fils has a CHECK (amount_fils > 0)
@@ -150,14 +149,11 @@ func PayoutSplitBatch(ctx context.Context, db *pgxpool.Pool, batchID uuid.UUID) 
 		if err != nil {
 			return SplitPayoutResult{}, err
 		}
-		totalAllocated += s.AllocatedFils
 	}
 
-	// Bring the parent's cached balance down by what the legs above actually
-	// debited from its merchant_payable account, same as PayoutBatch does
-	// for a non-split merchant.
-	// am: should pass netPayout here not totalAllocated, otherwise the cache drifts from the batch
-	if err := balances.ApplyPayout(ctx, tx, parentMerchantID, batchID, totalAllocated); err != nil {
+	// The legs above debit the parent's merchant_payable; set the parent's
+	// cache to its ledger balance, same as PayoutBatch does.
+	if _, _, err := balances.RefreshFromLedger(ctx, tx, parentMerchantID, batchID); err != nil {
 		return SplitPayoutResult{}, err
 	}
 
