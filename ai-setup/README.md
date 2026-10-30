@@ -35,7 +35,7 @@ Blind-verifier results (all in the session logs, all misses fixed):
 | Round | Result | Miss | Fixed as |
 |---|---|---|---|
 | 45 bug-fix requirements | 44 PASS, 1 FAIL | Impersonation could still capture, void and save filters | A12, `53ff04c` |
-| FP-300 refunds judge | Items 2–5 PASS, item 1 FAIL | No way to turn refunds on except raw SQL | R8, `f169666` |
+| FP-300 refunds judge | Items 2–5 PASS, item 1 FAIL | No way to change the per-merchant refunds switch except raw SQL (now: put refunds on hold) | R8, `f169666` |
 | 23 new requirements | 22 PASS, 1 FAIL | A 0-fil link, a numeric card number and a NUL byte gave 500 | H10, `a5fa13b` |
 
 ## Guardrails we gave every agent

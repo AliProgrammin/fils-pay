@@ -12,13 +12,17 @@ and test in [BUGS.md](BUGS.md).
 ### Added
 - Refunds (FP-300): `POST /v1/refunds` (API key or dashboard session,
   `Idempotency-Key` required), the dashboard refund drawer and a per-merchant
-  refunds switch in the admin console. Partial and full refunds, fee reversed
-  in proportion, never more than captured. Reaches the ledger, the
+  refunds hold switch in the admin console. Partial and full refunds, fee
+  reversed in proportion, never more than captured. Reaches the ledger, the
   `refund.succeeded` webhook, the timeline, reports, payouts and
   reconciliation.
 - Hosting: one-server Docker stack (`ops/docker-compose.prod.yml`) with an
   HTTPS overlay (Caddy, `ops/docker-compose.tls.yml`). See
   [HOSTING.md](HOSTING.md).
+- Merchant sign-in with email and password only: the new
+  `POST /v1/auth/login/shops` lists the shops an email + password open; the
+  dashboard then logs in to the chosen shop. `POST /v1/auth/login` is
+  unchanged and still needs `merchantId`.
 - Load shedding: the API and nginx answer a fast `503` with `Retry-After`
   when full, instead of slow timeouts. See [CAPACITY.md](CAPACITY.md).
 
@@ -31,7 +35,7 @@ and test in [BUGS.md](BUGS.md).
   append-only ledger, refund columns and indexes).
 
 ### Fixed
-- 105 bugs: 18 critical, 41 high, 33 medium, 13 low. See [BUGS.md](BUGS.md).
+- 105 bugs: 18 critical, 40 high, 33 medium, 14 low. See [BUGS.md](BUGS.md).
 
 ### Removed
 - Dead `apps/api/src/v1/` tree with an unauthenticated capture route (H11).

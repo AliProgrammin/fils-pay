@@ -21,8 +21,10 @@ open the checkout page, pay, double-click check).
 
 - The rows 30 to 90 are with the final CPU caps (Postgres 0.90, Caddy 0.40,
   API 0.50). At 90 users it still completes every checkout, but slower. At
-  120 users it is past the limit: it turns the excess away with fast 503s
-  and still completes every checkout it accepts.
+  120 users it is past the limit: checkouts drop to 10.7/s, pay p95 rises to
+  7.4 s, and the excess is refused with 503 + Retry-After; every accepted
+  checkout still completes. The API refuses work when its database queue is
+  full, not when it gets slow, so accepted payments slow down first.
 - A first run with Postgres capped at 0.30 CPU (all caps adding up to
   exactly 1.0) served only about 30 users at the same speed (50 users: pay
   p95 3.0 s). The live server's shared vCPU is about 3x slower than our
@@ -201,7 +203,7 @@ most 400 API requests in flight, and when the api is not reachable (for
 example while it restarts) nginx also answers a JSON `503` with
 `Retry-After: 2` instead of an HTML 502.
 
-Test on the laptop (same Docker limits; not yet repeated on the live server): 400 users (more than 3 times the laptop limit), 2 minutes. On the live server, the 120-user row in "Live server" shows the same fast 503s.
+Test on the laptop (same Docker limits; not yet repeated on the live server): 400 users (more than 3 times the laptop limit), 2 minutes. On the live server, the 120-user row in "Live server" also shows 503s, but accepted payments are slower there (pay p95 7.4 s).
 
 | | |
 |---|---|
@@ -294,6 +296,8 @@ docker compose -f ops/docker-compose.prod.yml -p filspay-cap exec -T postgres \
 BASE_URL=http://localhost:8097 PROJECT=filspay-cap VUS=400 KILL_AFTER=80 scripts/load/chaos.sh
 ```
 
-k6 summaries go to `scripts/load/results/` (not committed). The test
+k6 summaries go to `scripts/load/results/` (not committed). The summaries
+of the live-server runs in this file are in
+[`scripts/load/evidence/`](scripts/load/evidence/) (the API key is removed). The test
 writes demo data: one API key per run and one payment link and payment per
 checkout, on the seeded merchant Alpha Retail Co.

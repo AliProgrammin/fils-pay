@@ -10,7 +10,7 @@ All screenshots come from the running app (seeded data, finance user of Alpha Re
 | Screen | Before | After | What changed |
 |---|---|---|---|
 | Login | [before](ui/theme-dash-login-before.png) | [after](ui/theme-dash-login-after.png) | Charcoal bar, headline and a sign-in card |
-| Login, email in two shops | [before](ui/theme-dash-login-shops-before.png) | [after](ui/theme-dash-login-shops-after.png) | The `409 merchant_id_required` answer lists the shops as buttons. You click a shop name, not type a UUID |
+| Login, email in two shops | [before](ui/theme-dash-login-shops-before.png) | [after](ui/theme-dash-login-shops-after.png) | The page lists the shops from `POST /v1/auth/login/shops` as buttons. You click a shop name, not type a UUID |
 | Login, code step | none | [after](ui/theme-dash-login-otp-after.png) | Expiry time shown in Bahrain time |
 | Transactions | [before](ui/theme-dash-transactions-before.png) | [after](ui/theme-dash-transactions-after.png) | Status chips, status filter pills, right-aligned 3-decimal amounts, zebra rows, sticky header row |
 | Transaction and refund drawer | [before](ui/theme-dash-refund-before.png) | [after](ui/theme-dash-refund-after.png) | Main figures at the top. The refund panel shows the amount left to refund |

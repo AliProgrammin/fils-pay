@@ -119,7 +119,7 @@ After the fix: all three `ok`, and the full API suite `# pass 501` / `# fail 0`.
 - The check that worked was a second agent that saw only the requirement, not the fix, with its own fresh database.
 - Every miss became a bug id, a test that failed first, and one commit.
 
-One more case of the same kind, not quoted in full here: the FP-300 refunds judge marked "works from start to end, through the API" as FAIL, because merchants start with refunds off and only raw SQL could turn them on. We had already noted this as an open item; the judge made it a blocker. Fixed as **R8**, commit `f169666`, test `apps/api/src/routes/adminRefundsEnabled.fix.test.ts`.
+One more case of the same kind, not quoted in full here: the FP-300 refunds judge marked "works from start to end, through the API" as FAIL, because at that time we read `refunds_enabled = NULL` as "off" and only raw SQL could change the switch. We had already noted this as an open item; the judge made it a blocker. Fixed as **R8**, commit `f169666`, test `apps/api/src/routes/adminRefundsEnabled.fix.test.ts`. Later we withdrew the "NULL = off" reading (bug R4): the handed-over code and migration 0052 say NULL means "no hold", so refunds are on by default and only `false` (a hold) refuses them with `403 refunds_on_hold`. R8 stays: without the switch, support could not put a merchant's refunds on hold except with raw SQL.
 
 ## How to check these claims
 

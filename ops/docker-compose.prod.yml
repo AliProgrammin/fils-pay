@@ -118,7 +118,7 @@ services:
       PORT: "3000"
       SETTLEMENT_INTERNAL_URL: http://settlement:8091
       KYC_UPLOAD_DIR: /app/data/kyc
-      # A payment holds a connection while the acquirer answers (0.2-0.8 s),
+      # A payment holds a connection while the acquirer answers (0.1-0.4 s),
       # so the pool, not the CPU, limits throughput first. Set here, not in
       # .env.production: reporting reads the same variable name.
       PG_POOL_MAX: "60"

@@ -2,6 +2,7 @@
 
 These are the real prompts we sent to the three blind verifier agents, copied from the Claude Code session logs.
 We changed only three things: the local repo path is `<repo>`, the temp folder is `<scratch>`, and the local dev database password is `<dev-db-password>`.
+At the time, our work branch was `handover-fixes`. It now has the same commits as `main`, the submitted branch.
 
 ## The rule
 

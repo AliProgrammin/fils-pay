@@ -126,3 +126,13 @@
 - What it breaks: payments on expired cards are approved and captured, which a real bank refuses. Merchants see a payment that would fail in production.
 - Fix: an expired card is declined as the bank would: 402 `card_declined` with `declineReason: "card_expired"`. A card is valid through the last day of its expiry month on the Asia/Bahrain calendar and the server clock; a 2-digit year means 20YY. Magic test numbers keep priority, and input with no valid month or year is not judged, so every card shape the original API accepted keeps its answer (other teams' tests rely on it). On a payment link, the decline releases the link, which stays payable.
 - Test: apps/api/src/routes/cardValidation.fix.test.ts (expired declined, 2-digit year, magic cards, old shapes still approved, link stays payable); apps/api/src/acquirer/simulator.test.ts ("an expired card is declined as card_expired regardless of the failure-rate roll")
+
+### H13 A request body that is not valid JSON gives a 500
+- Severity: Low
+- Ticket: none (found by our blind live check on 30 Oct)
+- Where: apps/api/src/plugins/errorHandler.ts
+- What is wrong: `POST /v1/payment-links/:id/pay` (and every other JSON route) with the body `notjson`, or an empty JSON body, answered `500 internal_error`.
+- Why it happens: Fastify marks a body it cannot parse as a client error (code `FST_ERR_CTP_*`, status 400), but the one error handler only knew validation errors, upload limits and Postgres 22021, so it logged the parse error as a crash and sent 500.
+- What it breaks: a client mistake looks like a server fault: wrong alerts in the logs and a client that retries a request that can never work.
+- Fix: map Fastify body-parse errors to their own 4xx status with `invalid_request`. Every other unexpected error still gives 500.
+- Test: apps/api/src/plugins/errorHandler.test.ts ("a JSON body that does not parse is a 400, not a server error", "an empty JSON body is a 400")

@@ -77,7 +77,6 @@ the path starts with `scripts/` or `apps/`.
 | D7 | High | Report scope checked child merchant only, not the parent. | Also require `parent_merchant_id = caller`. | `reporting/scope.fix.test.ts` |
 | A9 | High | Recompute tool cleared `test_mode` on test merchants. | Tool no longer touches `test_mode`. | `routes/adminMerchantsRecompute.fix.test.ts` |
 | A13 | Medium | Disabled admin's impersonation grant still worked. | Grant lookup checks `au.status = 'active'`. | `admin/impersonationDisabledAdmin.fix.test.ts` |
-| R4 | High | `refunds_enabled = NULL` passed as enabled. | Only `true` passes. | `refunds/initiateMerchantRefund.test.ts` |
 | D13 | Low | Export summary route had no login check. | Add `requireMerchantAuth`. | `routes/reportingExportSummary.fix.test.ts` |
 
 ### Secrets and keys
@@ -139,7 +138,7 @@ Checked and correct (no bug): API keys and session tokens come from
 | Item | Evidence |
 |---|---|
 | Load shedding: fast `503` + `Retry-After` when the DB pool queue > 30 or event loop delay > 150 ms; nginx caps 400 in-flight API requests. | `plugins/loadShedding.test.ts`, `plugins/loadShedding.burst.test.ts`; 400-user test: 0 server errors (CAPACITY.md). |
-| Restart: `SIGKILL` of the API under 400 users. Docker restarted it in 6 s. 0 unbalanced ledger groups, 0 double charges. | `scripts/load/chaos.sh`, CAPACITY.md "Crash and recovery". |
+| Restart: `SIGKILL` of the API under 400 users (laptop) and 200 users (live server). Docker restarted it in 6 s (laptop) and 8 s (live). 0 unbalanced ledger groups, 0 double charges. | `scripts/load/chaos.sh`, CAPACITY.md "Crash and recovery". |
 | L1, L2 (High, Medium): full-ledger scan and hot key row under load. | Load test (CAPACITY.md); `apiKeys/verify.fix.test.ts` still passes. |
 
 ### Data exposure
@@ -170,7 +169,7 @@ Card checks: the checkout page checks the number (Luhn and length), the CVV
 | No CORS | No CORS plugin; one origin for app and API | Live: preflight from another origin | No `Access-Control-*` headers. |
 | Secrets only on the server | `ops/.env.production` is in `.gitignore`; `git ls-files ops` does not list it | Repo | Not tracked. We cannot see the server's file, so we did not verify its values. |
 | Container limits | `cpus` / `mem_limit` on every service; API 0.5 vCPU / 512 MB | File | Present. |
-| Restart policy | `restart: always` on long-running services | File + chaos test | Present; API back in 6 s. |
+| Restart policy | `restart: always` on long-running services | File + chaos test | Present; API back in 6 s (laptop), 8 s (live). |
 | Logs capped | `json-file`, `max-size 10m`, `max-file 3` | File | On postgres, node services, settlement, web, caddy. |
 
 ## 5. Known residual risks
@@ -184,8 +183,12 @@ Card checks: the checkout page checks the number (Luhn and length), the CVV
 - **Public demo passwords.** Seeded users and passwords are in the repo and in
   HOSTING.md.
 - **No password brute-force limit.** OTP guesses are limited (A7). Wrong
-  passwords are not counted per account or per IP. Only argon2 cost and load
-  shedding slow an attacker.
+  passwords are not counted per account or per IP, at `POST /v1/auth/login`
+  or at `POST /v1/auth/login/shops`. Only argon2 cost and load shedding slow
+  an attacker. `/login/shops` lists shop names only after a correct password,
+  and gives the same `401 invalid_credentials` as login for an unknown email
+  or a wrong password. It hashes once per shop that has the email, so its
+  time grows with that number.
 - **The bank is a simulator.** Real acquirer behaviour and its real signing
   secret are not tested.
 - **One shared DB role.** All services use the `filspay` role, which owns the
@@ -193,12 +196,8 @@ Card checks: the checkout page checks the number (Luhn and length), the CVV
   owner role can drop a trigger.
 - **`ops/.env.docker` is a tracked dev file.** It has sandbox values, for
   example a sandbox `ACQUIRER_CALLBACK_SIGNING_SECRET`. Its header comment
-  now says it is tracked. Production uses `ops/.env.production`. We did
-  not confirm the live secret differs (that needs server access).
-- **Stuck link authorizations are not auto-voided.** After a crash between
-  authorize and finalize, only a retry with the same `Idempotency-Key`
-  finishes the payment (L3). If the customer never retries, the link stays
-  reserved and the card hold stays until the hold expires. No job voids it.
+  now says it is tracked. Production uses `ops/.env.production`. We
+  checked on 30 Oct: the live secret is different from the sandbox one.
 - **SSH (port 22) is open** on the server. We did not check its settings.
 - **Impersonation start is open to every admin role**, by design (support
   needs it). It is safe only while the read-only rules (A8, A12) hold.

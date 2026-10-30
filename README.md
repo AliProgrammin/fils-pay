@@ -44,13 +44,18 @@ Start with [SUBMISSION.md](SUBMISSION.md): results, the findings summary, capaci
 `POST /v1/refunds` (merchant API key or dashboard session, `Idempotency-Key`
 required). Partial and full refunds, the fee is reversed in proportion, two
 refunds at the same moment cannot pay out twice, and a refund can never exceed
-what was captured. A finance admin turns refunds on per merchant in the admin
-console. The refund reaches the ledger, the merchant's signed
-`refund.succeeded` webhook, the transaction timeline, the daily report, the
+what was captured. A finance admin can put one merchant's refunds on hold (and
+release the hold) in the admin console. The refund reaches the ledger, the
+merchant's signed `refund.succeeded` webhook, the transaction timeline, the daily report, the
 nightly payout and reconciliation.
 
 Proof: `scripts/demo_refund.sh` runs the whole flow against a running API and
-checks each step (29 checks, all pass).
+checks each step (29 checks, all pass). On a migrated and seeded database:
+
+```sh
+(cd apps/api && WEBHOOK_ALLOW_PRIVATE_TARGETS=true ACQUIRER_FAILURE_RATE=0 PORT=3100 npx tsx src/index.ts) &
+API_URL=http://localhost:3100 DATABASE_URL=$DATABASE_URL scripts/demo_refund.sh
+```
 
 ## Notes in this repo that are wrong
 
@@ -91,5 +96,6 @@ Tests (Postgres from `ops/docker-compose.yml`, then a migrated database):
 npm install
 export DATABASE_URL=postgres://filspay:filspay_dev_password@localhost:5432/filspay
 npm run migrate && npm test
+npm run seed            # the Go tests read the seeded fee schedule
 cd apps/settlement && go test ./...
 ```

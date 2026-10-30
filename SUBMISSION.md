@@ -15,8 +15,8 @@
 
 | | Before | After |
 |---|---|---|
-| Bugs found and fixed | | **105** (18 critical, 41 high, 33 medium, 13 low) |
-| TypeScript tests | 414 / 430 pass | **708 / 708** |
+| Bugs found and fixed | | **105** (18 critical, 40 high, 33 medium, 14 low) |
+| TypeScript tests | 414 / 430 pass | **711 / 711** |
 | Go tests | 54 / 54 | **84 / 84** |
 | Fresh database | migrations failed | 86 migrations run clean |
 | Refunds (FP-300) | `501` / `404` | **live, end to end** |
@@ -51,8 +51,8 @@ Proof: `scripts/demo_refund.sh` (29 checks, all pass) and `scripts/smoke_hosted.
 Full method and numbers: [CAPACITY.md](CAPACITY.md). Load test: `scripts/load/` (k6, checkout scenario: create a payment link, open checkout, pay, double-click check).
 
 - **Estimate: about 70 concurrent checkout users** on the live server: about 12 completed checkouts per second, about 63 HTTP requests per second, pay call p95 1.4 s, 0 failed checkouts, 0 server errors.
-- **Past the limit:** at 90 users every checkout still completes (pay p95 2.2 s); at 120 users the API turns the excess away with a fast `503` + `Retry-After` and still completes every checkout it accepts. At 400 users (laptop test): 0 errors other than fast 503s.
-- **Restart and recovery (laptop test):** the API was killed mid-load; Docker restarted it in 6 s; the ledger balanced, 0 double charges, paid links = captured payments.
+- **Past the limit:** at 90 users every checkout still completes (pay p95 2.2 s); at 120 users it is past the limit: checkouts drop to 10.7/s, pay p95 rises to 7.4 s, and 92 requests (0.6/s) are refused with `503` + `Retry-After`; 0 failed checkouts, 0 server errors. The API refuses work when its database queue is full, not when it gets slow, so accepted payments slow down before the excess is refused. At 400 users (laptop test): 0 errors other than 503s, median 1 ms to get the 503.
+- **Restart and recovery:** we killed the API (`kill -9`) in the middle of a 200-user test on the live server. Docker restarted it; it was healthy again in 8 s (6 s on the laptop). The ledger balanced, 0 double charges. That test found L5 (links cut off mid-payment stayed reserved); the fix is a recovery sweep, see CAPACITY.md.
 - **Five bugs found by the load and crash tests** and fixed: L1 ledger check scanned the whole ledger on every write, L2 hot API-key row, L3 payment cut off by a crash left the card held, L4 unbounded simulator memory, L5 links cut off by a crash stayed reserved for ever (now a recovery sweep).
 
 ## 5. Hosting architecture
@@ -65,7 +65,7 @@ FILSPAY_DOMAIN=64-227-145-174.sslip.io FILSPAY_HTTP_PORT=127.0.0.1:8080 docker c
 
 ## 6. UI and UX
 
-19 matched before/after screens of checkout, the merchant dashboard and the admin console: [docs/UI-BEFORE-AFTER.md](docs/UI-BEFORE-AFTER.md). Three examples:
+18 matched before/after screens of checkout, the merchant dashboard and the admin console: [docs/UI-BEFORE-AFTER.md](docs/UI-BEFORE-AFTER.md). Three examples:
 
 - **Checkout success:** before, a raw ISO time and no amount; after, a receipt with merchant, amount (3 decimals), reference and local time.
 - **Reconciliation:** before, a false gap of -7143.675 BD crashed the page; after, gap 0.000 BD, "Reconciled".
@@ -206,7 +206,7 @@ After the fix: all three `ok`, and the full API suite `# pass 501` / `# fail 0`.
 - The check that worked was a second agent that saw only the requirement, not the fix, with its own fresh database.
 - Every miss became a bug id, a test that failed first, and one commit.
 
-One more case of the same kind, not quoted in full here: the FP-300 refunds judge marked "works from start to end, through the API" as FAIL, because merchants start with refunds off and only raw SQL could turn them on. We had already noted this as an open item; the judge made it a blocker. Fixed as **R8**, commit `f169666`, test `apps/api/src/routes/adminRefundsEnabled.fix.test.ts`.
+One more case of the same kind, not quoted in full here: the FP-300 refunds judge marked "works from start to end, through the API" as FAIL, because at that time we read `refunds_enabled = NULL` as "off" and only raw SQL could change the switch. We had already noted this as an open item; the judge made it a blocker. Fixed as **R8**, commit `f169666`, test `apps/api/src/routes/adminRefundsEnabled.fix.test.ts`. Later we withdrew the "NULL = off" reading (bug R4): the handed-over code and migration 0052 say NULL means "no hold", so refunds are on by default and only `false` (a hold) refuses them with `403 refunds_on_hold`. R8 stays: without the switch, support could not put a merchant's refunds on hold except with raw SQL.
 
 ## How to check these claims
 

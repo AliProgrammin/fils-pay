@@ -158,7 +158,7 @@ transaction list, and a full API flow: API key, authorize 10.000 BD,
 capture, partial refund of 4.000 BD. Each check prints `PASS` or `FAIL`; the
 last line is `RESULT: ALL PASS` on success. It needs `OTP_DEV_EXPOSE=true`
 on the server (and `COOKIE_SECURE=false` when `BASE_URL` is plain http).
-It changes demo data: it turns refunds on for Alpha Retail Co and adds one
+It changes demo data: it releases any refunds hold on Alpha Retail Co and adds one
 payment and one refund.
 
 ## 5. Demo logins
@@ -174,7 +174,7 @@ is a demo-only setting.
 | Email | Role |
 |---|---|
 | `superadmin@filspay.test` | super_admin |
-| `finance@filspay.test` | finance (can turn refunds on per merchant) |
+| `finance@filspay.test` | finance (can put a merchant's refunds on hold, or release the hold) |
 | `support@filspay.test` | support |
 
 **Merchant dashboard** (`/dashboard/login`), password `FilsPaySeed!2026`.
@@ -193,10 +193,12 @@ lists the shops by name and you pick one. The merchant ID is only needed for
 The seed makes the same IDs each time. The admin console's merchant list
 shows all of them.
 
-**Refunds** start off for each merchant. To demo them: sign in to the admin
-console as `finance@filspay.test`, open the merchant, turn refunds on. Then
-refund a captured payment from the merchant dashboard or the API (see
-`scripts/smoke_hosted.sh` for the API calls).
+**Refunds** are on for each merchant unless support puts them on hold. To
+demo a refund, refund a captured payment from the merchant dashboard or the
+API (see `scripts/smoke_hosted.sh` for the API calls). To demo the hold:
+sign in to the admin console as `finance@filspay.test`, open the merchant,
+choose "Put refunds on hold"; refunds then answer `403 refunds_on_hold`
+until "Release the hold".
 
 ## 6. Before a real launch (not the demo)
 

@@ -136,9 +136,9 @@ Before: the 16rem label column pushes the values to the right edge, and the long
 |---|---|
 | ![](ui/admin-merchant-profile-before.png) | ![](ui/admin-merchant-profile-after.png) |
 
-Before: "Current negotiated rate 2.45% (245 bps), effective 01/03/2026". This was the newest row by entry time (a March back-correction). Billing charged 225 bps. After: "2.25% (225 bps), effective 01/08/2026", the rate billing uses. The "after" image is taken after the refunds switch was turned on (see 15).
+Before: "Current negotiated rate 2.45% (245 bps), effective 01/03/2026". This was the newest row by entry time (a March back-correction). Billing charged 225 bps. After: "2.25% (225 bps), effective 01/08/2026", the rate billing uses. The "after" image shows the refunds switch (see 15).
 
-### 15. Refunds switch (R8, R4)
+### 15. Refunds hold switch (R8)
 
 | Before | After |
 |---|---|
@@ -146,7 +146,7 @@ Before: "Current negotiated rate 2.45% (245 bps), effective 01/03/2026". This wa
 
 Same screen as the "before" in 14: the old UI had no refunds switch.
 
-Before: no Refunds row and no control. Turning refunds on was only possible with raw SQL. After: a "Refunds on/off" row with a "Turn refunds on/off" button (finance and super_admin only, audited). The image shows the notice after it was clicked.
+Before: no Refunds row and no control. Putting a merchant's refunds on hold was only possible with raw SQL. After: a Refunds row ("on" or "on hold"; no hold in the database shows as "on") with a "Put refunds on hold" / "Release the hold" button (finance and super_admin only, audited). The image was taken before the wording changed from "Turn refunds on/off" to the hold wording.
 
 ### 16. Balance adjust and credit forms (UX7, UX8)
 
@@ -178,13 +178,16 @@ Before: the API accepted today's date and sent it to the settlement service. Her
 |---|---|
 | ![](ui/dash-login-after.png) | ![](ui/dash-login-two-shops-after.png) |
 
-Before: the login form asked for a 36-character merchant ID (UUID), the email and the password. Users cannot remember a UUID. After: the form shows only email and password. `POST /v1/auth/login` now accepts a request without `merchantId`. The API finds the user by email and checks the password against each active shop that has this email:
+Before: the login form asked for a 36-character merchant ID (UUID), the email and the password. Users cannot remember a UUID. After: the form shows only email and password.
 
-- No match: `401 invalid_credentials`, the same as a wrong password today. When no user exists, the API still checks one dummy hash, so the time is similar.
-- One match: the normal password + OTP login for that user.
-- More than one match (only possible with the correct password): `409 merchant_id_required`, with `shops: [{ merchantId, displayName }]` for the shops whose user matched the password. The page then shows the Merchant ID field with a plain message. The seed user `owner@alpharetail.example` is in Alpha Retail and Beta Digital, so it shows this case (right image).
+`POST /v1/auth/login` is unchanged: it still needs `merchantId`, `email` and `password` (a missing one is `400 invalid_request`), so clients and regression tests written for the original API keep working. A new route, `POST /v1/auth/login/shops` (`{ email, password }`), finds the user by email and checks the password against each active shop that has this email, the same way login checks it. It starts no OTP and no session:
 
-A request with the `merchantId` key works exactly as before (an empty or `null` value is `400 invalid_request`) (`scripts/smoke_hosted.sh` and `scripts/demo_refund.sh` are unchanged and still pass their login steps). The "Sign in to a specific shop" link shows the field at any time. If the last good sign-in used a merchant ID, the page remembers it and shows the field filled in. Tests: `apps/api/src/routes/auth.optionalMerchantId.test.ts`.
+- No match: `401 invalid_credentials`, the same answer as a wrong password at login. When no user exists, the API still checks one dummy hash, so the time is similar.
+- One or more matches: `200 { shops: [{ merchantId, displayName }] }`, only the active shops whose user matched the password.
+
+The page calls `/login/shops` when no merchant ID is given. One shop: it logs in to that shop at once (normal password + OTP login). More than one: it lists the shops by name and you choose one; the page then logs in with that shop's merchant ID. The seed user `owner@alpharetail.example` is in Alpha Retail and Beta Digital, so it shows this case (right image).
+
+The "Sign in to a specific shop" link shows the Merchant ID field at any time. If the last good sign-in used a merchant ID, the page remembers it and shows the field filled in. Tests: `apps/api/src/routes/auth.loginShops.test.ts`.
 
 ### 20. Plain-English error messages (UX10)
 
@@ -210,7 +213,7 @@ Checked in the browser (Playwright, local stack): wrong password, resend too soo
 
 ## New UX fixes made with this evidence
 
-These are small fixes, in the style of the code. API paths and response shapes did not change (UX9 only adds an optional field and one new 409 error).
+These are small fixes, in the style of the code. Existing API paths, request rules, status codes and response shapes did not change (UX9 only adds the new route `POST /v1/auth/login/shops`).
 
 | Id | Fix | Files |
 |---|---|---|
@@ -222,7 +225,7 @@ These are small fixes, in the style of the code. API paths and response shapes d
 | UX6 | Dashboard at phone width: stacked label/value list, wrapping values, tables that scroll inside themselves | `apps/web/src/dashboard.css` |
 | UX7 | Admin "Adjust balance" is typed in BD (negative allowed), like "Issue credit" | `apps/admin/src/pages/merchants/MerchantDetailPage.tsx` |
 | UX8 | Admin checkbox sits on the same line as its text; "Rebuild analytics" text matches the U5 behaviour | `apps/admin/src/admin.css`, `MerchantDetailPage.tsx`, `SettlementPage.tsx` |
-| UX9 | Merchant login needs only email + password; the Merchant ID field appears on `409 merchant_id_required` or on request | `apps/api/src/routes/auth.ts`, `apps/web/src/pages/dashboard-login/LoginPage.tsx`, `apps/web/src/api/dashboardAuth.ts`, `apps/web/src/dashboard.css` |
+| UX9 | Merchant login needs only email + password: the page finds the shops with `POST /v1/auth/login/shops`, then logs in with the chosen shop's merchant ID; the Merchant ID field appears on request | `apps/api/src/routes/auth.ts`, `apps/web/src/pages/dashboard-login/LoginPage.tsx`, `apps/web/src/api/dashboardAuth.ts`, `apps/web/src/dashboard.css` |
 | UX10 | One error-message map per app: every API code, a network failure and an unknown code become a short plain-English message; raw enum values in the UI become words | `apps/web/src/errors.ts`, `apps/admin/src/errors.ts`, both `api/client.ts`, every page that shows an error |
 
 Checks: `npm run typecheck` and `npm run build` pass for `apps/web` and `apps/admin`. `npm test` passes for web (13/13) and admin (1/1). In the browser on the after stack: `12.3456` is rejected with the BD message, `12.5` makes a 12.500 BHD link, and an admin adjust of `1.250` and then `-1.250` changes the balance by exactly ±1.250 BHD.
@@ -243,9 +246,9 @@ A click-through of both front ends in a real browser (Playwright, 1280 px and 37
 | Dates | Native date inputs in the theme red, max = today in Bahrain. "To" is inclusive on screen and the request sends To + 1 day, because the API's `to` is exclusive. To before From shows a plain message and sends nothing. Presets: Today, Yesterday, Last 7 days, This month, Last month (Bahrain dates). The "(exclusive)" labels are gone. Payment-link expiry is typed in Bahrain time and must be in the future. | `apps/*/src/dateRange.ts`, `components/DateRangeFields.tsx` |
 | Feedback | One toast per app (`role="status"`, no sound): "Refund of 4.000 BHD sent", "Link copied", "Webhook disabled", "Credit submitted for approval". Every action button shows a pressed state and a busy label ("Refunding…") and cannot submit twice. Failures keep the existing plain messages. | `components/Toast.tsx`, `components/useAction.ts` |
 | References | The bank reference is shown in full with a copy button; copy buttons have a gap from the text they copy. | `CopyButton.tsx`, `dashboard.css` |
-| Refunds | A refund made stale by another tab says "This payment was already refunded (maybe in another tab)." and reloads the totals; "refunds off" says "Refunds are paused for your account. Contact FilsPay support." Capture is typed in BD. | `RefundDrawer.tsx`, `TransactionDetailPage.tsx`, `errors.ts` |
+| Refunds | A refund made stale by another tab says "This payment was already refunded (maybe in another tab)." and reloads the totals; refunds on hold (`403 refunds_on_hold`) says "Refunds are paused for your account. Contact FilsPay support." Capture is typed in BD. | `RefundDrawer.tsx`, `TransactionDetailPage.tsx`, `errors.ts` |
 | Checkout | Card checks before sending: Luhn ("Check the card number"), expiry before this Bahrain month ("This card has expired"), CVV 3–4 digits. These checks are in the page only. On the server, only an expired card is declined (`402 card_declined`, `card_expired`); Luhn, length, CVV and month shape get the original API's answers, so other teams' regression tests still pass (see [SECURITY.md](../SECURITY.md)). Focus moves to the result. A paid link reloaded shows what the public link data has; no "invoice". | `pages/checkout/cardValidation.ts`, `CheckoutPage.tsx` |
-| Admin | Confirm before turning refunds on/off and before issuing a credit; webhook replay offers only `failed`/`exhausted`; list MDR column is "Base MDR", the detail shows the rate in force; KYC buttons hidden once approved. | `apps/admin/src/pages/**` |
+| Admin | Confirm before putting refunds on hold or releasing the hold and before issuing a credit; webhook replay offers only `failed`/`exhausted`; list MDR column is "Base MDR", the detail shows the rate in force; KYC buttons hidden once approved. | `apps/admin/src/pages/**` |
 | Phone | A Menu button opens the nav; list tables become cards with every amount visible. | `DashboardLayout.tsx`, `AdminLayout.tsx`, both CSS files |
 | Words | Amounts group thousands (`135,882.772 BHD`); dates read "1 Sep 2026"; timeline and labels use plain words. | `format.ts` in both apps |
 
@@ -279,7 +282,7 @@ Checked in a real browser (Playwright, 1280 px and 375 px) on a fresh migrated a
 - Detail pages (transaction, payment link, settlement batch, webhook endpoint): an id that is not a UUID, or an unknown id, shows "… not found" with a "Back to …" button. A bad id sends no request.
 - New payment link: expiry starts at now + 7 days, Bahrain time, rounded up to the next full hour. It stays editable and must be in the future.
 - Checkout at 480 px and less: month and year share a row and CVV has its own row, so "2030" fits. Desktop keeps three columns.
-- Admin merchants at 600 px and less: each merchant is a card (name, status chips, base MDR, refunds on/off, "Open merchant"). The table also gets a Refunds column.
+- Admin merchants at 600 px and less: each merchant is a card (name, status chips, base MDR, refunds on / on hold, "Open merchant"). The table also gets a Refunds column.
 - Login pages: with no earlier sign-in in this browser, the login page does not call `/auth/me` (it could only answer 401). A signed-in user who opens the login page is still sent on. Other pages still check the session.
 
 | Admin merchants at 375 px | Bad transaction id at 375 px |

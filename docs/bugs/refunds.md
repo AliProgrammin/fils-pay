@@ -42,16 +42,6 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 - Fix: Both lookups are `WHERE id = $1 AND merchant_id = $2` with the authenticated merchant id, and the authenticated id is what is passed on. Another merchant's transaction answers 404 (`transaction_not_found`), never 403, so its existence is not confirmed.
 - Test: `apps/api/src/payments/processRefund.test.ts` ("another merchant's transaction answers 404 ..."), `apps/api/src/refunds/initiateMerchantRefund.test.ts` ("another merchant's existing transactionId is a 404 ...").
 
-### R4 `refunds_enabled = NULL` is treated as enabled
-- Severity: High
-- Ticket: FP-300
-- Where: `apps/api/src/refunds/initiateMerchantRefund.ts` (`assertRefundsNotOnHold`, now `assertRefundsEnabled`)
-- What is wrong: Every merchant could refund, including merchants support never enabled.
-- Why it happens: The check was `refunds_enabled === false`. Migration 0052 adds the column with no default, so every merchant starts at NULL, and the note in 0052 says "NULL is treated as disabled until support explicitly enables refunds per merchant, so nothing refunds by accident at launch". The code read NULL as "no hold".
-- What it breaks: At launch every merchant gets live refunds at once, with no per-merchant control.
-- Fix: Only `refunds_enabled = true` passes. NULL and false answer 403 `refunds_not_enabled`. The test helper enables refunds for its merchants, and a new test covers NULL.
-- Test: `apps/api/src/refunds/initiateMerchantRefund.test.ts` ("a refund is refused when refunds_enabled is NULL (never enabled)").
-
 ### R5 Fee reversal does not add up to the fee charged
 - Severity: High
 - Ticket: FP-300
@@ -72,12 +62,12 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 - Fix: Status now follows the refunded total first: 0 refunded keeps the capture status; `0 < refunded < captured` is `partially_refunded`; `refunded = captured` is `refunded`. When a refund moves a payment out of the capture statuses, `processRefund` releases the active hold, because capture is no longer possible (same rule capture uses when nothing is left).
 - Test: `apps/api/src/payments/refundState.test.ts` ("a partial capture refunded in full is refunded", "... in part is partially_refunded"), `apps/api/src/payments/processRefund.test.ts` ("refunding everything captured on a partial capture lands on refunded and releases the hold").
 
-### R8 No way to turn refunds on, except raw SQL
+### R8 No way to put refunds on hold, except raw SQL
 - Severity: High
 - Ticket: FP-300 ("works from start to end, through the API")
 - Where: merchants.refunds_enabled (migration 0052), apps/api/src/routes/adminMerchants.ts
-- What is wrong: every merchant starts with refunds off (NULL means off), and no API or console screen could change it.
+- What is wrong: `refunds_enabled` is a per-merchant hold switch (NULL = no hold, false = on hold, migration 0052), but no API or console screen could change it.
 - Why it happens: the switch was added to the database, but the admin route and the console button were never built.
-- What it breaks: no merchant can refund until someone edits the production database by hand. Found by our blind judge.
-- Fix: `PUT /v1/admin/merchants/:id/refunds-enabled` for finance and super_admin, with an audit row in the same transaction, a "Turn refunds on/off" button on the admin merchant page, and `refundsEnabled` in the admin merchant data. The demo script now uses it instead of SQL.
+- What it breaks: support cannot put a merchant's refunds on hold (a chargeback-rate review, a compliance hold), or release the hold, without editing the production database by hand. Found by our blind judge.
+- Fix: `PUT /v1/admin/merchants/:id/refunds-enabled` (`enabled: false` puts refunds on hold, `true` releases the hold) for finance and super_admin, with an audit row in the same transaction, a "Put refunds on hold" / "Release the hold" button on the admin merchant page, and `refundsEnabled` in the admin merchant data (`refunds_enabled !== false`, so NULL shows as refunds on). While on hold a refund answers 403 `refunds_on_hold`, as in the original code.
 - Test: apps/api/src/routes/adminRefundsEnabled.fix.test.ts
