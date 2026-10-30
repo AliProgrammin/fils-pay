@@ -7,7 +7,7 @@ import { Pager } from "../../components/Pager.js";
 import { DateRangeFields } from "../../components/DateRangeFields.js";
 import { usePagedList } from "../../components/usePagedList.js";
 import { bhd, calendarDate, dateTime, statusLabel } from "../../format.js";
-import { bahrainToday, exclusiveTo, rangeError, rangeLabel } from "../../dateRange.js";
+import { bahrainToday, exclusiveTo, rangeError, rangeIncludesDay, rangeLabel } from "../../dateRange.js";
 import { capitalize } from "../../utils/helpers.js";
 import type { SettlementBatchDto, SettlementBatchStatus } from "../../types.js";
 
@@ -154,6 +154,11 @@ export function SettlementBatchListPage() {
                       <button type="button" className="dash-text-button" onClick={clearFilters}>
                         Clear filters
                       </button>
+                      {rangeIncludesDay(from, to, bahrainToday()) ? (
+                        <p className="dash-hint">
+                          Today's payments join a batch at the daily close, at midnight Bahrain time.
+                        </p>
+                      ) : null}
                     </>
                   ) : (
                     "No settlement batches yet."

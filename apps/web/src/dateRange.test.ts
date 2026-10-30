@@ -11,6 +11,7 @@ import {
   inclusiveTo,
   presetRange,
   rangeError,
+  rangeIncludesDay,
   rangeLabel,
 } from "./dateRange.js";
 
@@ -77,4 +78,12 @@ test("a new payment link expires in 7 days, at the next full hour, Bahrain time"
   assert.equal(defaultLinkExpiryInputValue(new Date("2026-10-30T09:00:00Z")), "2026-11-06T13:00");
   const iso = bahrainInputToIso(defaultLinkExpiryInputValue());
   assert.ok(iso !== null && Date.parse(iso) > Date.now() + 7 * 86_400_000);
+});
+
+test("a range includes a day when the day is between From and the inclusive To", () => {
+  assert.equal(rangeIncludesDay("2026-10-30", "2026-10-30", "2026-10-30"), true);
+  assert.equal(rangeIncludesDay("2026-10-30", "", "2026-10-30"), true);
+  assert.equal(rangeIncludesDay("", "", "2026-10-30"), true);
+  assert.equal(rangeIncludesDay("2026-10-01", "2026-10-29", "2026-10-30"), false);
+  assert.equal(rangeIncludesDay("2026-10-31", "", "2026-10-30"), false);
 });

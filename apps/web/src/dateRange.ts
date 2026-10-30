@@ -108,6 +108,12 @@ export function rangeLabel(from: string, to: string): string {
   return "";
 }
 
+/** True when `day` falls inside the inclusive range; an empty end is open.
+ *  YYYY-MM-DD strings compare correctly as text. */
+export function rangeIncludesDay(from: string, to: string, day: string): boolean {
+  return (!from || from <= day) && (!to || day <= to);
+}
+
 /** Now, as a `datetime-local` value in Bahrain time ("YYYY-MM-DDTHH:mm"). */
 export function bahrainNowInputValue(now: Date = new Date()): string {
   return new Date(now.getTime() + BAHRAIN_OFFSET_MS).toISOString().slice(0, 16);
