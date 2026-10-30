@@ -62,3 +62,26 @@ test("export-summary reports the refunded total next to gross", async () => {
   assert.equal(res.statusCode, 200, res.body);
   assert.deepEqual(res.json(), { totalDays: 2, grossFils: 14000, refundedFils: 2000 });
 });
+
+// W5: a merchantId in the filter that is not a UUID is bad input (400), not a 500.
+test("GET /v1/reporting/transactions with a non-UUID filter merchantId answers 400 invalid_request", async () => {
+  const m = await pool.query<{ id: string }>(
+    `INSERT INTO merchants (display_name, mdr_bps) VALUES ($1, 250) RETURNING id`,
+    [`Report Scope ${randomUUID()}`],
+  );
+  const merchantId = m.rows[0]!.id;
+  const u = await pool.query<{ id: string }>(
+    `INSERT INTO merchant_users (merchant_id, email, role, password_hash) VALUES ($1, $2, 'owner', 'x') RETURNING id`,
+    [merchantId, `owner-${randomUUID()}@example.test`],
+  );
+  const { rawKey } = await issueApiKey(pool, config, { merchantId, createdBy: u.rows[0]!.id, label: "scope" });
+  for (const bad of ["not-a-uuid", 42]) {
+    const res = await app.inject({
+      method: "GET",
+      url: `/v1/reporting/transactions?filter=${encodeURIComponent(JSON.stringify({ merchantId: bad }))}`,
+      headers: { authorization: `Bearer ${rawKey}` },
+    });
+    assert.equal(res.statusCode, 400, res.body);
+    assert.equal(res.json().error, "invalid_request");
+  }
+});
