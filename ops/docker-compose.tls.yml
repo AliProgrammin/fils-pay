@@ -1,0 +1,35 @@
+# Optional HTTPS layer. Use with the prod file:
+#   FILSPAY_DOMAIN=1-2-3-4.sslip.io FILSPAY_HTTP_PORT=127.0.0.1:8080 \
+#   docker compose -f ops/docker-compose.prod.yml -f ops/docker-compose.tls.yml up -d --build
+# Caddy takes ports 80/443 (port 80 only redirects to https). The web
+# container moves to 127.0.0.1:8080, so it is not public: Docker-published
+# ports skip ufw, so binding to 127.0.0.1 is what keeps it private.
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: always
+    depends_on: [web]
+    environment:
+      FILSPAY_DOMAIN: ${FILSPAY_DOMAIN:?set FILSPAY_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    cpus: 0.10
+    mem_limit: 96m
+  # Caddy's 0.10 CPU is taken from these, so the stack still adds up to
+  # exactly 1.0 CPU: api 0.50 + postgres 0.30 + caddy 0.10 + web 0.05
+  # + reporting 0.02 + settlement 0.03.
+  postgres:
+    cpus: 0.30
+  web:
+    cpus: 0.05
+  reporting:
+    cpus: 0.02
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,7 @@
+# HTTPS in front of the web container. FILSPAY_DOMAIN must resolve to this
+# server (e.g. 1-2-3-4.sslip.io); Caddy gets and renews the certificate.
+{$FILSPAY_DOMAIN} {
+	encode gzip
+	reverse_proxy web:80
+	header Strict-Transport-Security "max-age=31536000"
+}
