@@ -10,6 +10,7 @@ import { errorMessage } from "../../errors.js";
 import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
 import { dateTime } from "../../format.js";
 import { useConfirmDialog } from "../../components/ConfirmDialog.js";
+import { useToast } from "../../components/Toast.js";
 import type { WebhookEndpointDto } from "../../types.js";
 
 /**
@@ -27,8 +28,9 @@ export function WebhookEndpointListPage() {
   const [endpoints, setEndpoints] = useState<WebhookEndpointDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [busy, setBusy] = useState<{ id: string; action: "toggle" | "delete" } | null>(null);
   const [confirmDialog, confirm] = useConfirmDialog();
+  const notify = useToast();
 
   const load = useCallback(async () => {
     if (!merchantId) return;
@@ -48,25 +50,27 @@ export function WebhookEndpointListPage() {
   }, [load]);
 
   async function handleToggle(endpoint: WebhookEndpointDto): Promise<void> {
-    if (!merchantId) return;
-    setBusyId(endpoint.id);
+    if (!merchantId || busy) return;
+    setBusy({ id: endpoint.id, action: "toggle" });
     setError(null);
     try {
+      const turningOff = endpoint.status === "active";
       await updateWebhookEndpoint(merchantId, endpoint.id, {
-        status: endpoint.status === "active" ? "disabled" : "active",
+        status: turningOff ? "disabled" : "active",
       });
+      notify(turningOff ? "Webhook disabled" : "Webhook enabled");
       await load();
     } catch (err) {
       setError(errorMessage(err, "webhookUpdate"));
     } finally {
-      setBusyId(null);
+      setBusy(null);
     }
   }
 
   // delete 500s if the endpoint has deliveries — am
   // MK: fixed in FP-240
   async function handleDelete(endpoint: WebhookEndpointDto): Promise<void> {
-    if (!merchantId) return;
+    if (!merchantId || busy) return;
     // A hard delete — the endpoint row is gone, while its delivery log
     // outlives it. Irreversible, so it asks first.
     const confirmed = await confirm({
@@ -76,15 +80,16 @@ export function WebhookEndpointListPage() {
       cancelLabel: "Keep it",
     });
     if (!confirmed) return;
-    setBusyId(endpoint.id);
+    setBusy({ id: endpoint.id, action: "delete" });
     setError(null);
     try {
       await deleteWebhookEndpoint(merchantId, endpoint.id);
+      notify("Webhook endpoint deleted");
       await load();
     } catch (err) {
       setError(errorMessage(err, "webhookUpdate"));
     } finally {
-      setBusyId(null);
+      setBusy(null);
     }
   }
 
@@ -104,7 +109,7 @@ export function WebhookEndpointListPage() {
       {error ? <p className="dash-error" role="alert">{error}</p> : null}
 
       <div className="dash-table-wrap">
-        <table className="dash-table">
+        <table className="dash-table dash-table-cards">
           <thead>
             <tr>
               <th>URL</th>
@@ -117,32 +122,40 @@ export function WebhookEndpointListPage() {
           <tbody>
             {endpoints.map((endpoint) => (
               <tr key={endpoint.id}>
-                <td>
+                <td data-label="URL" className="dash-wrap">
                   <Link to={`/dashboard/webhooks/${endpoint.id}`}>{endpoint.url}</Link>
                 </td>
-                <td>
+                <td data-label="Secret prefix">
                   <code>{endpoint.secretPrefix}</code>
                 </td>
-                <td>
+                <td data-label="Status">
                   <StatusChip status={endpoint.status} />
                 </td>
-                <td className="dash-nowrap">{dateTime(endpoint.createdAt)}</td>
-                <td className="dash-nowrap">
+                <td className="dash-nowrap" data-label="Created">{dateTime(endpoint.createdAt)}</td>
+                <td className="dash-nowrap" data-label="Actions">
                   <button
                     type="button"
                     className="dash-button dash-button-small"
-                    disabled={busyId === endpoint.id}
+                    disabled={busy !== null}
+                    aria-busy={(busy?.id === endpoint.id && busy.action === "toggle") || undefined}
                     onClick={() => void handleToggle(endpoint)}
                   >
-                    {endpoint.status === "active" ? "Disable" : "Enable"}
+                    {busy?.id === endpoint.id && busy.action === "toggle"
+                      ? endpoint.status === "active"
+                        ? "Disabling…"
+                        : "Enabling…"
+                      : endpoint.status === "active"
+                        ? "Disable"
+                        : "Enable"}
                   </button>{" "}
                   <button
                     type="button"
                     className="dash-button dash-button-small dash-button-danger"
-                    disabled={busyId === endpoint.id}
+                    disabled={busy !== null}
+                    aria-busy={(busy?.id === endpoint.id && busy.action === "delete") || undefined}
                     onClick={() => void handleDelete(endpoint)}
                   >
-                    Delete
+                    {busy?.id === endpoint.id && busy.action === "delete" ? "Deleting…" : "Delete"}
                   </button>
                 </td>
               </tr>
@@ -156,7 +169,7 @@ export function WebhookEndpointListPage() {
         </table>
       </div>
 
-      {loading ? <p className="dash-loading" role="status">Loading...</p> : null}
+      {loading ? <p className="dash-loading" role="status">Loading…</p> : null}
     </section>
   );
 }

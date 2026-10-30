@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { formatBhd, parseBhdToFils, toFils } from "@filspay/money";
+import { parseBhdToFils } from "@filspay/money";
 import { getMerchant, recomputeTransactionStatuses, setRefundsEnabled, submitKycReview } from "../../api/merchants.js";
 import { adjustBalance } from "../../api/balanceAdjustments.js";
 import { issueCredit } from "../../api/credits.js";
@@ -12,7 +12,17 @@ import { useAdminAuth } from "../../auth/AdminAuthContext.js";
 import { RequireRole } from "../../auth/RequireRole.js";
 import { StatusChip } from "../../components/StatusChip.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
-import { bahrainTodayIso, bhd, formatBusinessDate, formatDate, formatDateTime } from "../../format.js";
+import {
+  bahrainTodayIso,
+  bhd,
+  bhdAmount,
+  formatBusinessDate,
+  formatDate,
+  formatDateTime,
+  label,
+} from "../../format.js";
+import { useAction } from "../../components/useAction.js";
+import { useToast } from "../../components/Toast.js";
 import type { AdminMerchantDetail, CreditReasonCode, RotatedApiKey } from "../../types.js";
 
 export function MerchantDetailPage() {
@@ -22,10 +32,15 @@ export function MerchantDetailPage() {
   const [detail, setDetail] = useState<AdminMerchantDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const notify = useToast();
 
   const [kycNotes, setKycNotes] = useState("");
-  const [busy, setBusy] = useState(false);
+  /** One action at a time on this page; `busyAction` names it for the label. */
+  const [busy, runAction] = useAction();
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [confirmingRefunds, setConfirmingRefunds] = useState(false);
+  /** A credit checked on the client and waiting for the operator to confirm. */
+  const [pendingCredit, setPendingCredit] = useState<{ baseAmountFils: number } | null>(null);
 
   /** Which key the operator has asked to rotate and not yet confirmed. */
   const [pendingRotation, setPendingRotation] = useState<string | null>(null);
@@ -43,6 +58,23 @@ export function MerchantDetailPage() {
 
   const [adjustDeltaBhd, setAdjustDeltaBhd] = useState("");
   const [adjustReason, setAdjustReason] = useState("");
+  const [creditError, setCreditError] = useState<string | null>(null);
+  const [refundsError, setRefundsError] = useState<string | null>(null);
+
+  /** Runs one action with a busy label; a second click while busy does nothing. */
+  async function perform(name: string, fn: () => Promise<void>): Promise<void> {
+    await runAction(async () => {
+      setBusyAction(name);
+      setActionError(null);
+      try {
+        await fn();
+      } catch (err) {
+        setActionError(errorMessage(err));
+      } finally {
+        setBusyAction(null);
+      }
+    });
+  }
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -60,47 +92,30 @@ export function MerchantDetailPage() {
 
   async function handleKycReview(outcome: "approved" | "rejected"): Promise<void> {
     if (!id) return;
-    setBusy(true);
-    setActionError(null);
-    setNotice(null);
-    try {
+    await perform(outcome === "approved" ? "kycApprove" : "kycReject", async () => {
       const result = await submitKycReview(id, {
         outcome,
         notes: kycNotes.trim() ? kycNotes.trim() : undefined,
       });
-      setNotice(
-        `KYC ${outcome}. Onboarding status is now ${result.onboardingStatus} (kycPassed: ${String(
-          result.kycPassed,
-        )}).`,
-      );
+      notify(`KYC ${outcome}. Onboarding is now ${label(result.onboardingStatus)}`);
       setKycNotes("");
       await load();
-    } catch (err) {
-      setActionError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   /** The old key keeps working for a 24h overlap window, then stops. */
   async function handleRotate(keyId: string): Promise<void> {
     if (!id) return;
-    setBusy(true);
-    setActionError(null);
-    setNotice(null);
-    try {
+    await perform("rotate", async () => {
       const rotated = await rotateApiKey(id, keyId, {
         label: rotationLabel.trim() ? rotationLabel.trim() : undefined,
       });
       setRotatedKey(rotated);
       setPendingRotation(null);
       setRotationLabel("");
+      notify("API key rotated. Copy the new key now");
       await load();
-    } catch (err) {
-      setActionError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   // FH: this ends up in adjustMerchantBalanceCache (cache only)
@@ -119,106 +134,106 @@ export function MerchantDetailPage() {
       setActionError("The amount must not be 0.");
       return;
     }
-    setBusy(true);
-    setActionError(null);
-    setNotice(null);
-    try {
+    await perform("adjust", async () => {
       const result = await adjustBalance(id, { deltaFils, reason: adjustReason.trim() });
-      setNotice(
+      notify(
         `Balance adjusted by ${bhd(result.deltaFils)}: ${bhd(
           result.cachedPayableFilsBefore,
-        )} → ${bhd(result.cachedPayableFilsAfter)}.`,
+        )} → ${bhd(result.cachedPayableFilsAfter)}`,
       );
       setAdjustDeltaBhd("");
       setAdjustReason("");
       await load();
-    } catch (err) {
-      setActionError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
-  async function handleIssueCredit(event: React.FormEvent): Promise<void> {
+  /** Step 1: check the amount here, then ask the operator to confirm. */
+  function handleIssueCredit(event: React.FormEvent): void {
     event.preventDefault();
-    if (!id) return;
-    setBusy(true);
-    setActionError(null);
-    setNotice(null);
+    setCreditError(null);
+    // BD in, integer fils out, via the platform's own string-based parser —
+    // never parseFloat, which cannot represent the third decimal exactly.
+    let baseAmountFils: number;
     try {
-      // BD in, integer fils out, via the platform's own string-based parser —
-      // never parseFloat, which cannot represent the third decimal exactly.
-      const baseAmountFils = parseBhdToFils(creditAmountBhd);
-      const record = await issueCredit(id, {
-        baseAmountFils,
-        reasonCode: creditReason,
-        effectiveDate: creditEffectiveDate,
-        reverseFee: creditReverseFee,
-        memo: creditMemo.trim() ? creditMemo.trim() : undefined,
-      });
-      setNotice(
-        record.status === "posted"
-          ? `Credit of ${bhd(record.postedAmountFils)} posted to the ledger (entry group ${
-              record.ledgerEntryGroupId ?? "unknown"
-            }).`
-          : `Credit of ${bhd(record.postedAmountFils)} raised and awaiting a second approver — see Credits.`,
-      );
-      setCreditAmountBhd("");
-      setCreditMemo("");
-      setCreditReverseFee(false);
-      await load();
-    } catch (err) {
-      setActionError(
-        err instanceof RangeError ? "Enter an amount in BD, for example 12.500." : errorMessage(err, "credit"),
-      );
-    } finally {
-      setBusy(false);
+      baseAmountFils = parseBhdToFils(creditAmountBhd);
+    } catch {
+      setCreditError("Enter an amount in BD with up to 3 decimals, for example 12.500.");
+      return;
     }
+    if (baseAmountFils <= 0) {
+      setCreditError("The amount must be more than 0.000 BD.");
+      return;
+    }
+    setPendingCredit({ baseAmountFils });
+  }
+
+  /** Step 2: the operator confirmed. */
+  async function submitCredit(baseAmountFils: number): Promise<void> {
+    if (!id) return;
+    await runAction(async () => {
+      setBusyAction("credit");
+      setCreditError(null);
+      try {
+        const record = await issueCredit(id, {
+          baseAmountFils,
+          reasonCode: creditReason,
+          effectiveDate: creditEffectiveDate,
+          reverseFee: creditReverseFee,
+          memo: creditMemo.trim() ? creditMemo.trim() : undefined,
+        });
+        notify(
+          record.status === "posted"
+            ? `Credit of ${bhd(record.postedAmountFils)} posted`
+            : `Credit of ${bhd(record.postedAmountFils)} submitted for approval`,
+        );
+        setPendingCredit(null);
+        setCreditAmountBhd("");
+        setCreditMemo("");
+        setCreditReverseFee(false);
+        await load();
+      } catch (err) {
+        setCreditError(errorMessage(err, "credit"));
+      } finally {
+        setBusyAction(null);
+      }
+    });
   }
 
   async function handleRefundsToggle(enabled: boolean): Promise<void> {
     if (!id) return;
-    setBusy(true);
-    setActionError(null);
-    setNotice(null);
-    try {
-      await setRefundsEnabled(id, enabled);
-      setNotice(enabled ? "Refunds turned on." : "Refunds turned off.");
-      await load();
-    } catch (err) {
-      setActionError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
+    await runAction(async () => {
+      setBusyAction("refunds");
+      setRefundsError(null);
+      try {
+        await setRefundsEnabled(id, enabled);
+        setConfirmingRefunds(false);
+        notify(enabled ? "Refunds turned on" : "Refunds turned off");
+        await load();
+      } catch (err) {
+        setRefundsError(errorMessage(err));
+      } finally {
+        setBusyAction(null);
+      }
+    });
   }
 
   async function handleRecomputeStatuses(): Promise<void> {
     if (!id) return;
-    setBusy(true);
-    setActionError(null);
-    setNotice(null);
-    try {
+    await perform("recompute", async () => {
       const result = await recomputeTransactionStatuses(id);
-      setNotice(
-        `Scanned ${result.scanned} transaction${result.scanned === 1 ? "" : "s"}; ` +
-          `${result.updated} status${result.updated === 1 ? "" : "es"} updated.`,
+      notify(
+        `Checked ${result.scanned} transaction${result.scanned === 1 ? "" : "s"}; ` +
+          `${result.updated} status${result.updated === 1 ? "" : "es"} updated`,
       );
       await load();
-    } catch (err) {
-      setActionError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   // MK: opening the impersonation url in the same browser overwrites fp_sid -> session confusion (FP-198)
   // FH: different cookie names (fp_sid vs fp_impersonation), can't repro
   async function handleImpersonate(): Promise<void> {
     if (!id || !detail) return;
-    setBusy(true);
-    setActionError(null);
-    setNotice(null);
-    try {
+    await perform("impersonate", async () => {
       const grant = await startImpersonation(id);
       rememberImpersonation({ ...grant, merchantDisplayName: detail.merchant.displayName });
       // The grant rides an httpOnly cookie set for apps/api's domain, which
@@ -229,11 +244,7 @@ export function MerchantDetailPage() {
       // of the banner existing.
       const opened = window.open(WEB_BASE_URL, "_blank", "noopener");
       if (!opened) setImpersonationUrl(WEB_BASE_URL);
-    } catch (err) {
-      setActionError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   if (loadError) {
@@ -248,7 +259,7 @@ export function MerchantDetailPage() {
   }
 
   if (!detail) {
-    return <p className="admin-loading" role="status">Loading merchant...</p>;
+    return <p className="admin-loading" role="status">Loading merchant…</p>;
   }
 
   const { merchant } = detail;
@@ -281,8 +292,7 @@ export function MerchantDetailPage() {
         </div>
       </header>
 
-      {actionError ? <p className="admin-error" role="alert">{actionError}</p> : null}
-      {notice ? <p className="admin-notice" role="status">{notice}</p> : null}
+      {actionError && !pendingRotation ? <p className="admin-error" role="alert">{actionError}</p> : null}
 
       <div className="admin-grid-2">
         <div className="admin-panel">
@@ -291,7 +301,7 @@ export function MerchantDetailPage() {
             <dt>Status</dt>
             <dd>{merchant.status}</dd>
             <dt>Onboarding status</dt>
-            <dd>{merchant.onboardingStatus}</dd>
+            <dd>{label(merchant.onboardingStatus)}</dd>
             <dt>KYC</dt>
             <dd>{merchant.kycPassed ? "passed" : "not passed"}</dd>
             <dt>Mode</dt>
@@ -328,7 +338,7 @@ export function MerchantDetailPage() {
             {detail.balance ? (
               <>
                 <p className="admin-figure">
-                  {formatBhd(toFils(detail.balance.cachedPayableFils, { allowNegative: true }))}{" "}
+                  {bhdAmount(detail.balance.cachedPayableFils)}{" "}
                   <small>BHD cached payable</small>
                 </p>
                 <p className="admin-muted">
@@ -346,17 +356,20 @@ export function MerchantDetailPage() {
               <h2>Fee rate &amp; refunds</h2>
               <span className="admin-danger-tag">Changes live payments</span>
             </div>
+            <p className="admin-figure">
+              {((detail.currentFeeSchedule?.mdrBps ?? merchant.mdrBps) / 100).toFixed(2)}%{" "}
+              <small>rate in force</small>
+            </p>
+            <p className="admin-muted">
+              {detail.currentFeeSchedule
+                ? `Negotiated rate, ${detail.currentFeeSchedule.mdrBps} bps, in force since ${formatDate(detail.currentFeeSchedule.effectiveFrom)}.`
+                : "No negotiated rate on file, so the base MDR applies."}
+            </p>
             <dl className="admin-dl">
-              <dt>MDR</dt>
+              <dt>Base MDR</dt>
               <dd>
                 <span className="admin-num">{(merchant.mdrBps / 100).toFixed(2)}%</span>{" "}
                 <span className="admin-muted">({merchant.mdrBps} bps)</span>
-              </dd>
-              <dt>Current negotiated rate</dt>
-              <dd>
-                {detail.currentFeeSchedule
-                  ? `${(detail.currentFeeSchedule.mdrBps / 100).toFixed(2)}% (${detail.currentFeeSchedule.mdrBps} bps), effective ${formatDate(detail.currentFeeSchedule.effectiveFrom)}`
-                  : "no negotiated schedule on file (uses MDR above)"}
               </dd>
               <dt>Refunds</dt>
               <dd>
@@ -367,11 +380,37 @@ export function MerchantDetailPage() {
                       type="button"
                       className={merchant.refundsEnabled ? "admin-btn-danger" : "admin-btn-primary"}
                       disabled={busy}
-                      onClick={() => void handleRefundsToggle(!merchant.refundsEnabled)}
+                      onClick={() => {
+                        setRefundsError(null);
+                        setConfirmingRefunds(true);
+                      }}
                     >
                       {merchant.refundsEnabled ? "Turn refunds off" : "Turn refunds on"}
                     </button>
                   </div>
+                  {confirmingRefunds ? (
+                    <ConfirmDialog
+                      title={merchant.refundsEnabled ? "Turn refunds off?" : "Turn refunds on?"}
+                      confirmLabel={merchant.refundsEnabled ? "Yes, turn refunds off" : "Yes, turn refunds on"}
+                      busyLabel={merchant.refundsEnabled ? "Turning off…" : "Turning on…"}
+                      busy={busyAction === "refunds"}
+                      danger={merchant.refundsEnabled}
+                      error={refundsError}
+                      onConfirm={() => void handleRefundsToggle(!merchant.refundsEnabled)}
+                      onCancel={() => setConfirmingRefunds(false)}
+                    >
+                      <p>
+                        {merchant.refundsEnabled
+                          ? "This merchant will no longer be able to refund payments from the dashboard or the API until refunds are turned on again."
+                          : "This merchant will be able to refund captured payments from the dashboard and the API. Refunds send money back to cardholders."}{" "}
+                        The change is recorded in the admin audit log.
+                      </p>
+                      <dl className="admin-dialog-facts">
+                        <dt>Merchant</dt>
+                        <dd>{merchant.displayName}</dd>
+                      </dl>
+                    </ConfirmDialog>
+                  ) : null}
                 </RequireRole>
               </dd>
             </dl>
@@ -423,7 +462,7 @@ export function MerchantDetailPage() {
                   disabled={busy || !adjustDeltaBhd.trim() || !adjustReason.trim()}
                   onClick={() => void handleAdjustBalance()}
                 >
-                  Adjust balance
+                  {busyAction === "adjust" ? "Adjusting…" : "Adjust balance"}
                 </button>
               </div>
             </div>
@@ -436,10 +475,9 @@ export function MerchantDetailPage() {
             <span className="admin-danger-tag">Moves money</span>
           </div>
           <p className="admin-muted">
-            Journals a manual credit to this merchant&apos;s payable balance. Above the approval limit
+            Adds money to this merchant&apos;s balance, recorded in the ledger. Above the approval limit
             it waits in <Link to="/credits">Credits</Link> for a second finance operator; at or below
-            it, it posts immediately. The effective date is the accounting date the ledger legs are
-            booked against.
+            it, it posts immediately. The effective date is the business day the credit is booked on.
           </p>
           <RequireRole
             allow={["finance", "super_admin"]}
@@ -449,16 +487,27 @@ export function MerchantDetailPage() {
               </p>
             }
           >
-            <form className="admin-form" onSubmit={(e) => void handleIssueCredit(e)}>
+            <form className="admin-form" noValidate onSubmit={handleIssueCredit}>
+              {creditError && !pendingCredit ? (
+                <p className="admin-error" role="alert" id="credit-error">
+                  {creditError}
+                </p>
+              ) : null}
               <label>
                 Amount (BD, up to 3 decimals)
                 <input
                   type="text"
+                  inputMode="decimal"
                   className="admin-amount"
+                  aria-invalid={creditError ? true : undefined}
+                  aria-describedby={creditError ? "credit-error" : undefined}
                   required
                   placeholder="50.000"
                   value={creditAmountBhd}
-                  onChange={(e) => setCreditAmountBhd(e.target.value)}
+                  onChange={(e) => {
+                    setCreditAmountBhd(e.target.value);
+                    setCreditError(null);
+                  }}
                 />
               </label>
               <label>
@@ -477,6 +526,7 @@ export function MerchantDetailPage() {
                 <input
                   type="date"
                   required
+                  max={bahrainTodayIso()}
                   value={creditEffectiveDate}
                   onChange={(e) => setCreditEffectiveDate(e.target.value)}
                 />
@@ -495,10 +545,41 @@ export function MerchantDetailPage() {
               </label>
               <div>
                 <button type="submit" className="admin-btn-danger" disabled={busy}>
-                  {busy ? "Submitting..." : "Issue credit"}
+                  {busyAction === "credit" ? "Submitting…" : "Issue credit"}
                 </button>
               </div>
             </form>
+            {pendingCredit ? (
+              <ConfirmDialog
+                title="Issue this credit?"
+                confirmLabel="Yes, issue credit"
+                busyLabel="Submitting…"
+                busy={busyAction === "credit"}
+                error={creditError}
+                onConfirm={() => void submitCredit(pendingCredit.baseAmountFils)}
+                onCancel={() => {
+                  setPendingCredit(null);
+                  setCreditError(null);
+                }}
+              >
+                <p>
+                  Money is added to this merchant&apos;s balance. Above the approval limit it waits for
+                  a second finance admin.
+                </p>
+                <dl className="admin-dialog-facts">
+                  <dt>Merchant</dt>
+                  <dd>{merchant.displayName}</dd>
+                  <dt>Amount</dt>
+                  <dd className="admin-num">{bhd(pendingCredit.baseAmountFils)}</dd>
+                  <dt>Reason</dt>
+                  <dd>{label(creditReason)}</dd>
+                  <dt>Effective date</dt>
+                  <dd>{formatBusinessDate(creditEffectiveDate)}</dd>
+                  <dt>Fee reversal</dt>
+                  <dd>{creditReverseFee ? "yes, the MDR on this amount is also returned" : "no"}</dd>
+                </dl>
+              </ConfirmDialog>
+            ) : null}
           </RequireRole>
         </div>
       </div>
@@ -506,8 +587,7 @@ export function MerchantDetailPage() {
       <div className="admin-panel">
         <h2>KYC review</h2>
         <p className="admin-muted">
-          Approving or rejecting requires the <code>finance</code> or <code>super_admin</code> role;
-          the API enforces it and answers <code>403</code> otherwise.
+          Only <code>finance</code> and <code>super_admin</code> admins can approve or reject KYC.
         </p>
         <RequireRole
           allow={["finance", "super_admin"]}
@@ -517,6 +597,11 @@ export function MerchantDetailPage() {
             </p>
           }
         >
+          {merchant.kycPassed && merchant.onboardingStatus === "approved" ? (
+            <p className="admin-muted">
+              KYC is already approved for this merchant. There is nothing to review.
+            </p>
+          ) : (
           <div className="admin-form">
             <label>
               Notes (optional)
@@ -529,7 +614,7 @@ export function MerchantDetailPage() {
                 disabled={busy}
                 onClick={() => void handleKycReview("approved")}
               >
-                Approve KYC
+                {busyAction === "kycApprove" ? "Approving…" : "Approve KYC"}
               </button>
               <button
                 type="button"
@@ -537,10 +622,11 @@ export function MerchantDetailPage() {
                 disabled={busy}
                 onClick={() => void handleKycReview("rejected")}
               >
-                Reject KYC
+                {busyAction === "kycReject" ? "Rejecting…" : "Reject KYC"}
               </button>
             </div>
           </div>
+          )}
         </RequireRole>
 
         <h3>Review history</h3>
@@ -652,7 +738,7 @@ export function MerchantDetailPage() {
           <ConfirmDialog
             title="Rotate this API key?"
             confirmLabel="Yes, rotate it"
-            busyLabel="Rotating..."
+            busyLabel="Rotating…"
             busy={busy}
             error={actionError}
             onConfirm={() => void handleRotate(pendingRotation)}
@@ -779,7 +865,7 @@ export function MerchantDetailPage() {
                 disabled={busy}
                 onClick={() => void handleRecomputeStatuses()}
               >
-                {busy ? "Working..." : "Recompute statuses"}
+                {busyAction === "recompute" ? "Working…" : "Recompute statuses"}
               </button>
             </div>
           </RequireRole>
@@ -802,7 +888,7 @@ export function MerchantDetailPage() {
               disabled={busy}
               onClick={() => void handleImpersonate()}
             >
-              View as merchant
+              {busyAction === "impersonate" ? "Opening…" : "View as merchant"}
             </button>
           </div>
           {impersonationUrl ? (

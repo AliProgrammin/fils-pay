@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { parseBhdToFils } from "@filspay/money";
 import { Link, useParams } from "react-router-dom";
 import {
   captureTransaction,
@@ -14,6 +15,9 @@ import type { TransactionDto, TransactionEventDto } from "../../types.js";
 import { RefundDrawer } from "./RefundDrawer.js";
 import { useConfirmDialog } from "../../components/ConfirmDialog.js";
 import { StatusChip } from "../../components/StatusChip.js";
+import { CopyButton } from "../../components/CopyButton.js";
+import { useToast } from "../../components/Toast.js";
+import { capitalize } from "../../utils/helpers.js";
 
 type LoadState =
   | { kind: "loading" }
@@ -35,7 +39,9 @@ export function TransactionDetailPage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [events, setEvents] = useState<TransactionEventDto[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [submitting, setSubmitting] = useState<"capture" | "void" | null>(null);
+  const busy = useRef(false);
+  const notify = useToast();
   const [captureOpen, setCaptureOpen] = useState(false);
   const [captureAmount, setCaptureAmount] = useState("");
   const [confirmDialog, confirm] = useConfirmDialog();
@@ -66,33 +72,51 @@ export function TransactionDetailPage() {
 
   async function handleCapture(event: React.FormEvent): Promise<void> {
     event.preventDefault();
-    if (!id) return;
-    setSubmitting(true);
+    if (!id || busy.current) return;
     setActionError(null);
+    const trimmed = captureAmount.trim();
+    // Typed in BD like every other amount, parsed to exact fils (no float).
+    // Left blank, `amountFils` is omitted entirely and capture.ts captures
+    // everything still outstanding — its own documented default.
+    let input: { amountFils?: number } = {};
+    if (trimmed !== "") {
+      try {
+        input = { amountFils: parseBhdToFils(trimmed) };
+      } catch {
+        setActionError("Enter an amount in BD, for example 4.750, or leave it blank to capture all of it.");
+        return;
+      }
+      if ((input.amountFils ?? 0) <= 0) {
+        setActionError("The amount must be more than 0.");
+        return;
+      }
+    }
+    busy.current = true;
+    setSubmitting("capture");
     try {
-      const trimmed = captureAmount.trim();
-      // Left blank, `amountFils` is omitted entirely and capture.ts captures
-      // everything still outstanding — its own documented default. Computing
-      // the remainder here would just be a second, staler copy of that rule.
-      const input = trimmed === "" ? {} : { amountFils: Number(trimmed) };
       // A fresh Idempotency-Key per click, including a retry after a decline —
       // same discipline as the checkout page's submit handler.
-      await captureTransaction(id, input, crypto.randomUUID());
+      const before = state.kind === "loaded" ? state.txn.capturedFils : 0;
+      const after = await captureTransaction(id, input, crypto.randomUUID());
       setCaptureOpen(false);
       setCaptureAmount("");
+      notify(`Captured ${bhd(after.capturedFils - before)}`);
       // Refetch rather than patch: a capture wrote a new transaction_events
       // row server-side, so the timeline is stale, not merely shorter.
       await load();
     } catch (err) {
       setActionError(errorMessage(err, "capture"));
+      // Any answer from the API: show the latest state with the message.
+      if (err instanceof ApiError) await load();
     } finally {
-      setSubmitting(false);
+      busy.current = false;
+      setSubmitting(null);
     }
   }
 
   /** Only offered while status is authorized. */
   async function handleVoid(): Promise<void> {
-    if (!id || state.kind !== "loaded") return;
+    if (!id || state.kind !== "loaded" || busy.current) return;
     const confirmed = await confirm({
       title: "Void this authorization?",
       amount: bhd(state.txn.amountFils),
@@ -100,24 +124,28 @@ export function TransactionDetailPage() {
       confirmLabel: "Void",
       cancelLabel: "Keep it",
     });
-    if (!confirmed) return;
-    setSubmitting(true);
+    if (!confirmed || busy.current) return;
+    busy.current = true;
+    setSubmitting("void");
     setActionError(null);
     try {
       // An already-voided transaction also answers `200` with the voided row —
       // indistinguishable from a first void on the wire, and correctly so:
       // both mean "now voided".
       await voidTransaction(id);
+      notify("Authorization voided");
       await load();
     } catch (err) {
       setActionError(errorMessage(err, "void"));
+      if (err instanceof ApiError) await load();
     } finally {
-      setSubmitting(false);
+      busy.current = false;
+      setSubmitting(null);
     }
   }
 
   if (state.kind === "loading") {
-    return <p className="dash-loading" role="status">Loading...</p>;
+    return <p className="dash-loading" role="status">Loading…</p>;
   }
   if (state.kind === "not_found") {
     return (
@@ -189,22 +217,27 @@ export function TransactionDetailPage() {
               captureOpen ? (
                 <form className="dash-form dash-form-inline" onSubmit={(e) => void handleCapture(e)}>
                   <label>
-                    Amount in fils (blank captures everything outstanding)
+                    Amount in BD (blank captures all that is left)
                     <input
-                      type="number"
-                      min={1}
-                      step={1}
+                      type="text"
+                      inputMode="decimal"
+                      placeholder={`up to ${bhd(txn.amountFils - txn.capturedFils)}`}
                       value={captureAmount}
                       onChange={(e) => setCaptureAmount(e.target.value)}
                     />
                   </label>
-                  <button type="submit" className="dash-button dash-button-primary" disabled={submitting}>
-                    {submitting ? "Capturing..." : "Capture"}
+                  <button
+                    type="submit"
+                    className="dash-button dash-button-primary"
+                    disabled={submitting !== null}
+                    aria-busy={submitting === "capture" || undefined}
+                  >
+                    {submitting === "capture" ? "Capturing…" : "Capture"}
                   </button>
                   <button
                     type="button"
                     className="dash-button"
-                    disabled={submitting}
+                    disabled={submitting !== null}
                     onClick={() => setCaptureOpen(false)}
                   >
                     Cancel
@@ -221,10 +254,11 @@ export function TransactionDetailPage() {
               <button
                 type="button"
                 className="dash-button dash-button-danger"
-                disabled={submitting}
+                disabled={submitting !== null}
+                aria-busy={submitting === "void" || undefined}
                 onClick={() => void handleVoid()}
               >
-                Void
+                {submitting === "void" ? "Voiding…" : "Void"}
               </button>
             ) : null}
           </div>
@@ -241,11 +275,17 @@ export function TransactionDetailPage() {
         <dd>{dash(txn.reference)}</dd>
         <dt>Bank reference</dt>
         <dd>
-          <code>{txn.acquirerReference}</code>
+          <span className="dash-ref">
+            <code className="dash-ref-text">{txn.acquirerReference}</code>
+            <CopyButton value={txn.acquirerReference} copiedMessage="Bank reference copied" />
+          </span>
         </dd>
         <dt>Transaction ID</dt>
         <dd>
-          <code>{txn.id}</code>
+          <span className="dash-ref">
+            <code className="dash-ref-text">{txn.id}</code>
+            <CopyButton value={txn.id} copiedMessage="Transaction ID copied" />
+          </span>
         </dd>
         <dt>Occurred at</dt>
         <dd>{dateTime(txn.occurredAt)}</dd>
@@ -255,13 +295,13 @@ export function TransactionDetailPage() {
 
       <h2>Event timeline</h2>
       <div className="dash-table-wrap">
-        <table className="dash-table">
+        <table className="dash-table dash-table-cards">
           <thead>
             <tr>
               <th>Occurred</th>
               <th>Event</th>
               <th className="dash-num">Amount</th>
-              <th>Actor</th>
+              <th>By</th>
             </tr>
           </thead>
           <tbody>
@@ -269,17 +309,16 @@ export function TransactionDetailPage() {
                 here, so the page can't disagree with the API about history. */}
             {events.map((event) => (
               <tr key={event.id}>
-                <td className="dash-nowrap">{dateTime(event.occurredAt)}</td>
-                <td>{statusLabel(event.eventType)}</td>
-                <td className="dash-num">{event.amountFils === null ? "—" : bhd(event.amountFils)}</td>
-                <td>
-                  {statusLabel(event.actorType)}
-                  {event.actorId ? (
-                    <div className="dash-muted">
-                      <code>{event.actorId}</code>
-                    </div>
-                  ) : null}
+                <td className="dash-nowrap" data-label="Occurred">{dateTime(event.occurredAt)}</td>
+                <td data-label="Event">{capitalize(statusLabel(event.eventType))}</td>
+                <td className="dash-num" data-label="Amount">
+                  {event.amountFils !== null
+                    ? bhd(event.amountFils)
+                    : event.eventType === "authorized"
+                      ? bhd(txn.amountFils)
+                      : "—"}
                 </td>
+                <td data-label="By">{capitalize(statusLabel(event.actorType))}</td>
               </tr>
             ))}
             {events.length === 0 ? (

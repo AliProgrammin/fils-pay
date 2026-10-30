@@ -73,6 +73,8 @@ export function LoginPage() {
   // The merchant ID the pending session was created with, remembered after
   // the OTP step succeeds.
   const [loginMerchantId, setLoginMerchantId] = useState<string | undefined>(undefined);
+  // The shop picked from the list, named again on the code step.
+  const [chosenShop, setChosenShop] = useState<string | null>(null);
 
   const redirectTo = (location.state as { from?: string } | null)?.from ?? "/dashboard/transactions";
 
@@ -94,12 +96,14 @@ export function LoginPage() {
   }
 
   async function submitCredentials(merchantIdToSend: string | undefined): Promise<void> {
+    if (submitting) return;
     setSubmitting(true);
     setError(null);
     setNotice(null);
     try {
       const challenge = await login({ merchantId: merchantIdToSend, email, password });
       setLoginMerchantId(merchantIdToSend);
+      setChosenShop(shops?.find((shop) => shop.merchantId === merchantIdToSend)?.displayName ?? null);
       setShops(null);
       setStep({ kind: "otp", challenge });
       setPassword("");
@@ -129,6 +133,7 @@ export function LoginPage() {
   // MK: that's the idle timeout, by design
   async function handleOtp(event: React.FormEvent): Promise<void> {
     event.preventDefault();
+    if (submitting) return;
     setSubmitting(true);
     setError(null);
     setNotice(null);
@@ -283,13 +288,19 @@ export function LoginPage() {
                 </button>
               )}
               <button type="submit" className="dash-button dash-button-primary" disabled={submitting}>
-                {submitting ? "Signing in..." : "Continue"}
+                {submitting ? "Signing in…" : "Continue"}
               </button>
             </form>
           ) : (
             <form onSubmit={(e) => void handleOtp(e)} className="dash-form">
               <p>
-                A one-time code was issued for <strong>{email}</strong>. It expires at{" "}
+                A one-time code was issued for <strong>{email}</strong>
+                {chosenShop ? (
+                  <>
+                    {" "}to sign in to <strong>{chosenShop}</strong>
+                  </>
+                ) : null}
+                . It expires at{" "}
                 {timeOfDay(step.challenge.otpExpiresAt)} (Bahrain time).
               </p>
               {step.challenge.devOtpCode ? (
@@ -309,7 +320,7 @@ export function LoginPage() {
                 />
               </label>
               <button type="submit" className="dash-button dash-button-primary" disabled={submitting}>
-                {submitting ? "Verifying..." : "Verify"}
+                {submitting ? "Verifying…" : "Verify"}
               </button>
               <div className="dash-otp-secondary">
                 <button
@@ -318,7 +329,7 @@ export function LoginPage() {
                   disabled={submitting}
                   onClick={() => void handleResend()}
                 >
-                  Resend code
+                  {submitting ? "Please wait…" : "Resend code"}
                 </button>
                 <button type="button" className="dash-button" onClick={() => backToCredentials(null)}>
                   Start over

@@ -7,6 +7,8 @@ import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
 import { RequireRole } from "../../auth/RequireRole.js";
 import { bhd, dash, dateTime } from "../../format.js";
 import { useConfirmDialog } from "../../components/ConfirmDialog.js";
+import { CopyButton } from "../../components/CopyButton.js";
+import { useToast } from "../../components/Toast.js";
 import type { PaymentLinkDto } from "../../types.js";
 
 /** The list endpoint's own maximum page size. */
@@ -39,7 +41,7 @@ export function PaymentLinkDetailPage() {
 
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [actionError, setActionError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const notify = useToast();
   const [submitting, setSubmitting] = useState(false);
   const [confirmDialog, confirm] = useConfirmDialog();
 
@@ -59,7 +61,7 @@ export function PaymentLinkDetailPage() {
   }, [load]);
 
   async function handleCancel(): Promise<void> {
-    if (!merchantId || !id || state.kind !== "loaded") return;
+    if (!merchantId || !id || state.kind !== "loaded" || submitting) return;
     const confirmed = await confirm({
       title: "Cancel this payment link?",
       amount: bhd(state.link.amountFils),
@@ -72,6 +74,7 @@ export function PaymentLinkDetailPage() {
     setActionError(null);
     try {
       await cancelPaymentLink(merchantId, id);
+      notify("Payment link canceled");
       await load();
     } catch (err) {
       // Includes `409 not_cancelable` for a link that is paid, already
@@ -82,18 +85,7 @@ export function PaymentLinkDetailPage() {
     }
   }
 
-  async function handleCopy(url: string): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-    } catch {
-      // No clipboard permission (or no secure context) — the URL is already
-      // on screen and selectable, so there is nothing to recover from.
-      setCopied(false);
-    }
-  }
-
-  if (state.kind === "loading") return <p className="dash-loading" role="status">Loading...</p>;
+  if (state.kind === "loading") return <p className="dash-loading" role="status">Loading…</p>;
   if (state.kind === "error") {
     return (
       <section>
@@ -150,8 +142,6 @@ export function PaymentLinkDetailPage() {
         <dd>{dash(link.reference)}</dd>
         <dt>Description</dt>
         <dd>{dash(link.description)}</dd>
-        <dt>Expires at</dt>
-        <dd>{dateTime(link.expiresAt)}</dd>
         <dt>Created at</dt>
         <dd>{dateTime(link.createdAt)}</dd>
         <dt>Paid at</dt>
@@ -176,16 +166,12 @@ export function PaymentLinkDetailPage() {
         <dd>
           {/* Linked to, never duplicated — /pay/:token is the one checkout
               implementation, and there is no preview of it embedded here. */}
-          <a href={link.url} target="_blank" rel="noreferrer">
-            {link.url}
-          </a>{" "}
-          <button
-            type="button"
-            className="dash-button dash-button-small"
-            onClick={() => void handleCopy(link.url)}
-          >
-            {copied ? "Copied" : "Copy link"}
-          </button>
+          <span className="dash-copy-row">
+            <a href={link.url} target="_blank" rel="noreferrer">
+              {link.url}
+            </a>
+            <CopyButton value={link.url} label="Copy link" copiedMessage="Link copied" />
+          </span>
         </dd>
       </dl>
 
@@ -197,9 +183,10 @@ export function PaymentLinkDetailPage() {
             type="button"
             className="dash-button dash-button-danger"
             disabled={submitting}
+            aria-busy={submitting || undefined}
             onClick={() => void handleCancel()}
           >
-            {submitting ? "Canceling..." : "Cancel payment link"}
+            {submitting ? "Canceling…" : "Cancel payment link"}
           </button>
         </RequireRole>
       ) : null}

@@ -7,8 +7,17 @@ import { formatBhd, toFils } from "@filspay/money";
  * halves of this app. Never `/1000`, never `toFixed`.
  */
 // Negative amounts are real here (refunds, a reconciliation gap), so allow them.
+// Display only: thousands are grouped ("135,882.772 BHD"); never parse this back.
 export function bhd(amountFils: number): string {
-  return `${formatBhd(toFils(amountFils, { allowNegative: true }))} BHD`;
+  return `${groupThousands(formatBhd(toFils(amountFils, { allowNegative: true })))} BHD`;
+}
+
+/** "135882.772" -> "135,882.772" (works on formatBhd's output, sign kept). */
+export function groupThousands(value: string): string {
+  const [whole = "", fraction] = value.split(".");
+  const sign = whole.startsWith("-") ? "-" : "";
+  const digits = (sign ? whole.slice(1) : whole).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return fraction === undefined ? `${sign}${digits}` : `${sign}${digits}.${fraction}`;
 }
 
 /** `—` for a null/absent value, so an empty table cell is visibly empty
@@ -24,7 +33,7 @@ export function dash(value: string | number | null | undefined): string {
  */
 const BAHRAIN_DATE_TIME = new Intl.DateTimeFormat("en-GB", {
   timeZone: "Asia/Bahrain",
-  day: "2-digit",
+  day: "numeric",
   month: "short",
   year: "numeric",
   hour: "2-digit",
@@ -43,7 +52,7 @@ const BAHRAIN_TIME = new Intl.DateTimeFormat("en-GB", {
 // it never shifts by a day.
 const CALENDAR_DATE = new Intl.DateTimeFormat("en-GB", {
   timeZone: "UTC",
-  day: "2-digit",
+  day: "numeric",
   month: "short",
   year: "numeric",
 });
@@ -79,31 +88,11 @@ export function calendarDate(value: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? value : shortMonth(CALENDAR_DATE, date);
 }
 
-/**
- * An `<input type="date">` value (YYYY-MM-DD) as the ISO instant that day
- * starts in Asia/Bahrain (UTC+3, no DST) — the business day the rest of the
- * platform uses. Used for both `from` (inclusive) and `to` (exclusive), so
- * "to" ends at the Bahrain midnight that starts the chosen day.
- */
-export function dayStartIso(dateValue: string): string | undefined {
-  return dateValue ? `${dateValue}T00:00:00+03:00` : undefined;
-}
-
-/**
- * A `<input type="datetime-local">` value (local wall time, no zone) as an
- * ISO 8601 instant. `new Date(local)` interprets it in the browser's own
- * timezone, which is what the user meant when they typed it.
- */
-export function localDateTimeToIso(value: string): string | null {
-  if (!value) return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-}
-
 /** Plain words for the API's status and event values where the raw value
  *  reads badly. Anything else only loses its underscores. */
 const LABELS: Record<string, string> = {
   partially_captured: "partly captured",
+  refund_partial: "partly refunded",
   partially_refunded: "partly refunded",
   exhausted: "stopped retrying",
   merchant_session: "dashboard user",

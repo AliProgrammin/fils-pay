@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { parseBhdToFils } from "@filspay/money";
 import { createPaymentLink } from "../../api/paymentLinks.js";
 import { errorMessage } from "../../errors.js";
 import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
-import { localDateTimeToIso } from "../../format.js";
+import { bhd } from "../../format.js";
+import { bahrainInputToIso, bahrainNowInputValue } from "../../dateRange.js";
+import { useToast } from "../../components/Toast.js";
 
 /**
  * `POST /v1/merchants/:merchantId/payment-links`, `owner`/`finance`
@@ -30,30 +32,37 @@ export function PaymentLinkCreatePage() {
   const [expiresAt, setExpiresAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [amountError, setAmountError] = useState<string | null>(null);
+  const [expiryError, setExpiryError] = useState<string | null>(null);
+  const amountErrorId = useId();
+  const expiryErrorId = useId();
+  const notify = useToast();
 
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
-    if (!me) return;
+    if (!me || submitting) return;
     setError(null);
+    setAmountError(null);
+    setExpiryError(null);
 
-    let amount: number;
+    let amount = 0;
+    let amountProblem: string | null = null;
     try {
       amount = parseBhdToFils(amountBhd);
+      if (amount <= 0) amountProblem = "The amount must be more than 0.";
     } catch {
-      setError("Enter an amount in BD, for example 12.750");
-      return;
+      amountProblem = "Enter an amount in BD, for example 12.750.";
     }
-    if (amount <= 0) {
-      setError("The amount must be more than 0");
-      return;
+    // The expiry is typed in Bahrain time, whatever the browser's own zone.
+    const expiresAtIso = bahrainInputToIso(expiresAt);
+    let expiryProblem: string | null = null;
+    if (!expiresAtIso) expiryProblem = "Enter a valid expiry date and time.";
+    else if (new Date(expiresAtIso).getTime() <= Date.now()) {
+      expiryProblem = "The expiry must be in the future (Bahrain time).";
     }
-    const expiresAtIso = localDateTimeToIso(expiresAt);
-    if (!expiresAtIso) {
-      setError("Expiry must be a valid date and time.");
-      return;
-    }
-    if (new Date(expiresAtIso).getTime() <= Date.now()) {
-      setError("Expiry must be in the future.");
+    if (amountProblem || expiryProblem || !expiresAtIso) {
+      setAmountError(amountProblem);
+      setExpiryError(expiryProblem);
       return;
     }
 
@@ -65,6 +74,7 @@ export function PaymentLinkCreatePage() {
         description: description.trim() || undefined,
         expiresAt: expiresAtIso,
       });
+      notify(`Payment link for ${bhd(link.amountFils)} created`);
       navigate(`/dashboard/payment-links/${link.id}`, { replace: true });
     } catch (err) {
       setError(errorMessage(err, "paymentLinkCreate"));
@@ -84,7 +94,7 @@ export function PaymentLinkCreatePage() {
 
       {error ? <p className="dash-error" role="alert">{error}</p> : null}
 
-      <form className="dash-form dash-card" onSubmit={(e) => void handleSubmit(e)}>
+      <form className="dash-form dash-card" noValidate onSubmit={(e) => void handleSubmit(e)}>
         <label>
           Amount (BD)
           <input
@@ -93,9 +103,16 @@ export function PaymentLinkCreatePage() {
             required
             placeholder="12.750"
             value={amountBhd}
+            aria-invalid={amountError ? true : undefined}
+            aria-describedby={amountError ? amountErrorId : undefined}
             onChange={(e) => setAmountBhd(e.target.value)}
           />
         </label>
+        {amountError ? (
+          <p className="dash-field-error" id={amountErrorId} role="alert">
+            {amountError}
+          </p>
+        ) : null}
         <p className="dash-muted dash-hint">Up to 3 decimals: 1.000 BD = 1000 fils.</p>
         <label>
           Reference (optional)
@@ -106,16 +123,29 @@ export function PaymentLinkCreatePage() {
           <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} />
         </label>
         <label>
-          Expires at
+          Expires at (Bahrain time)
           <input
             type="datetime-local"
             required
+            min={bahrainNowInputValue()}
             value={expiresAt}
+            aria-invalid={expiryError ? true : undefined}
+            aria-describedby={expiryError ? expiryErrorId : undefined}
             onChange={(e) => setExpiresAt(e.target.value)}
           />
         </label>
-        <button type="submit" className="dash-button dash-button-primary" disabled={submitting}>
-          {submitting ? "Creating..." : "Create payment link"}
+        {expiryError ? (
+          <p className="dash-field-error" id={expiryErrorId} role="alert">
+            {expiryError}
+          </p>
+        ) : null}
+        <button
+          type="submit"
+          className="dash-button dash-button-primary"
+          disabled={submitting}
+          aria-busy={submitting || undefined}
+        >
+          {submitting ? "Creating…" : "Create payment link"}
         </button>
       </form>
 

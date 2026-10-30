@@ -28,13 +28,12 @@ function ErrorFrame({
           <p className="dash-kicker">{kicker}</p>
           <h1>{title}</h1>
           <p className="dash-login-lede">{text}</p>
+          {/* One way out: the dashboard sends a signed-out visitor to the
+              sign-in page by itself, so a signed-in one is never offered it. */}
           {customer ? null : (
             <p className="dash-actions dash-error-actions">
               <Link className="dash-button dash-button-primary" to="/dashboard">
                 Go to the dashboard
-              </Link>
-              <Link className="dash-button" to="/dashboard/login">
-                Sign in
               </Link>
             </p>
           )}

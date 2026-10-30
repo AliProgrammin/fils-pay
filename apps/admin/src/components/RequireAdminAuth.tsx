@@ -20,7 +20,7 @@ export function RequireAdminAuth({ children }: { children: ReactNode }) {
   if (status === "loading") {
     return (
       <main className="admin-centered">
-        <p className="admin-loading" role="status">Checking your session...</p>
+        <p className="admin-loading" role="status">Checking your session…</p>
       </main>
     );
   }

@@ -37,3 +37,12 @@ test("money is BD with exactly three decimals", () => {
   assert.equal(bhd(-12500), "-12.500 BHD");
   assert.equal(bhd(5), "0.005 BHD");
 });
+
+test("large amounts get thousands separators (display only)", async () => {
+  const { bhdAmount, label } = await import("../src/format.js");
+  assert.equal(bhd(135882772), "135,882.772 BHD");
+  assert.equal(bhd(-1234567890), "-1,234,567.890 BHD");
+  assert.equal(bhdAmount(999999), "999.999");
+  assert.equal(bhdAmount(1000000), "1,000.000");
+  assert.equal(label("under_review"), "under review");
+});

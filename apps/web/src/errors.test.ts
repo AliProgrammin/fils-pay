@@ -98,3 +98,14 @@ test("statusLabel turns enum values into words", () => {
   assert.equal(statusLabel("chargeback"), "chargeback");
   assert.equal(statusLabel("some_new_value"), "some new value");
 });
+
+test("refund errors a merchant can act on", () => {
+  assert.equal(
+    errorMessage(new ApiError(409, { error: "transaction_not_refundable" }), "refund"),
+    "This payment was already refunded (maybe in another tab).",
+  );
+  assert.equal(
+    errorMessage(new ApiError(403, { error: "refunds_not_enabled" }), "refund"),
+    "Refunds are paused for your account. Contact FilsPay support.",
+  );
+});

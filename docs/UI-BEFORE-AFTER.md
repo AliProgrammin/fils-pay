@@ -217,6 +217,32 @@ Checks: `npm run typecheck` and `npm run build` pass for `apps/web` and `apps/ad
 
 ## Known UX gaps not fixed here
 
-- Large amounts have no thousands separator (`7326.913 BHD`). `formatBhd` in `packages/money` is shared by every screen, so changing it is a wider change.
 - The admin credit form says "Also reverse the MDR on this amount (2.50%)". The server really uses `merchants.mdr_bps` (250 bps) for this, not the 225 bps rate billing uses. That is a backend question, not a label bug.
 - The dashboard Overview needs the `apps/reporting` worker. It was not run for these screenshots, so Overview is not shown.
+
+## QA pass (before the final)
+
+A click-through of both front ends in a real browser (Playwright, 1280 px and 375 px), on a fresh migrated and seeded database. No API path, body, response or status code changed.
+
+| Area | What changed | Files |
+|---|---|---|
+| Lists | "Load more" is gone. Every list (transactions, payment links, settlement batches, webhook deliveries, admin merchants, credits, import adjustments) has Previous / Next, "Page N · rows A–B" and 25/50/100 rows per page (the API's `limit`). Page, size and filters live in the URL, so reload and back/forward keep the place; a filter change goes back to page 1; Previous reads cached pages with no request. | `apps/*/src/pager.ts`, `components/usePagedList.ts`, `components/Pager.tsx` |
+| Filters | "Clear filters" and an empty state that names the filters: "No payments match: Partly captured · 29 Oct–30 Oct · search '0031'." | `TransactionListPage.tsx`, other list pages |
+| Dates | Native date inputs in the theme red, max = today in Bahrain. "To" is inclusive on screen and the request sends To + 1 day, because the API's `to` is exclusive. To before From shows a plain message and sends nothing. Presets: Today, Yesterday, Last 7 days, This month, Last month (Bahrain dates). The "(exclusive)" labels are gone. Payment-link expiry is typed in Bahrain time and must be in the future. | `apps/*/src/dateRange.ts`, `components/DateRangeFields.tsx` |
+| Feedback | One toast per app (`role="status"`, no sound): "Refund of 4.000 BHD sent", "Link copied", "Webhook disabled", "Credit submitted for approval". Every action button shows a pressed state and a busy label ("Refunding…") and cannot submit twice. Failures keep the existing plain messages. | `components/Toast.tsx`, `components/useAction.ts` |
+| References | The bank reference is shown in full with a copy button; copy buttons have a gap from the text they copy. | `CopyButton.tsx`, `dashboard.css` |
+| Refunds | A refund made stale by another tab says "This payment was already refunded (maybe in another tab)." and reloads the totals; "refunds off" says "Refunds are paused for your account. Contact FilsPay support." Capture is typed in BD. | `RefundDrawer.tsx`, `TransactionDetailPage.tsx`, `errors.ts` |
+| Checkout | Card checks before sending: Luhn ("Check the card number"), expiry before this Bahrain month ("This card has expired"), CVV 3–4 digits. Focus moves to the result. A paid link reloaded shows what the public link data has; no "invoice". | `pages/checkout/cardValidation.ts`, `CheckoutPage.tsx` |
+| Admin | Confirm before turning refunds on/off and before issuing a credit; webhook replay offers only `failed`/`exhausted`; list MDR column is "Base MDR", the detail shows the rate in force; KYC buttons hidden once approved. | `apps/admin/src/pages/**` |
+| Phone | A Menu button opens the nav; list tables become cards with every amount visible. | `DashboardLayout.tsx`, `AdminLayout.tsx`, both CSS files |
+| Words | Amounts group thousands (`135,882.772 BHD`); dates read "1 Sep 2026"; timeline and labels use plain words. | `format.ts` in both apps |
+
+| | |
+|---|---|
+| ![](ui/qa-transactions-filters-empty.png) | ![](ui/qa-transactions-bank-ref.png) |
+| ![](ui/qa-refund-toast-other-tab.png) | ![](ui/qa-link-copy-toast.png) |
+| ![](ui/qa-reconciliation-dates.png) | ![](ui/qa-mobile-cards-pager.png) |
+| ![](ui/qa-admin-credits-pager.png) | ![](ui/qa-admin-credit-confirm.png) |
+| ![](ui/qa-checkout-card-errors.png) | |
+
+Checks: `npm run typecheck` and `npm test` (fresh migrated database) pass; `npm run build -w apps/web` and the admin build with `--base=/admin/` pass. New unit tests cover inclusive To to exclusive API value, presets and "today" in Bahrain time, the max-date and To-before-From rules, the pager (next/previous/cache/reload/past-the-end), card checks and grouped amounts.

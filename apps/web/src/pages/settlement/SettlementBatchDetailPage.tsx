@@ -62,7 +62,7 @@ export function SettlementBatchDetailPage() {
     };
   }, [id]);
 
-  if (state.kind === "loading") return <p className="dash-loading" role="status">Loading...</p>;
+  if (state.kind === "loading") return <p className="dash-loading" role="status">Loading…</p>;
   if (state.kind === "not_found") {
     return (
       <section>
@@ -132,15 +132,13 @@ export function SettlementBatchDetailPage() {
         </dd>
         <dt>Included transactions</dt>
         <dd>{batch.includedTransactionCount}</dd>
-        <dt>Capture events in this batch</dt>
-        <dd>
-          {batch.includedEventCount}
+        <dt>Captures in this batch</dt>
+        <dd className={batch.includedEventCount !== batch.includedTransactionCount ? "dash-dd-stack" : undefined}>
+          <span>{batch.includedEventCount}</span>
           {batch.includedEventCount !== batch.includedTransactionCount ? (
-            <span className="dash-muted">
-              {" "}
-              — more events than transactions is normal: a transaction captured
-              more than once in this window contributes one export line and
-              several events.
+            <span className="dash-muted dash-dd-help">
+              More captures than transactions is normal: a payment captured in
+              parts counts once as a transaction and once per capture here.
             </span>
           ) : null}
         </dd>
@@ -148,7 +146,7 @@ export function SettlementBatchDetailPage() {
 
       <h2>Included transactions</h2>
       <div className="dash-table-wrap">
-        <table className="dash-table">
+        <table className="dash-table dash-table-cards">
           <thead>
             <tr>
               <th>Line</th>
@@ -163,33 +161,33 @@ export function SettlementBatchDetailPage() {
           <tbody>
             {lines.map((line) => (
               <tr key={`${line.transactionId}-${line.lineSequence}`}>
-                <td>{line.lineSequence}</td>
-                <td>
+                <td data-label="Line">{line.lineSequence}</td>
+                <td data-label="Transaction">
                   <Link to={`/dashboard/transactions/${line.transactionId}`}>
                     <code>{truncateMiddle(line.transactionId, 18)}</code>
                   </Link>
                 </td>
-                <td>{dash(line.reference)}</td>
-                <td>
+                <td data-label="Reference">{dash(line.reference)}</td>
+                <td data-label="Status">
                   <StatusChip status={line.status} />
                 </td>
-                <td className="dash-num">{bhd(line.authorizedFils)}</td>
-                <td className="dash-num">{bhd(line.capturedFils)}</td>
-                <td className="dash-num">{bhd(line.schemeAmountFils)}</td>
+                <td className="dash-num" data-label="Authorized">{bhd(line.authorizedFils)}</td>
+                <td className="dash-num" data-label="Captured">{bhd(line.capturedFils)}</td>
+                <td className="dash-num" data-label="Card network">{bhd(line.schemeAmountFils)}</td>
               </tr>
             ))}
             {lines.length === 0 ? (
               <tr>
-                <td colSpan={7} className="dash-empty">No scheme export lines in this batch.</td>
+                <td colSpan={7} className="dash-empty">No transactions in this batch yet.</td>
               </tr>
             ) : null}
           </tbody>
         </table>
       </div>
       <p className="dash-note">
-      The card network amount is the figure the card network reports, rounded to two
-        decimal places — it can be up to 9 fils below the
-        captured amount by design.
+        The card network amount is the amount the card network reports. It is
+        rounded down to 2 decimals, so it can be up to 9 fils less than the
+        captured amount. That is expected.
       </p>
 
       <p className="dash-back">

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { listDeliveries, listWebhookEndpoints, replayDelivery } from "../../api/webhooks.js";
 import { StatusChip } from "../../components/StatusChip.js";
 import { errorMessage } from "../../errors.js";
 import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
-import { Pagination } from "../../components/Pagination.js";
+import { Pager } from "../../components/Pager.js";
+import { usePagedList } from "../../components/usePagedList.js";
+import { useToast } from "../../components/Toast.js";
 import { dash, dateTime, statusLabel } from "../../format.js";
 import type { WebhookDeliveryDto, WebhookDeliveryStatus, WebhookEndpointDto } from "../../types.js";
 
@@ -15,8 +17,6 @@ import type { WebhookDeliveryDto, WebhookDeliveryStatus, WebhookEndpointDto } fr
  *  the column, not the dispatcher's current habits. */
 const DELIVERY_STATUSES: WebhookDeliveryStatus[] = ["pending", "succeeded", "failed", "exhausted"];
 
-const PAGE_SIZE = 25;
-
 export function WebhookEndpointDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { me } = useDashboardAuth();
@@ -24,12 +24,11 @@ export function WebhookEndpointDetailPage() {
 
   const [endpoint, setEndpoint] = useState<WebhookEndpointDto | null>(null);
   const [endpointMissing, setEndpointMissing] = useState(false);
-  const [statuses, setStatuses] = useState<WebhookDeliveryStatus[]>([]);
-  const [deliveries, setDeliveries] = useState<WebhookDeliveryDto[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [searchParams] = useSearchParams();
+  const statuses = searchParams.getAll("status") as WebhookDeliveryStatus[];
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const notify = useToast();
 
   // Same "no single-resource GET" situation as payment links: the API has
   // the endpoint list and the deliveries sub-resource, but no
@@ -49,55 +48,51 @@ export function WebhookEndpointDetailPage() {
     }
   }, [merchantId, id]);
 
-  const loadDeliveries = useCallback(
-    async (cursor: string | null) => {
-      if (!merchantId || !id) return;
-      setLoading(true);
-      setError(null);
-      try {
-        const result = await listDeliveries(merchantId, id, {
+  const filterKey = JSON.stringify([merchantId, id, statuses]);
+  const list = usePagedList<WebhookDeliveryDto>(
+    filterKey,
+    useCallback(
+      async (cursor, limit) => {
+        const result = await listDeliveries(merchantId!, id!, {
           status: statuses.length > 0 ? statuses : undefined,
-          limit: PAGE_SIZE,
-          cursor: cursor ?? undefined,
+          limit,
+          cursor,
         });
-        setDeliveries((previous) =>
-          cursor ? [...previous, ...result.deliveries] : result.deliveries,
-        );
-        setNextCursor(result.nextCursor);
-      } catch (err) {
-        setError(errorMessage(err));
-      } finally {
-        setLoading(false);
-      }
-    },
-    [merchantId, id, statuses],
+        return { rows: result.deliveries, nextCursor: result.nextCursor };
+      },
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [filterKey],
+    ),
+    Boolean(merchantId && id),
   );
+  const deliveries = list.rows;
+  const loading = list.loading;
 
   useEffect(() => {
     void loadEndpoint();
   }, [loadEndpoint]);
 
-  useEffect(() => {
-    void loadDeliveries(null);
-  }, [loadDeliveries]);
-
   function toggleStatus(status: WebhookDeliveryStatus): void {
-    setStatuses((previous) =>
-      previous.includes(status) ? previous.filter((s) => s !== status) : [...previous, status],
-    );
+    list.updateParams((params) => {
+      const next = statuses.includes(status) ? statuses.filter((s) => s !== status) : [...statuses, status];
+      params.delete("status");
+      for (const s of next) params.append("status", s);
+    });
   }
 
   // FH: fast double click fires replay twice -> dup deliveries + the memory leak
   // busyId disables the button, cant double click — am
   async function handleReplay(delivery: WebhookDeliveryDto): Promise<void> {
-    if (!merchantId || !id) return;
+    if (!merchantId || !id || busyId) return;
     setBusyId(delivery.id);
     setError(null);
     try {
       await replayDelivery(merchantId, id, delivery.id);
-      // The replay is a brand-new `pending` row, newest-first, so refetch from
-      // the top rather than appending to what's on screen.
-      await loadDeliveries(null);
+      notify("Replay queued");
+      // The replay is a brand-new `pending` row, newest-first: show page 1
+      // fresh, rather than patching what is on screen.
+      list.reload();
+      if (list.page !== 1) list.updateParams(() => {});
     } catch (err) {
       // `409 endpoint_disabled` is a real race: someone disabled the endpoint
       // between this page loading and the click.
@@ -164,6 +159,7 @@ export function WebhookEndpointDetailPage() {
       </fieldset>
 
       {error ? <p className="dash-error" role="alert">{error}</p> : null}
+      {list.error ? <p className="dash-error" role="alert">{errorMessage(list.error)}</p> : null}
 
       <div className="dash-table-wrap">
         <table className="dash-table">
@@ -212,7 +208,7 @@ export function WebhookEndpointDetailPage() {
                   <td>
                     {delivery.replayOfDeliveryId ? (
                       <span className="dash-muted">
-                        replay of <code>{delivery.replayOfDeliveryId}</code>
+                        replay of <code title={delivery.replayOfDeliveryId}>{delivery.replayOfDeliveryId.slice(0, 8)}</code>
                       </span>
                     ) : (
                       "—"
@@ -223,10 +219,11 @@ export function WebhookEndpointDetailPage() {
                       <button
                         type="button"
                         className="dash-button dash-button-small"
-                        disabled={busyId === delivery.id}
+                        disabled={busyId !== null}
+                        aria-busy={busyId === delivery.id || undefined}
                         onClick={() => void handleReplay(delivery)}
                       >
-                        Replay
+                        {busyId === delivery.id ? "Replaying…" : "Replay"}
                       </button>
                     ) : (
                       "—"
@@ -235,7 +232,7 @@ export function WebhookEndpointDetailPage() {
                 </tr>
               );
             })}
-            {deliveries.length === 0 && !loading && !error ? (
+            {deliveries.length === 0 && !loading && !error && !list.error ? (
               <tr>
                 <td colSpan={9} className="dash-empty">No deliveries match these filters.</td>
               </tr>
@@ -244,12 +241,17 @@ export function WebhookEndpointDetailPage() {
         </table>
       </div>
 
-      {loading ? <p className="dash-loading" role="status">Loading...</p> : null}
+      {loading ? <p className="dash-loading" role="status">Loading…</p> : null}
 
-      <Pagination
-        nextCursor={nextCursor}
+      <Pager
+        page={list.page}
+        size={list.size}
+        count={deliveries.length}
+        hasNext={list.hasNext}
         loading={loading}
-        onLoadMore={() => void loadDeliveries(nextCursor)}
+        onPrev={list.goPrev}
+        onNext={list.goNext}
+        onSize={list.setSize}
       />
 
       <p className="dash-back">

@@ -117,7 +117,7 @@ export function LoginPage() {
               />
             </label>
             <button type="submit" className="admin-btn-primary" disabled={submitting}>
-              {submitting ? "Signing in..." : "Continue"}
+              {submitting ? "Signing in…" : "Continue"}
             </button>
           </form>
         ) : (
@@ -143,7 +143,7 @@ export function LoginPage() {
               />
             </label>
             <button type="submit" className="admin-btn-primary" disabled={submitting}>
-              {submitting ? "Verifying..." : "Verify"}
+              {submitting ? "Verifying…" : "Verify"}
             </button>
             <button
               type="button"

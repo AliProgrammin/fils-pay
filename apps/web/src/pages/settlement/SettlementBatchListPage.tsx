@@ -1,66 +1,81 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { listSettlementBatches } from "../../api/settlement.js";
 import { StatusChip } from "../../components/StatusChip.js";
 import { errorMessage } from "../../errors.js";
-import { Pagination } from "../../components/Pagination.js";
+import { Pager } from "../../components/Pager.js";
+import { DateRangeFields } from "../../components/DateRangeFields.js";
+import { usePagedList } from "../../components/usePagedList.js";
 import { bhd, calendarDate, dateTime, statusLabel } from "../../format.js";
+import { bahrainToday, exclusiveTo, rangeError, rangeLabel } from "../../dateRange.js";
+import { capitalize } from "../../utils/helpers.js";
 import type { SettlementBatchDto, SettlementBatchStatus } from "../../types.js";
 
 const STATUSES: SettlementBatchStatus[] = ["open", "closed", "paid"];
-const PAGE_SIZE = 25;
 
 /**
- * `GET /v1/settlement/batches` — `requireMerchantAuth` with no role
- * restriction — a batch list is not as sensitive as the reconciliation
- * report.
+ * `GET /v1/settlement/batches` — any merchant user.
  *
- * `from`/`to` bound `batch_date`, a plain DATE column, so the raw YYYY-MM-DD
- * value from the date input goes through unchanged — no instant conversion,
- * because there is no timezone in the column to convert against.
+ * `from`/`to` bound `batch_date`, a plain Bahrain business DATE, so the
+ * YYYY-MM-DD values go through as dates. "To" is inclusive on screen; the
+ * API's `to` is exclusive, so the request sends the day after.
  */
-/** Filters by batch_date, which is a Bahrain business date. */
 export function SettlementBatchListPage() {
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [statuses, setStatuses] = useState<SettlementBatchStatus[]>([]);
-  const [batches, setBatches] = useState<SettlementBatchDto[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const from = searchParams.get("from") ?? "";
+  const to = searchParams.get("to") ?? "";
+  const statuses = searchParams.getAll("status") as SettlementBatchStatus[];
+  const dateError = rangeError(from, to, bahrainToday());
+  const filterKey = JSON.stringify([from, to, statuses]);
 
-  const load = useCallback(
-    async (cursor: string | null) => {
-      setLoading(true);
-      setError(null);
-      try {
+  const list = usePagedList<SettlementBatchDto>(
+    filterKey,
+    useCallback(
+      async (cursor, limit) => {
         const result = await listSettlementBatches({
           from: from || undefined,
-          to: to || undefined,
+          to: to ? exclusiveTo(to) : undefined,
           status: statuses.length > 0 ? statuses : undefined,
-          limit: PAGE_SIZE,
-          cursor: cursor ?? undefined,
+          limit,
+          cursor,
         });
-        setBatches((previous) => (cursor ? [...previous, ...result.batches] : result.batches));
-        setNextCursor(result.nextCursor);
-      } catch (err) {
-        setError(errorMessage(err));
-      } finally {
-        setLoading(false);
-      }
-    },
-    [from, to, statuses],
+        return { rows: result.batches, nextCursor: result.nextCursor };
+      },
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [filterKey],
+    ),
+    dateError === null,
   );
-
-  useEffect(() => {
-    void load(null);
-  }, [load]);
+  const batches = dateError ? [] : list.rows;
+  const loading = !dateError && list.loading;
 
   function toggleStatus(status: SettlementBatchStatus): void {
-    setStatuses((previous) =>
-      previous.includes(status) ? previous.filter((s) => s !== status) : [...previous, status],
-    );
+    list.updateParams((params) => {
+      const next = statuses.includes(status) ? statuses.filter((s) => s !== status) : [...statuses, status];
+      params.delete("status");
+      for (const s of next) params.append("status", s);
+    });
   }
+
+  function setRange(range: { from: string; to: string }): void {
+    list.updateParams((params) => {
+      if (range.from) params.set("from", range.from);
+      else params.delete("from");
+      if (range.to) params.set("to", range.to);
+      else params.delete("to");
+    });
+  }
+
+  function clearFilters(): void {
+    list.updateParams((params) => {
+      for (const key of ["status", "from", "to"]) params.delete(key);
+    });
+  }
+
+  const activeFilters = [
+    statuses.length > 0 ? statuses.map((s) => capitalize(statusLabel(s))).join(", ") : "",
+    rangeLabel(from, to),
+  ].filter(Boolean);
 
   return (
     <section>
@@ -73,14 +88,12 @@ export function SettlementBatchListPage() {
 
       <fieldset className="dash-filters">
         <legend>Batch date</legend>
-        <label className="dash-field">
-          From
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-        </label>
-        <label className="dash-field">
-          To (exclusive)
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-        </label>
+        <DateRangeFields from={from} to={to} onChange={setRange} error={dateError} />
+        {activeFilters.length > 0 ? (
+          <button type="button" className="dash-button dash-button-small dash-clear" onClick={clearFilters}>
+            Clear filters
+          </button>
+        ) : null}
       </fieldset>
 
       <fieldset className="dash-filters">
@@ -97,10 +110,10 @@ export function SettlementBatchListPage() {
         ))}
       </fieldset>
 
-      {error ? <p className="dash-error" role="alert">{error}</p> : null}
+      {list.error && !dateError ? <p className="dash-error" role="alert">{errorMessage(list.error)}</p> : null}
 
       <div className="dash-table-wrap">
-        <table className="dash-table">
+        <table className="dash-table dash-table-cards" aria-busy={loading}>
           <thead>
             <tr>
               <th>Batch date</th>
@@ -116,32 +129,56 @@ export function SettlementBatchListPage() {
           <tbody>
             {batches.map((batch) => (
               <tr key={batch.id}>
-                <td className="dash-nowrap">
+                <td className="dash-nowrap" data-label="Batch date">
                   <Link to={`/dashboard/settlement/${batch.id}`}>{calendarDate(batch.batchDate)}</Link>
                 </td>
-                <td>
+                <td data-label="Status">
                   <StatusChip status={batch.status} />
                 </td>
-                <td className="dash-num">{bhd(batch.grossFils)}</td>
-                <td className="dash-num">{bhd(batch.feeFils)}</td>
-                <td className="dash-num">{bhd(batch.refundFeeReversedFils - batch.refundFils)}</td>
-                <td className="dash-num dash-strong">{bhd(batch.netPayoutFils)}</td>
-                <td className="dash-nowrap">{dateTime(batch.closedAt)}</td>
-                <td className="dash-nowrap">{dateTime(batch.paidAt)}</td>
+                <td className="dash-num" data-label="Gross">{bhd(batch.grossFils)}</td>
+                <td className="dash-num" data-label="Fee">{bhd(batch.feeFils)}</td>
+                <td className="dash-num" data-label="Refunds">{bhd(batch.refundFeeReversedFils - batch.refundFils)}</td>
+                <td className="dash-num dash-strong" data-label="Net payout">{bhd(batch.netPayoutFils)}</td>
+                <td className="dash-nowrap" data-label="Closed">{dateTime(batch.closedAt)}</td>
+                <td className="dash-nowrap" data-label="Paid">{dateTime(batch.paidAt)}</td>
               </tr>
             ))}
-            {batches.length === 0 && !loading ? (
+            {batches.length === 0 && !loading && !list.error ? (
               <tr>
-                <td colSpan={8} className="dash-empty">No settlement batches match these filters.</td>
+                <td colSpan={8} className="dash-empty">
+                  {dateError ? (
+                    "Fix the dates above to see payouts."
+                  ) : activeFilters.length > 0 ? (
+                    <>
+                      No settlement batches match: {activeFilters.join(" · ")}.{" "}
+                      <button type="button" className="dash-text-button" onClick={clearFilters}>
+                        Clear filters
+                      </button>
+                    </>
+                  ) : (
+                    "No settlement batches yet."
+                  )}
+                </td>
               </tr>
             ) : null}
           </tbody>
         </table>
       </div>
 
-      {loading ? <p className="dash-loading" role="status">Loading...</p> : null}
+      {loading ? <p className="dash-loading" role="status">Loading…</p> : null}
 
-      <Pagination nextCursor={nextCursor} loading={loading} onLoadMore={() => void load(nextCursor)} />
+      {!dateError ? (
+        <Pager
+          page={list.page}
+          size={list.size}
+          count={batches.length}
+          hasNext={list.hasNext}
+          loading={loading}
+          onPrev={list.goPrev}
+          onNext={list.goNext}
+          onSize={list.setSize}
+        />
+      ) : null}
     </section>
   );
 }

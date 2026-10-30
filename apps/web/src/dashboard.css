@@ -1562,3 +1562,408 @@
     font-size: 0.72rem;
   }
 }
+
+/* ---------- QA pass: dates, pager, copy, toast, cards, menu ---------- */
+
+/* Native date inputs, in the theme's red. */
+input[type="date"],
+input[type="datetime-local"],
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--red);
+}
+
+.dash-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-self: flex-end;
+  padding-bottom: 0.2rem;
+}
+
+.dash-preset {
+  min-height: 2rem;
+  padding: 0.2rem 0.65rem;
+  font-family: var(--type);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: #fffdf8;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: transform 80ms ease;
+}
+
+.dash-preset:hover {
+  border-color: var(--ink);
+}
+
+.dash-preset:active {
+  transform: translateY(1px);
+}
+
+.dash-preset[aria-pressed="true"] {
+  color: var(--paper);
+  background: var(--char);
+  border-color: var(--char);
+}
+
+.dash-field-error {
+  flex: 1 1 100%;
+  margin: 0;
+  font-weight: 600;
+  color: var(--red-dk);
+}
+
+.dash-field-error::before {
+  content: "! ";
+  font-weight: 700;
+}
+
+.dash-filters input[aria-invalid="true"],
+.dash-form input[aria-invalid="true"] {
+  border-color: var(--red);
+  background: var(--red-lt);
+}
+
+.dash-clear {
+  align-self: flex-end;
+}
+
+/* Pager: Page N · rows A–B, Previous / Next, rows per page. */
+.dash-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1.25rem;
+  margin: 0 0 1.5rem;
+}
+
+.dash-pager-label {
+  font-family: var(--type);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.dash-pager-buttons {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.dash-pager-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--type);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dash-pager-size select {
+  min-height: 2rem;
+  padding: 0.2rem 0.4rem;
+  font-family: var(--body);
+  font-size: 0.95rem;
+  color: var(--ink);
+  background: #fffdf8;
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/* A full reference with its copy button: the text wraps, never truncates. */
+.dash-ref,
+.dash-copy-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+  max-width: 100%;
+}
+
+.dash-ref-text {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  min-width: 0;
+}
+
+.dash-copy-row a,
+.dash-copy-row code {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.dash-copy-button {
+  flex: none;
+}
+
+.dash-table .dash-ref .dash-copy-button {
+  min-height: 1.7rem;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.7rem;
+}
+
+/* Busy buttons: the wait cursor and a calm, still-readable look. */
+.dash-button[aria-busy="true"] {
+  cursor: progress;
+  opacity: 0.8;
+}
+
+/* Toasts: one region for the app, bottom right, themed like a stamp. */
+.fp-toasts {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+  max-width: min(26rem, calc(100vw - 2rem));
+  pointer-events: none;
+}
+
+.fp-toast {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.8rem 0.7rem 1rem;
+  font-family: var(--body);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--paper);
+  background: var(--char);
+  border: 2px solid var(--char);
+  border-left: 6px solid var(--green);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+  animation: fp-toast-in 160ms ease-out;
+}
+
+.fp-toast-error {
+  border-left-color: var(--red);
+}
+
+.fp-toast-close {
+  padding: 0 0.3rem;
+  font-size: 1.2rem;
+  line-height: 1;
+  color: #bdb4a3;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.fp-toast-close:hover {
+  color: var(--paper);
+}
+
+@keyframes fp-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fp-toast {
+    animation: none;
+  }
+}
+
+@media (max-width: 40rem) {
+  .fp-toasts {
+    left: 1rem;
+    right: 1rem;
+    bottom: 1rem;
+    max-width: none;
+    align-items: stretch;
+  }
+}
+
+/* Skip link: hidden until focused. */
+.dash-skip {
+  position: absolute;
+  left: 0.75rem;
+  top: -4rem;
+  z-index: 1100;
+  padding: 0.5rem 1rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--red);
+  border-radius: var(--radius);
+}
+
+.dash-skip:focus {
+  top: 0.75rem;
+}
+
+/* Small screens: list tables become cards (label on the left, value on the
+   right), so amounts never hide off to the side. */
+@media (max-width: 40rem) {
+  .dash-table-cards thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .dash-table-cards,
+  .dash-table-cards tbody,
+  .dash-table-cards tr,
+  .dash-table-cards td {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .dash-table-cards tr {
+    padding: 0.4rem 0;
+    border-bottom: 2px solid var(--line);
+  }
+
+  .dash-table-cards td[data-label] {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.3rem 0.9rem;
+    border: none;
+    text-align: right;
+    white-space: normal;
+  }
+
+  .dash-table-cards td[data-label]::before {
+    content: attr(data-label);
+    flex: none;
+    font-family: var(--type);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: left;
+  }
+
+  .dash-table-cards td[data-label] .dash-ref {
+    justify-content: flex-end;
+  }
+
+  /* The smallest uppercase labels read a little larger on a phone. */
+  .dash-kicker,
+  .dash-filters legend,
+  .dash-form label,
+  .dash-filters label.dash-field,
+  .dash-figure-label,
+  .dash-pager-size {
+    font-size: 0.82rem;
+  }
+}
+
+/* Mobile menu button: the nav opens as a list instead of hiding tabs. */
+.dash-menu-toggle {
+  display: none;
+}
+
+@media (max-width: 40rem) {
+  .dash-menu-toggle {
+    display: inline-flex;
+  }
+
+  .dash-header .dash-nav {
+    display: none;
+  }
+
+  .dash-header .dash-nav.dash-nav-open {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    overflow: visible;
+    margin: 0 -1rem;
+    padding: 0 0 0.5rem;
+  }
+
+  .dash-header .dash-nav.dash-nav-open a {
+    padding: 0.7rem 1rem;
+    border-bottom: 1px solid var(--char2);
+  }
+}
+
+.dash-empty-first {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.dash-table td.dash-wrap {
+  overflow-wrap: anywhere;
+  min-width: 12rem;
+}
+
+.dash-dl dt .dash-dt-help {
+  display: block;
+  margin-top: 0.15rem;
+  font-family: var(--body);
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--muted);
+}
+
+.dash-dl dt:has(.dash-dt-help) {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.dash-dl dd.dash-dd-stack {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.dash-dd-help {
+  display: block;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+/* In list tables the reference sits on one line with its copy button on wide
+   screens, and wraps on narrow ones; it is never cut short. */
+.dash-table .dash-ref {
+  flex-wrap: nowrap;
+  gap: 0.5rem;
+}
+
+@media (min-width: 64rem) {
+  .dash-table .dash-ref-text {
+    white-space: nowrap;
+    word-break: normal;
+  }
+}
+
+@media (max-width: 40rem) {
+  .dash-table-cards td[data-label].dash-td-stack {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.3rem;
+    text-align: left;
+  }
+
+  .dash-table-cards td[data-label].dash-td-stack .dash-ref {
+    justify-content: flex-start;
+  }
+}

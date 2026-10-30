@@ -1339,3 +1339,227 @@ button:disabled {
 .admin-form-nested {
   margin: 0;
 }
+
+/* ---------- toast (one per app) ---------- */
+
+.admin-toasts {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: min(26rem, calc(100vw - 2rem));
+  pointer-events: none;
+}
+
+.admin-toast {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.6rem 0.7rem 1rem;
+  font-weight: 600;
+  color: var(--paper);
+  background: var(--char);
+  border: 2px solid var(--ink);
+  border-left: 6px solid var(--green);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+  animation: admin-toast-in 160ms ease-out;
+}
+
+.admin-toast-error {
+  border-left-color: var(--red);
+}
+
+.admin-toast span {
+  flex: 1;
+}
+
+.admin-toast .admin-toast-close {
+  min-height: 1.8rem;
+  padding: 0 0.5rem;
+  font-size: 1.1rem;
+  color: var(--paper);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.admin-toast .admin-toast-close:hover:not(:disabled) {
+  background: var(--char2);
+}
+
+@keyframes admin-toast-in {
+  from {
+    transform: translateY(0.5rem);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-toast {
+    animation: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .admin-toasts {
+    left: 1rem;
+    right: 1rem;
+    bottom: 1rem;
+    max-width: none;
+  }
+}
+
+/* Busy buttons: the label says what is happening ("Approving…"). */
+button[aria-busy="true"] {
+  cursor: progress;
+}
+
+/* ---------- pager ---------- */
+
+.admin-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  margin: 1rem 0;
+}
+
+.admin-pager-label {
+  font-family: var(--type);
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--char2);
+}
+
+.admin-pager-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.admin-pager-size {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  font-family: var(--type);
+  font-weight: 700;
+  font-size: 0.76rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--char2);
+}
+
+.admin-pager-size select {
+  min-height: 2rem;
+  padding: 0.2rem 0.4rem;
+  background: #fffdf8;
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+}
+
+@media (max-width: 600px) {
+  .admin-pager-size {
+    margin-left: 0;
+  }
+}
+
+/* ---------- date ranges ---------- */
+
+input[type="date"],
+input[type="datetime-local"] {
+  accent-color: var(--red);
+}
+
+.admin-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  grid-column: 1 / -1;
+}
+
+.admin-preset {
+  min-height: 1.9rem;
+  padding: 0.2rem 0.65rem;
+  font-family: var(--type);
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  box-shadow: none;
+  border-width: 1.5px;
+  border-color: var(--line);
+  background: var(--paper);
+}
+
+.admin-preset[aria-pressed="true"] {
+  color: var(--paper);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.admin-preset[aria-pressed="true"]:hover:not(:disabled) {
+  background: var(--char2);
+}
+
+.admin-field-error {
+  grid-column: 1 / -1;
+  flex-basis: 100%;
+  margin: 0;
+  font-weight: 600;
+  color: var(--red-dk);
+}
+
+input[aria-invalid="true"] {
+  border-color: var(--red) !important;
+}
+
+/* ---------- small-screen menu ---------- */
+
+.admin-header .admin-menu-button {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .admin-header {
+    padding: 0.5rem 1rem;
+    gap: 0.5rem 0.75rem;
+  }
+  .admin-header .admin-menu-button {
+    display: inline-flex;
+    order: 2;
+    margin-left: auto;
+  }
+  .admin-identity {
+    order: 3;
+    margin-left: 0;
+  }
+  .admin-nav {
+    display: none;
+    order: 4;
+    flex-direction: column;
+    overflow: visible;
+  }
+  .admin-nav.admin-nav-open {
+    display: flex;
+  }
+  .admin-header .admin-nav a {
+    padding: 0 1rem;
+    min-height: 2.9rem;
+    border-bottom: 1px solid var(--char2);
+  }
+  .admin-header .admin-nav a.active {
+    box-shadow: inset 4px 0 0 var(--red);
+  }
+  /* The smallest uppercase labels are a bit larger on phones. */
+  .admin-kicker,
+  .admin-form label,
+  .admin-dl dt,
+  .admin-table th {
+    font-size: 0.8rem;
+  }
+}

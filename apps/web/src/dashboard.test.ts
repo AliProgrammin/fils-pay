@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildQuery } from "./api/query.js";
-import { bhd, dash, dayStartIso, localDateTimeToIso } from "./format.js";
+import { bhd, dash } from "./format.js";
+import { bahrainDayStartIso, bahrainInputToIso } from "./dateRange.js";
 
 /**
  * The pure logic behind the dashboard's query strings and money/date display.
@@ -41,7 +42,7 @@ test("bhd formats integer fils via @filspay/money, never float arithmetic", () =
   assert.equal(bhd(0), "0.000 BHD");
   assert.equal(bhd(1), "0.001 BHD");
   assert.equal(bhd(1000), "1.000 BHD");
-  assert.equal(bhd(1234567), "1234.567 BHD");
+  assert.equal(bhd(1234567), "1,234.567 BHD");
 });
 
 // E7: a refund or a reconciliation gap is negative; it must render, not throw.
@@ -57,18 +58,15 @@ test("dash renders absent values as an em dash but keeps zero", () => {
   assert.equal(dash(0), "0");
 });
 
-test("dayStartIso converts a date input to the Asia/Bahrain day boundary", () => {
-  assert.equal(dayStartIso("2026-09-12"), "2026-09-12T00:00:00+03:00");
+test("bahrainDayStartIso converts a date input to the Asia/Bahrain day boundary", () => {
+  assert.equal(bahrainDayStartIso("2026-09-12"), "2026-09-12T00:00:00+03:00");
   // Bahrain midnight is 21:00 UTC the day before.
-  assert.equal(new Date(dayStartIso("2026-09-12")!).toISOString(), "2026-09-11T21:00:00.000Z");
-  assert.equal(dayStartIso(""), undefined);
+  assert.equal(new Date(bahrainDayStartIso("2026-09-12")).toISOString(), "2026-09-11T21:00:00.000Z");
 });
 
-test("localDateTimeToIso rejects garbage instead of sending Invalid Date", () => {
-  assert.equal(localDateTimeToIso(""), null);
-  assert.equal(localDateTimeToIso("not-a-date"), null);
-  // A real value round-trips to the same instant it names.
-  const iso = localDateTimeToIso("2026-09-12T14:30");
-  assert.notEqual(iso, null);
-  assert.equal(new Date(iso ?? "").getTime(), new Date("2026-09-12T14:30").getTime());
+test("bahrainInputToIso rejects garbage instead of sending Invalid Date", () => {
+  assert.equal(bahrainInputToIso(""), null);
+  assert.equal(bahrainInputToIso("not-a-date"), null);
+  // A value typed in Bahrain time is that Bahrain instant, whatever the browser zone.
+  assert.equal(bahrainInputToIso("2026-09-12T14:30"), "2026-09-12T11:30:00.000Z");
 });

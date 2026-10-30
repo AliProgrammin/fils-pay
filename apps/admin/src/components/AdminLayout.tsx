@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAdminAuth } from "../auth/AdminAuthContext.js";
 import { WEB_BASE_URL } from "../api/client.js";
 import { errorMessage } from "../errors.js";
@@ -13,6 +13,11 @@ export function AdminLayout() {
   const { admin, signOut, impersonation } = useAdminAuth();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const location = useLocation();
+
+  // Close the small-screen menu after moving to another page.
+  useEffect(() => setMenuOpen(false), [location.pathname]);
 
   async function handleSignOut(): Promise<void> {
     setError(null);
@@ -35,7 +40,20 @@ export function AdminLayout() {
           </span>
           <span className="admin-brand-tag">Operations</span>
         </div>
-        <nav className="admin-nav" aria-label="Admin sections">
+        <button
+          type="button"
+          className="admin-menu-button"
+          aria-expanded={menuOpen}
+          aria-controls="admin-nav"
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          {menuOpen ? "Close menu" : "Menu"}
+        </button>
+        <nav
+          id="admin-nav"
+          className={menuOpen ? "admin-nav admin-nav-open" : "admin-nav"}
+          aria-label="Admin sections"
+        >
           <NavLink to="/merchants">Merchants</NavLink>
           <NavLink to="/credits">Credits</NavLink>
           <NavLink to="/settlement">Settlement ops</NavLink>

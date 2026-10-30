@@ -75,7 +75,22 @@ export function fromBahrainInputValue(value: string): string {
   return new Date(`${value}:00+03:00`).toISOString();
 }
 
-/** Fils → "1234.500 BHD" (three decimals, exact; never floats). */
+/** Fils → "1,234.500" (three decimals, exact; never floats). The comma
+ *  grouping is display only: the text is never parsed back into money. */
+export function bhdAmount(fils: number): string {
+  const plain = formatBhd(toFils(fils, { allowNegative: true }));
+  const [whole = "", fraction = ""] = plain.split(".");
+  const sign = whole.startsWith("-") ? "-" : "";
+  const digits = sign ? whole.slice(1) : whole;
+  return `${sign}${digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction}`;
+}
+
+/** Fils → "1,234.500 BHD". */
 export function bhd(fils: number): string {
-  return `${formatBhd(toFils(fils, { allowNegative: true }))} BHD`;
+  return `${bhdAmount(fils)} BHD`;
+}
+
+/** Plain words for status and code values: "under_review" → "under review". */
+export function label(value: string): string {
+  return value.replace(/_/g, " ");
 }

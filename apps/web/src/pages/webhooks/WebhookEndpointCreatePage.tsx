@@ -5,6 +5,8 @@ import { StatusChip } from "../../components/StatusChip.js";
 import { errorMessage } from "../../errors.js";
 import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
 import { dateTime } from "../../format.js";
+import { CopyButton } from "../../components/CopyButton.js";
+import { useToast } from "../../components/Toast.js";
 import type { WebhookEndpointCreateResponse } from "../../types.js";
 
 /**
@@ -25,31 +27,21 @@ export function WebhookEndpointCreatePage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<WebhookEndpointCreateResponse | null>(null);
-  const [copied, setCopied] = useState(false);
+  const notify = useToast();
 
   /** The response carries the secret; this is the only time it is shown. */
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
-    if (!me) return;
+    if (!me || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
       setCreated(await createWebhookEndpoint(me.merchant.id, { url: url.trim() }));
+      notify("Webhook endpoint created");
     } catch (err) {
       setError(errorMessage(err, "webhookCreate"));
     } finally {
       setSubmitting(false);
-    }
-  }
-
-  // MK: secret is shown once only
-  async function handleCopy(secret: string): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(secret);
-      setCopied(true);
-    } catch {
-      // The secret is on screen and selectable — nothing to recover from.
-      setCopied(false);
     }
   }
 
@@ -69,15 +61,9 @@ export function WebhookEndpointCreatePage() {
             <strong>This will not be shown again.</strong> Store it now; every delivery
             to this endpoint is signed with it, and it cannot be re-read or recovered.
           </p>
-          <p>
-            <code className="dash-secret">{created.secret}</code>{" "}
-            <button
-              type="button"
-              className="dash-button"
-              onClick={() => void handleCopy(created.secret)}
-            >
-              {copied ? "Copied" : "Copy secret"}
-            </button>
+          <p className="dash-copy-row">
+            <code className="dash-secret">{created.secret}</code>
+            <CopyButton value={created.secret} label="Copy secret" copiedMessage="Secret copied" />
           </p>
         </div>
 
@@ -129,8 +115,8 @@ export function WebhookEndpointCreatePage() {
             onChange={(e) => setUrl(e.target.value)}
           />
         </label>
-        <button type="submit" className="dash-button dash-button-primary" disabled={submitting}>
-          {submitting ? "Creating..." : "Create endpoint"}
+        <button type="submit" className="dash-button dash-button-primary" disabled={submitting} aria-busy={submitting || undefined}>
+          {submitting ? "Creating…" : "Create endpoint"}
         </button>
       </form>
 

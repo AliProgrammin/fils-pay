@@ -1,8 +1,9 @@
-import { useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { formatBhd, toFils } from "@filspay/money";
 import { refundTransaction } from "../../api/transactions.js";
 import { ApiError } from "../../api/client.js";
-import { errorMessage } from "../../errors.js";
+import { errorMessage, REFUNDS_PAUSED_MESSAGE } from "../../errors.js";
+import { useToast } from "../../components/Toast.js";
 import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
 import { RequireRole } from "../../auth/RequireRole.js";
 import { bhd } from "../../format.js";
@@ -30,14 +31,39 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
   const [error, setError] = useState<string | null>(null);
   const keys = useRef(new RefundKeyKeeper());
   const [confirmDialog, confirm] = useConfirmDialog();
+  // The API said refunds are off for this account: say so, offer no button.
+  const [paused, setPaused] = useState(false);
+  const notify = useToast();
+  const amountRef = useRef<HTMLInputElement>(null);
+  const errorId = useId();
+  const busy = useRef(false);
+
+  // Opening the form puts the cursor in the amount box.
+  useEffect(() => {
+    if (open) amountRef.current?.focus();
+  }, [open]);
 
   const merchantId = me?.merchant.id;
   const maxFils = refundableFils(txn);
-  if (maxFils === 0) return null;
+  if (paused) {
+    return (
+      <RequireRole allow={["owner", "finance"]}>
+        <p className="dash-callout" role="status">{REFUNDS_PAUSED_MESSAGE}</p>
+      </RequireRole>
+    );
+  }
+  if (maxFils === 0) {
+    // Keep a failure visible even after the reload showed nothing is left.
+    return error ? (
+      <RequireRole allow={["owner", "finance"]}>
+        <p className="dash-error" role="alert">{error}</p>
+      </RequireRole>
+    ) : null;
+  }
 
   async function handleRefund(event: React.FormEvent): Promise<void> {
     event.preventDefault();
-    if (!merchantId) return;
+    if (!merchantId || busy.current) return;
     const parsed = parseRefundAmount(amount, maxFils);
     if (!parsed.ok) {
       setError(parsed.message);
@@ -54,8 +80,9 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
       message: "The money goes back to the cardholder and cannot be recalled.",
       confirmLabel: "Refund",
     });
-    if (!confirmed) return;
+    if (!confirmed || busy.current) return;
 
+    busy.current = true;
     setSubmitting(true);
     setError(null);
     try {
@@ -71,14 +98,17 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
       setOpen(false);
       setAmount("");
       setReason("");
+      notify(`Refund of ${bhd(parsed.amountFils)} sent`);
       // Refetch: the refund wrote a new timeline event and changed the totals.
       await onRefunded();
     } catch (err) {
       setError(errorMessage(err, "refund"));
-      // Someone else refunded part of it meanwhile: reload, so "Left to
-      // refund" matches what the message says.
-      if (err instanceof ApiError && err.code === "refund_exceeds_refundable") await onRefunded();
+      if (err instanceof ApiError && err.code === "refunds_not_enabled") setPaused(true);
+      // Any answer from the API (another tab refunded it, the limit changed):
+      // reload, so the totals on screen match what the message says.
+      if (err instanceof ApiError) await onRefunded().catch(() => undefined);
     } finally {
+      busy.current = false;
       setSubmitting(false);
     }
   }
@@ -97,24 +127,39 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
             </span>
           </div>
           <div className="dash-panel-body">
-            {error ? <p className="dash-error" role="alert">{error}</p> : null}
-            <form className="dash-form dash-form-inline" onSubmit={(e) => void handleRefund(e)}>
+            {error ? <p className="dash-error" role="alert" id={errorId}>{error}</p> : null}
+            <form className="dash-form dash-form-inline" noValidate onSubmit={(e) => void handleRefund(e)}>
               <label>
-                Amount (BD)
+                Amount (BD, required)
                 <input
+                  ref={amountRef}
                   type="text"
+                  required
+                  aria-describedby={error ? errorId : undefined}
                   inputMode="decimal"
-                  placeholder={formatBhd(toFils(maxFils))}
+                  placeholder={`up to ${formatBhd(toFils(maxFils))}`}
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                 />
               </label>
               <label className="dash-grow">
-                Reason
-                <input type="text" maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
+                Reason (required)
+                <input
+                  type="text"
+                  required
+                  maxLength={500}
+                  aria-describedby={error ? errorId : undefined}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                />
               </label>
-              <button type="submit" className="dash-button dash-button-primary" disabled={submitting}>
-                {submitting ? "Refunding..." : "Refund"}
+              <button
+                type="submit"
+                className="dash-button dash-button-primary"
+                disabled={submitting}
+                aria-busy={submitting || undefined}
+              >
+                {submitting ? "Refunding…" : "Refund"}
               </button>
               <button type="button" className="dash-button" disabled={submitting} onClick={() => setOpen(false)}>
                 Cancel

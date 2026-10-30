@@ -69,6 +69,7 @@ export const GENERIC_MESSAGE =
   "Something went wrong on our side. Please try again. If it keeps happening, contact FilsPay support.";
 const SERVER_DOWN_MESSAGE = "FilsPay is not answering right now. Please try again in a moment.";
 const TRY_ANOTHER_CARD = "Try another card, or contact your bank.";
+export const REFUNDS_PAUSED_MESSAGE = "Refunds are paused for your account. Contact FilsPay support.";
 
 function amount(body: ApiErrorBody, field: string): string | null {
   const value = body[field];
@@ -145,7 +146,7 @@ const MESSAGES: Record<string, Message> = {
   refund_amount_invalid: "Enter a refund amount greater than 0.",
   transaction_not_refundable: "This payment can't be refunded. Only captured payments can be refunded.",
   refund_declined: "The bank did not accept this refund. No money was moved. Please try again later.",
-  refunds_not_enabled: "Refunds are turned off for your shop. Contact FilsPay support to turn them on.",
+  refunds_not_enabled: REFUNDS_PAUSED_MESSAGE,
   reason_required: "Enter a reason for the refund (up to 500 characters).",
 
   // Payment links
@@ -179,11 +180,12 @@ const OVERRIDES: Partial<Record<ErrorContext, Record<string, Message>>> = {
     validation_error: "Enter the code we sent you.",
   },
   capture: {
-    invalid_amount: "Enter the amount to capture in fils, greater than 0, or leave it blank to capture all.",
+    invalid_amount: "Enter the amount to capture in BD, more than 0, or leave it blank to capture all of it.",
   },
   refund: {
     invalid_amount: "Enter a refund amount greater than 0.",
     forbidden: "You don't have permission to refund. Ask the shop owner or a finance user on your account.",
+    transaction_not_refundable: "This payment was already refunded (maybe in another tab).",
   },
   paymentLinkCreate: {
     invalid_amount: "Enter an amount greater than 0, for example 12.750.",

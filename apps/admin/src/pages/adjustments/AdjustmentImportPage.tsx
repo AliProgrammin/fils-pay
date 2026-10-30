@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import {
   getAdjustmentImportRows,
   listAdjustmentImports,
@@ -7,6 +7,10 @@ import {
 import { errorMessage } from "../../errors.js";
 import { RequireRole } from "../../auth/RequireRole.js";
 import { bhd, formatDateTime } from "../../format.js";
+import { Pager } from "../../components/Pager.js";
+import { usePagedList } from "../../components/usePagedList.js";
+import { useAction } from "../../components/useAction.js";
+import { useToast } from "../../components/Toast.js";
 import type {
   AdjustmentImportRowDetail,
   AdjustmentImportSummary,
@@ -26,53 +30,41 @@ const CSV_PLACEHOLDER = `merchantId,amount,reason
 export function AdjustmentImportPage() {
   const [csvContent, setCsvContent] = useState("");
   const [filename, setFilename] = useState("");
-  const [busy, setBusy] = useState(false);
+  const notify = useToast();
+  const [busy, run] = useAction();
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  const [imports, setImports] = useState<AdjustmentImportSummary[]>([]);
-  const [listError, setListError] = useState<string | null>(null);
 
   const [openImportId, setOpenImportId] = useState<string | null>(null);
   const [rows, setRows] = useState<AdjustmentImportRowDetail[]>([]);
   const [rowsError, setRowsError] = useState<string | null>(null);
 
-  const loadHistory = useCallback(async () => {
-    setListError(null);
-    try {
-      const page = await listAdjustmentImports({ limit: 25 });
-      setImports(page.items);
-    } catch (err) {
-      setListError(errorMessage(err));
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadHistory();
-  }, [loadHistory]);
+  const history = usePagedList<AdjustmentImportSummary>("imports", async (cursor, limit) => {
+    const page = await listAdjustmentImports({ limit, cursor });
+    return { rows: page.items, nextCursor: page.nextCursor };
+  });
+  const imports = history.rows;
+  const listError = history.error ? errorMessage(history.error) : null;
 
   /** Amounts are BD with three decimals and are parsed server-side with parseBhdToFils. */
   async function handleApply(event: React.FormEvent): Promise<void> {
     event.preventDefault();
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const result = await uploadAdjustmentImport(
-        csvContent,
-        filename.trim() ? filename.trim() : undefined,
-      );
-      setNotice(
-        `Applied ${result.rowCount} row(s), posting ${bhd(result.totalPostedFils)} in total.`,
-      );
-      setCsvContent("");
-      setFilename("");
-      await loadHistory();
-    } catch (err) {
-      setError(errorMessage(err, "adjustmentImport"));
-    } finally {
-      setBusy(false);
-    }
+    await run(async () => {
+      setError(null);
+      try {
+        const result = await uploadAdjustmentImport(
+          csvContent,
+          filename.trim() ? filename.trim() : undefined,
+        );
+        notify(
+          `Applied ${result.rowCount} row${result.rowCount === 1 ? "" : "s"}, posting ${bhd(result.totalPostedFils)} in total`,
+        );
+        setCsvContent("");
+        setFilename("");
+        history.reload();
+      } catch (err) {
+        setError(errorMessage(err, "adjustmentImport"));
+      }
+    });
   }
 
   async function handleOpenRows(importId: string): Promise<void> {
@@ -96,8 +88,8 @@ export function AdjustmentImportPage() {
         <p className="admin-kicker">Bulk corrections · Money movement</p>
         <h1>Import adjustments</h1>
         <p className="admin-lede">
-          Applies a CSV of manual balance corrections immediately — one balanced ledger posting per
-          row. Uploading is gated server-side to the <code>finance</code> and{" "}
+          Applies a CSV of manual balance corrections immediately. Each row is recorded in the
+          ledger as its own correction. Uploading is gated server-side to the <code>finance</code> and{" "}
           <code>super_admin</code> roles.
         </p>
       </header>
@@ -143,13 +135,14 @@ export function AdjustmentImportPage() {
         </RequireRole>
 
         {error ? <p className="admin-error" role="alert">{error}</p> : null}
-        {notice ? <p className="admin-notice" role="status">{notice}</p> : null}
       </div>
 
       <div className="admin-panel">
         <h2>Past imports</h2>
         {listError ? <p className="admin-error" role="alert">{listError}</p> : null}
-        {imports.length === 0 ? (
+        {history.loading && imports.length === 0 ? (
+          <p className="admin-loading" role="status">Loading imports…</p>
+        ) : imports.length === 0 ? (
           <p className="admin-empty">No imports yet.</p>
         ) : (
           <div className="admin-table-wrap">
@@ -184,6 +177,17 @@ export function AdjustmentImportPage() {
             </table>
           </div>
         )}
+
+        <Pager
+          page={history.page}
+          size={history.size}
+          count={imports.length}
+          hasNext={history.hasNext}
+          loading={history.loading}
+          onPrev={history.goPrev}
+          onNext={history.goNext}
+          onSize={history.setSize}
+        />
 
         {rowsError ? <p className="admin-error" role="alert">{rowsError}</p> : null}
 

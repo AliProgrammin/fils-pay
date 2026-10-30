@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   approveCreditRequest,
   listCreditRequests,
@@ -10,6 +10,10 @@ import { RequireRole } from "../../auth/RequireRole.js";
 import { StatusChip } from "../../components/StatusChip.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
 import { bhd, formatBusinessDate } from "../../format.js";
+import { Pager } from "../../components/Pager.js";
+import { usePagedList } from "../../components/usePagedList.js";
+import { useAction } from "../../components/useAction.js";
+import { useToast } from "../../components/Toast.js";
 import type { CreditRequestDto, CreditRequestStatus } from "../../types.js";
 
 const STATUS_TABS: Array<{ value: CreditRequestStatus; label: string }> = [
@@ -29,80 +33,66 @@ const STATUS_TABS: Array<{ value: CreditRequestStatus; label: string }> = [
 // approve is gated server side but issuing (MerchantDetail) only in the ui? — am
 // MK: both are server-side
 export function CreditsPage() {
-  const [status, setStatus] = useState<CreditRequestStatus>("pending_approval");
-  const [items, setItems] = useState<CreditRequestDto[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const notify = useToast();
+  const [searchParams] = useSearchParams();
+  const rawStatus = searchParams.get("status");
+  const status: CreditRequestStatus = STATUS_TABS.some((tab) => tab.value === rawStatus)
+    ? (rawStatus as CreditRequestStatus)
+    : "pending_approval";
   const [actionError, setActionError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [, runAction] = useAction();
   const [rejectReason, setRejectReason] = useState("");
   const [pendingReject, setPendingReject] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoadError(null);
-    setLoading(true);
-    try {
-      const page = await listCreditRequests({ status });
-      setItems(page.items ?? []);
-      setNextCursor(page.nextCursor);
-    } catch (err) {
-      setLoadError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [status]);
+  const list = usePagedList<CreditRequestDto>(status, async (cursor, limit) => {
+    const page = await listCreditRequests({ status, limit, cursor });
+    return { rows: page.items ?? [], nextCursor: page.nextCursor };
+  });
+  const items = list.rows;
+  const loading = list.loading;
+  const loadError = list.error ? errorMessage(list.error) : null;
 
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  async function loadMore(): Promise<void> {
-    if (!nextCursor) return;
-    try {
-      const page = await listCreditRequests({ status, cursor: nextCursor });
-      setItems((current) => [...current, ...(page.items ?? [])]);
-      setNextCursor(page.nextCursor);
-    } catch (err) {
-      setLoadError(errorMessage(err));
-    }
+  function selectTab(value: CreditRequestStatus): void {
+    setActionError(null);
+    list.updateParams((params) => {
+      if (value === "pending_approval") params.delete("status");
+      else params.set("status", value);
+    });
   }
 
   async function handleApprove(id: string): Promise<void> {
-    setBusyId(id);
-    setActionError(null);
-    setNotice(null);
-    try {
-      const record = await approveCreditRequest(id);
-      setNotice(
-        `Approved. ${bhd(record.postedAmountFils)} journaled to entry group ${
-          record.ledgerEntryGroupId ?? "(unknown)"
-        }.`,
-      );
-      await load();
-    } catch (err) {
-      setActionError(errorMessage(err));
-    } finally {
-      setBusyId(null);
-    }
+    await runAction(async () => {
+      setBusyId(id);
+      setActionError(null);
+      try {
+        const record = await approveCreditRequest(id);
+        notify(`Credit approved. ${bhd(record.postedAmountFils)} added to the merchant's balance`);
+        list.reload();
+      } catch (err) {
+        setActionError(errorMessage(err));
+      } finally {
+        setBusyId(null);
+      }
+    });
   }
 
   async function handleReject(id: string): Promise<void> {
-    setBusyId(id);
-    setActionError(null);
-    setNotice(null);
-    try {
-      await rejectCreditRequest(id, rejectReason.trim() ? rejectReason.trim() : undefined);
-      setNotice("Credit request rejected. Nothing was journaled.");
-      setPendingReject(null);
-      setRejectReason("");
-      await load();
-    } catch (err) {
-      setActionError(errorMessage(err));
-    } finally {
-      setBusyId(null);
-    }
+    await runAction(async () => {
+      setBusyId(id);
+      setActionError(null);
+      try {
+        await rejectCreditRequest(id, rejectReason.trim() ? rejectReason.trim() : undefined);
+        notify("Credit rejected. No money was moved");
+        setPendingReject(null);
+        setRejectReason("");
+        list.reload();
+      } catch (err) {
+        setActionError(errorMessage(err));
+      } finally {
+        setBusyId(null);
+      }
+    });
   }
 
   return (
@@ -111,9 +101,9 @@ export function CreditsPage() {
         <p className="admin-kicker">Maker-checker · Money movement</p>
         <h1>Merchant credits</h1>
         <p className="admin-lede">
-          Manual credits are journaled to <code>ledger_entries</code> like any other money movement.
-          A credit above the approval limit cannot post until a second <code>finance</code> or{" "}
-          <code>super_admin</code> operator — not the one who raised it — approves it.
+          A manual credit adds money to a merchant&apos;s balance and is recorded in the ledger like
+          any other payment. A credit above the approval limit waits here until a second finance
+          admin — not the one who raised it — approves it.
         </p>
       </header>
 
@@ -124,7 +114,7 @@ export function CreditsPage() {
             type="button"
             aria-current={tab.value === status ? "page" : undefined}
             disabled={tab.value === status}
-            onClick={() => setStatus(tab.value)}
+            onClick={() => selectTab(tab.value)}
           >
             {tab.label}
           </button>
@@ -132,11 +122,10 @@ export function CreditsPage() {
       </nav>
 
       {loadError ? <p className="admin-error" role="alert">{loadError}</p> : null}
-      {actionError ? <p className="admin-error" role="alert">{actionError}</p> : null}
-      {notice ? <p className="admin-notice" role="status">{notice}</p> : null}
+      {actionError && !pendingReject ? <p className="admin-error" role="alert">{actionError}</p> : null}
 
       {loading && items.length === 0 ? (
-        <p className="admin-loading" role="status">Loading credit requests...</p>
+        <p className="admin-loading" role="status">Loading credit requests…</p>
       ) : items.length === 0 ? (
         <p className="admin-empty">
           {status === "pending_approval"
@@ -149,7 +138,7 @@ export function CreditsPage() {
             <thead>
               <tr>
                 <th>Requested by</th>
-                <th>Merchant</th>
+                <th>Merchant ID</th>
                 <th>Reason</th>
                 <th className="admin-num">Base</th>
                 <th className="admin-num">Fee reversal</th>
@@ -164,8 +153,8 @@ export function CreditsPage() {
                 <tr key={item.id}>
                   <td>{item.requestedByDisplayName}</td>
                   <td>
-                    <Link to={`/merchants/${item.merchantId}`}>
-                      <code>{item.merchantId.slice(0, 8)}</code>
+                    <Link to={`/merchants/${item.merchantId}`} title={`Open merchant ${item.merchantId}`}>
+                      <code>{item.merchantId.slice(0, 8)}…</code>
                     </Link>
                   </td>
                   <td>
@@ -189,15 +178,16 @@ export function CreditsPage() {
                           <button
                             type="button"
                             className="admin-btn-primary admin-btn-small"
-                            disabled={busyId === item.id}
+                            disabled={busyId !== null}
+                            aria-busy={busyId === item.id}
                             onClick={() => void handleApprove(item.id)}
                           >
-                            Approve
+                            {busyId === item.id && !pendingReject ? "Approving…" : "Approve"}
                           </button>
                           <button
                             type="button"
                             className="admin-btn-small"
-                            disabled={busyId === item.id}
+                            disabled={busyId !== null}
                             onClick={() => setPendingReject(item.id)}
                           >
                             Reject
@@ -219,7 +209,7 @@ export function CreditsPage() {
         <ConfirmDialog
           title="Reject this credit request?"
           confirmLabel="Yes, reject it"
-          busyLabel="Rejecting..."
+          busyLabel="Rejecting…"
           busy={busyId === pendingReject}
           error={actionError}
           onConfirm={() => void handleReject(pendingReject)}
@@ -228,14 +218,14 @@ export function CreditsPage() {
             setRejectReason("");
           }}
         >
-          <p>Nothing is journaled, and the request cannot be approved afterwards.</p>
+          <p>No money is moved, and the request cannot be approved afterwards.</p>
           {(() => {
             const item = items.find((i) => i.id === pendingReject);
             return item ? (
               <dl className="admin-dialog-facts">
-                <dt>Merchant</dt>
+                <dt>Merchant ID</dt>
                 <dd>
-                  <code>{item.merchantId.slice(0, 8)}</code>
+                  <code>{item.merchantId}</code>
                 </dd>
                 <dt>Requested by</dt>
                 <dd>{item.requestedByDisplayName}</dd>
@@ -257,13 +247,16 @@ export function CreditsPage() {
         </ConfirmDialog>
       ) : null}
 
-      {nextCursor ? (
-        <p>
-          <button type="button" onClick={() => void loadMore()}>
-            Load more
-          </button>
-        </p>
-      ) : null}
+      <Pager
+        page={list.page}
+        size={list.size}
+        count={items.length}
+        hasNext={list.hasNext}
+        loading={loading}
+        onPrev={list.goPrev}
+        onNext={list.goNext}
+        onSize={list.setSize}
+      />
     </section>
   );
 }

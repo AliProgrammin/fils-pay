@@ -1,4 +1,4 @@
-import { Component, useEffect, useState } from "react";
+import { Component, useEffect, useId, useRef, useState } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { useParams } from "react-router-dom";
 import { formatBhd, toFils } from "@filspay/money";
@@ -6,6 +6,7 @@ import { getPaymentLink, payPaymentLink } from "../../api/paymentLinks.js";
 import { ApiError } from "../../api/client.js";
 import { errorMessage } from "../../errors.js";
 import type { PaymentLinkPublicDto, PayPaymentLinkResponse, SimulatedCardInput } from "../../types.js";
+import { validateCard, type CardErrors } from "./cardValidation.js";
 import "./CheckoutPage.css";
 
 type LoadState =
@@ -36,6 +37,41 @@ const BAHRAIN_TIME = new Intl.DateTimeFormat("en-GB", {
 
 /** Pay answers after which this link can never be paid. */
 const TERMINAL_PAY_CODES = new Set(["payment_link_already_paid", "payment_link_canceled", "payment_link_expired"]);
+
+/** The receipt of a payment made in this browser, kept so a reload of a
+ *  paid link can still show when it was paid and the transaction ID. The
+ *  public link read does not return them, and this holds nothing the
+ *  customer was not already shown. */
+interface StoredReceipt {
+  transactionId: string;
+  paidAt: string;
+  amountFils: number;
+}
+
+const RECEIPT_KEY = (token: string) => `fp_receipt_${token}`;
+
+function saveReceipt(token: string, receipt: StoredReceipt): void {
+  try {
+    window.localStorage.setItem(RECEIPT_KEY(token), JSON.stringify(receipt));
+  } catch {
+    // Storage blocked (private mode): the receipt is still on screen now.
+  }
+}
+
+function readReceipt(token: string): StoredReceipt | null {
+  try {
+    const raw = window.localStorage.getItem(RECEIPT_KEY(token));
+    if (!raw) return null;
+    const value = JSON.parse(raw) as Partial<StoredReceipt>;
+    return typeof value.transactionId === "string" &&
+      typeof value.paidAt === "string" &&
+      typeof value.amountFils === "number"
+      ? (value as StoredReceipt)
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 function bahrainTime(iso: string): string {
   const date = new Date(iso);
@@ -87,6 +123,28 @@ function CheckoutFlow() {
   const [payState, setPayState] = useState<PayState>({ kind: "idle" });
   const [card, setCard] = useState<SimulatedCardInput>(EMPTY_CARD);
   const [brandHint, setBrandHint] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<CardErrors>({});
+  const [triedSubmit, setTriedSubmit] = useState(false);
+  const submittingRef = useRef(false);
+  const resultRef = useRef<HTMLElement | null>(null);
+  const panRef = useRef<HTMLInputElement>(null);
+  const monthRef = useRef<HTMLInputElement>(null);
+  const cvvRef = useRef<HTMLInputElement>(null);
+  const ids = { pan: useId(), expiry: useId(), cvv: useId() };
+
+  // After a payment (paid or declined), move focus to the result so a
+  // keyboard or screen-reader user lands on what happened.
+  useEffect(() => {
+    if (payState.kind === "success" || payState.kind === "declined" || payState.kind === "terminal") {
+      resultRef.current?.focus();
+    }
+  }, [payState]);
+
+  /** Updates one card field; once a submit was tried, re-checks as they type. */
+  function updateCard(next: SimulatedCardInput): void {
+    setCard(next);
+    if (triedSubmit) setFieldErrors(validateCard(next));
+  }
 
   // FH: memory leak — this effect never aborts the fetch on unmount (React warning in console?)
   // theres a cancelled flag in the cleanup tho. warning must be from somewhere else — am
@@ -119,15 +177,24 @@ function CheckoutFlow() {
 
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
-    if (!token) return;
+    if (!token || submittingRef.current) return;
+
+    setTriedSubmit(true);
+    const errors = validateCard(card);
+    setFieldErrors(errors);
+    if (errors.pan) return panRef.current?.focus();
+    if (errors.expiry) return monthRef.current?.focus();
+    if (errors.cvv) return cvvRef.current?.focus();
 
     // A fresh Idempotency-Key per explicit user action — every click,
     // including a "try again" after a decline, is a new attempt.
     const idempotencyKey = crypto.randomUUID();
+    submittingRef.current = true;
     setPayState({ kind: "submitting" });
 
     try {
       const result = await payPaymentLink(token, { card }, idempotencyKey);
+      saveReceipt(token, { transactionId: result.transactionId, paidAt: result.paidAt, amountFils: result.amountFils });
       setPayState({ kind: "success", result });
     } catch (err) {
       const message = errorMessage(err, "checkoutPay");
@@ -138,6 +205,8 @@ function CheckoutFlow() {
       } else {
         setPayState({ kind: "declined", message, retryable: true });
       }
+    } finally {
+      submittingRef.current = false;
     }
   }
 
@@ -188,12 +257,19 @@ function CheckoutFlow() {
   if (payState.kind === "success") {
     return (
       <CheckoutShell>
-        <section className="co-card co-result co-result-green">
+        <section
+          className="co-card co-result co-result-green"
+          ref={resultRef}
+          tabIndex={-1}
+          aria-labelledby="co-success-title"
+        >
           <span className="co-stamp co-stamp-green" aria-hidden="true">
             Paid
           </span>
           <p className="co-kicker co-kicker-green">Receipt</p>
-          <h1 className="co-title">Payment successful</h1>
+          <h1 className="co-title" id="co-success-title">
+            Payment successful
+          </h1>
           <p className="co-lede">Thank you — your payment has been received.</p>
           <div className="co-amount co-amount-paid">
             <span className="co-amount-label">Amount paid</span>
@@ -236,17 +312,34 @@ function CheckoutFlow() {
   }
 
   if (payState.kind === "terminal") {
-    return <StatusCard stamp="Stopped" tone="red" title="Unable to pay" message={payState.message} alert link={link} />;
+    return (
+      <StatusCard
+        stamp="Stopped"
+        tone="red"
+        title="Unable to pay"
+        message={payState.message}
+        alert
+        link={link}
+        focusRef={resultRef}
+      />
+    );
   }
 
   if (link.status === "paid") {
+    const receipt = token ? readReceipt(token) : null;
     return (
       <StatusCard
         stamp="Paid"
         tone="green"
         title="Already paid"
-        message="This invoice has already been paid."
+        message="This payment link has already been paid."
+        hint={
+          receipt
+            ? "You paid this link in this browser. Keep the transaction ID as your proof of payment."
+            : `Nothing more to pay. For a copy of the receipt, contact ${link.merchantDisplayName}.`
+        }
         link={link}
+        receipt={receipt}
       />
     );
   }
@@ -330,7 +423,14 @@ function CheckoutFlow() {
           </h2>
 
           {payState.kind === "declined" ? (
-            <p className="co-alert checkout-error" role="alert">
+            <p
+              className="co-alert checkout-error"
+              role="alert"
+              tabIndex={-1}
+              ref={(el) => {
+                resultRef.current = el;
+              }}
+            >
               <span className="co-alert-icon" aria-hidden="true">
                 !
               </span>
@@ -340,7 +440,7 @@ function CheckoutFlow() {
             </p>
           ) : null}
 
-          <form onSubmit={handleSubmit} className="checkout-form" aria-busy={submitting}>
+          <form onSubmit={(e) => void handleSubmit(e)} className="checkout-form" aria-busy={submitting} noValidate>
             <label className="co-field">
               <span className="co-label">
                 Card number
@@ -352,10 +452,13 @@ function CheckoutFlow() {
                 autoComplete="cc-number"
                 placeholder="1234 5678 9012 3456"
                 required
+                ref={panRef}
+                aria-invalid={fieldErrors.pan ? true : undefined}
+                aria-describedby={fieldErrors.pan ? ids.pan : undefined}
                 value={card.pan}
                 onChange={(e) => {
                   const pan = e.target.value;
-                  setCard({ ...card, pan });
+                  updateCard({ ...card, pan });
                   const digits = pan.replace(/\D/g, "");
                   if (digits.length >= 4) {
                     void import("../../utils/helpers.js").then((m) => {
@@ -366,6 +469,11 @@ function CheckoutFlow() {
                   }
                 }}
               />
+              {fieldErrors.pan ? (
+                <span className="co-field-error" id={ids.pan}>
+                  {fieldErrors.pan}
+                </span>
+              ) : null}
             </label>
             <div className="checkout-form-row">
               <label className="co-field">
@@ -376,19 +484,23 @@ function CheckoutFlow() {
                   max={12}
                   autoComplete="cc-exp-month"
                   required
+                  ref={monthRef}
+                  aria-invalid={fieldErrors.expiry ? true : undefined}
+                  aria-describedby={fieldErrors.expiry ? ids.expiry : undefined}
                   value={card.expiryMonth}
-                  onChange={(e) => setCard({ ...card, expiryMonth: Number(e.target.value) })}
+                  onChange={(e) => updateCard({ ...card, expiryMonth: Number(e.target.value) })}
                 />
               </label>
               <label className="co-field">
                 <span className="co-label">Expiry year</span>
                 <input
                   type="number"
-                  min={new Date().getFullYear()}
                   autoComplete="cc-exp-year"
                   required
+                  aria-invalid={fieldErrors.expiry ? true : undefined}
+                  aria-describedby={fieldErrors.expiry ? ids.expiry : undefined}
                   value={card.expiryYear}
-                  onChange={(e) => setCard({ ...card, expiryYear: Number(e.target.value) })}
+                  onChange={(e) => updateCard({ ...card, expiryYear: Number(e.target.value) })}
                 />
               </label>
               <label className="co-field">
@@ -398,16 +510,34 @@ function CheckoutFlow() {
                   inputMode="numeric"
                   autoComplete="cc-csc"
                   placeholder="123"
+                  maxLength={4}
                   required
+                  ref={cvvRef}
+                  aria-invalid={fieldErrors.cvv ? true : undefined}
+                  aria-describedby={fieldErrors.cvv ? ids.cvv : undefined}
                   value={card.cvv}
-                  onChange={(e) => setCard({ ...card, cvv: e.target.value })}
+                  onChange={(e) => updateCard({ ...card, cvv: e.target.value })}
                 />
               </label>
             </div>
+            {fieldErrors.expiry || fieldErrors.cvv ? (
+              <div className="co-field-errors">
+                {fieldErrors.expiry ? (
+                  <span className="co-field-error" id={ids.expiry}>
+                    {fieldErrors.expiry}
+                  </span>
+                ) : null}
+                {fieldErrors.cvv ? (
+                  <span className="co-field-error" id={ids.cvv}>
+                    {fieldErrors.cvv}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
             <button type="submit" className="co-pay-button" disabled={submitting}>
               {submitting ? (
                 <>
-                  <span className="co-spinner co-spinner-light" aria-hidden="true" /> Processing...
+                  <span className="co-spinner co-spinner-light" aria-hidden="true" /> Paying…
                 </>
               ) : (
                 <>
@@ -426,7 +556,7 @@ function CheckoutFlow() {
             <span className="co-test-label">Test mode</span>
             Test cards (no real money is taken): a card number ending <code>0002</code> is declined by
             the bank; ending <code>0119</code> is declined for not enough money; ending <code>0069</code> fails
-            with a bank error. Any other number pays.
+            with a bank error. Any other valid card number (for example 4242 4242 4242 4242) pays.
           </p>
         </section>
       </div>
@@ -475,11 +605,17 @@ function StatusCard(props: {
   hint?: string;
   alert?: boolean;
   link?: PaymentLinkPublicDto;
+  receipt?: StoredReceipt | null;
+  focusRef?: React.MutableRefObject<HTMLElement | null>;
 }) {
-  const { stamp, tone, title, message, hint, alert, link } = props;
+  const { stamp, tone, title, message, hint, alert, link, receipt, focusRef } = props;
   return (
     <CheckoutShell>
-      <section className={`co-card co-result co-result-${tone}`}>
+      <section
+        className={`co-card co-result co-result-${tone}`}
+        ref={focusRef ? (el) => (focusRef.current = el) : undefined}
+        tabIndex={focusRef ? -1 : undefined}
+      >
         <span className={`co-stamp co-stamp-${tone}`} aria-hidden="true">
           {stamp}
         </span>
@@ -504,6 +640,28 @@ function StatusCard(props: {
                 <dt>Reference</dt>
                 <dd className="co-mono">{link.reference}</dd>
               </div>
+            ) : null}
+            {link.description ? (
+              <div className="co-tag-row">
+                <dt>For</dt>
+                <dd>{link.description}</dd>
+              </div>
+            ) : null}
+            {receipt ? (
+              <>
+                <div className="co-tag-row">
+                  <dt>Paid at</dt>
+                  <dd>
+                    {bahrainTime(receipt.paidAt)} <span className="co-tz">Bahrain time</span>
+                  </dd>
+                </div>
+                <div className="co-tag-row">
+                  <dt>Transaction ID</dt>
+                  <dd>
+                    <code>{receipt.transactionId}</code>
+                  </dd>
+                </div>
+              </>
             ) : null}
           </dl>
         ) : null}

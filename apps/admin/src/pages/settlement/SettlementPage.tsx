@@ -4,6 +4,10 @@ import { recalculateMdr } from "../../api/mdrRecalculation.js";
 import { errorMessage } from "../../errors.js";
 import { RequireRole } from "../../auth/RequireRole.js";
 import { bahrainYesterdayIso } from "../../bahrainDate.js";
+import { bahrainToday, exclusiveTo, rangeError } from "../../dateRange.js";
+import { DateRangeFields } from "../../components/DateRangeFields.js";
+import { useAction } from "../../components/useAction.js";
+import { useToast } from "../../components/Toast.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
 import { bhd, formatBusinessDate } from "../../format.js";
 import type {
@@ -26,89 +30,99 @@ import type {
 export function SettlementPage() {
   const [date, setDate] = useState(bahrainYesterdayIso());
   const [merchantId, setMerchantId] = useState("");
-  const [runBusy, setRunBusy] = useState(false);
+  const notify = useToast();
+  const [runBusy, runRun] = useAction();
   const [runError, setRunError] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<RunBatchSummary | null>(null);
 
   const [confirmingRebuild, setConfirmingRebuild] = useState(false);
-  const [rebuildBusy, setRebuildBusy] = useState(false);
+  const [rebuildBusy, runRebuild] = useAction();
   const [rebuildError, setRebuildError] = useState<string | null>(null);
   const [rebuildResult, setRebuildResult] = useState<BalanceRebuildSummary | null>(null);
 
   const [confirmingAnalytics, setConfirmingAnalytics] = useState(false);
-  const [analyticsBusy, setAnalyticsBusy] = useState(false);
+  const [analyticsBusy, runAnalytics] = useAction();
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [analyticsResult, setAnalyticsResult] = useState<AnalyticsRebuildSummary | null>(null);
 
   const [mdrMerchantId, setMdrMerchantId] = useState("");
   const [mdrFrom, setMdrFrom] = useState("");
   const [mdrTo, setMdrTo] = useState("");
-  const [mdrBusy, setMdrBusy] = useState(false);
+  const [mdrBusy, runMdr] = useAction();
   const [mdrError, setMdrError] = useState<string | null>(null);
   const [mdrResult, setMdrResult] = useState<MdrRecalcSummary | null>(null);
 
   /** Idempotent per business date: re-running returns the already-closed batches. */
   async function handleRunBatch(event: React.FormEvent): Promise<void> {
     event.preventDefault();
-    setRunBusy(true);
-    setRunError(null);
-    setRunResult(null);
-    try {
-      setRunResult(
-        await runBatch({ date, merchantId: merchantId.trim() ? merchantId.trim() : undefined }),
-      );
-    } catch (err) {
-      setRunError(errorMessage(err, "settlementRun"));
-    } finally {
-      setRunBusy(false);
-    }
+    await runRun(async () => {
+      setRunError(null);
+      setRunResult(null);
+      try {
+        const result = await runBatch({
+          date,
+          merchantId: merchantId.trim() ? merchantId.trim() : undefined,
+        });
+        setRunResult(result);
+        notify(`Batch run finished for ${formatBusinessDate(result.businessDate)}`);
+      } catch (err) {
+        setRunError(errorMessage(err, "settlementRun"));
+      }
+    });
   }
 
   // after clicking rebuild on staging alpha's balance jumped to like 3x?? — am
   // MK: staging data is junk. cache-only, safe to click
   async function handleRebuild(): Promise<void> {
-    setRebuildBusy(true);
-    setRebuildError(null);
-    setRebuildResult(null);
-    try {
-      setRebuildResult(await rebuildBalances());
-      setConfirmingRebuild(false);
-    } catch (err) {
-      setRebuildError(errorMessage(err));
-    } finally {
-      setRebuildBusy(false);
-    }
+    await runRebuild(async () => {
+      setRebuildError(null);
+      setRebuildResult(null);
+      try {
+        setRebuildResult(await rebuildBalances());
+        setConfirmingRebuild(false);
+        notify("Balances rebuilt");
+      } catch (err) {
+        setRebuildError(errorMessage(err));
+      }
+    });
   }
 
   async function handleRebuildAnalytics(): Promise<void> {
-    setAnalyticsBusy(true);
-    setAnalyticsError(null);
-    setAnalyticsResult(null);
-    try {
-      setAnalyticsResult(await rebuildAnalytics());
-      setConfirmingAnalytics(false);
-    } catch (err) {
-      setAnalyticsError(errorMessage(err));
-    } finally {
-      setAnalyticsBusy(false);
-    }
+    await runAnalytics(async () => {
+      setAnalyticsError(null);
+      setAnalyticsResult(null);
+      try {
+        setAnalyticsResult(await rebuildAnalytics());
+        setConfirmingAnalytics(false);
+        notify("Analytics rebuild started");
+      } catch (err) {
+        setAnalyticsError(errorMessage(err));
+      }
+    });
   }
 
   // FH: ADMIN.md says this is safe
   async function handleRecalculateMdr(event: React.FormEvent): Promise<void> {
     event.preventDefault();
-    setMdrBusy(true);
-    setMdrError(null);
-    setMdrResult(null);
-    try {
-      setMdrResult(await recalculateMdr(mdrMerchantId.trim(), { from: mdrFrom, to: mdrTo }));
-    } catch (err) {
-      setMdrError(errorMessage(err));
-    } finally {
-      setMdrBusy(false);
-    }
+    if (mdrRangeError || !mdrFrom || !mdrTo) return;
+    await runMdr(async () => {
+      setMdrError(null);
+      setMdrResult(null);
+      try {
+        // "To" is inclusive on screen; the API's `to` is exclusive.
+        const result = await recalculateMdr(mdrMerchantId.trim(), {
+          from: mdrFrom,
+          to: exclusiveTo(mdrTo),
+        });
+        setMdrResult(result);
+        notify(`MDR recalculated: ${result.adjusted?.length ?? 0} batch(es) changed`);
+      } catch (err) {
+        setMdrError(errorMessage(err));
+      }
+    });
   }
 
+  const mdrRangeError = rangeError(mdrFrom, mdrTo, bahrainToday());
   const runResults = runResult?.merchantResults ?? [];
   const mdrAdjusted = mdrResult?.adjusted ?? [];
 
@@ -167,7 +181,7 @@ export function SettlementPage() {
               />
             </label>
             <button type="submit" className="admin-btn-danger" disabled={runBusy}>
-              {runBusy ? "Running..." : "Run batch"}
+              {runBusy ? "Running…" : "Run batch"}
             </button>
           </form>
         </RequireRole>
@@ -224,9 +238,9 @@ export function SettlementPage() {
             <span className="admin-danger-tag">Every merchant</span>
           </div>
           <p className="admin-muted">
-            Recomputes every merchant&apos;s cached payable balance from <code>ledger_entries</code>,
-            the authoritative record. The ledger itself is only read, never written — but this
-            touches every merchant on the platform at once, so it asks before it runs.
+            Recalculates the balance shown for every merchant from the ledger, which is the record
+            of truth. The ledger is only read, never changed — but this touches every merchant on
+            the platform at once, so it asks before it runs.
           </p>
 
           {rebuildError && !confirmingRebuild ? (
@@ -252,7 +266,7 @@ export function SettlementPage() {
               <ConfirmDialog
                 title="Rebuild balances for every merchant?"
                 confirmLabel="Yes, rebuild all balances"
-                busyLabel="Rebuilding..."
+                busyLabel="Rebuilding…"
                 busy={rebuildBusy}
                 error={rebuildError}
                 onConfirm={() => void handleRebuild()}
@@ -309,9 +323,9 @@ export function SettlementPage() {
             <span className="admin-danger-tag">Every merchant</span>
           </div>
           <p className="admin-muted">
-            Clears the analytics read model — daily volumes and payout trends — and makes the
-            reporting worker refill it from the full event history. Use it when a merchant&apos;s
-            dashboard figures look wrong. The tables are empty until the worker catches up.
+            Clears the dashboard analytics — daily volumes and payout trends — and rebuilds them from
+            the full payment history. Use it when a merchant&apos;s dashboard figures look wrong. The
+            charts stay empty for a short time while the rebuild runs.
           </p>
 
           {analyticsError && !confirmingAnalytics ? (
@@ -337,7 +351,7 @@ export function SettlementPage() {
               <ConfirmDialog
                 title="Rebuild analytics for every merchant?"
                 confirmLabel="Yes, rebuild analytics"
-                busyLabel="Rebuilding..."
+                busyLabel="Rebuilding…"
                 busy={analyticsBusy}
                 error={analyticsError}
                 onConfirm={() => void handleRebuildAnalytics()}
@@ -395,15 +409,17 @@ export function SettlementPage() {
                 required
               />
             </label>
-            <label>
-              From (inclusive)
-              <input type="date" value={mdrFrom} onChange={(e) => setMdrFrom(e.target.value)} required />
-            </label>
-            <label>
-              To (exclusive)
-              <input type="date" value={mdrTo} onChange={(e) => setMdrTo(e.target.value)} required />
-            </label>
-            <button type="submit" className="admin-btn-danger" disabled={mdrBusy}>
+            <DateRangeFields
+              from={mdrFrom}
+              to={mdrTo}
+              required
+              error={mdrRangeError}
+              onChange={(range) => {
+                setMdrFrom(range.from);
+                setMdrTo(range.to);
+              }}
+            />
+            <button type="submit" className="admin-btn-danger" disabled={mdrBusy || mdrRangeError !== null}>
               {mdrBusy ? "Recalculating…" : "Recalculate MDR"}
             </button>
           </form>

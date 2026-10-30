@@ -4,6 +4,8 @@ import { getMerchant, listMerchants } from "../../api/merchants.js";
 import { replayBatch } from "../../api/webhooks.js";
 import { errorMessage } from "../../errors.js";
 import { StatusChip } from "../../components/StatusChip.js";
+import { useAction } from "../../components/useAction.js";
+import { useToast } from "../../components/Toast.js";
 import { formatDate, fromBahrainInputValue, toBahrainInputValue } from "../../format.js";
 import type {
   AdminMerchantDetail,
@@ -12,12 +14,8 @@ import type {
   WebhookDeliveryStatus,
 } from "../../types.js";
 
-const REPLAYABLE_STATUSES: WebhookDeliveryStatus[] = [
-  "exhausted",
-  "failed",
-  "pending",
-  "succeeded",
-];
+/** The only statuses the batch-replay endpoint accepts. */
+const REPLAYABLE_STATUSES: WebhookDeliveryStatus[] = ["exhausted", "failed"];
 
 /** The replay window is typed in Bahrain time (`datetime-local`) and sent
  *  to the API as ISO-8601 instants. Default: the last 7 days. */
@@ -38,13 +36,16 @@ export function WebhookReplayPage() {
 
   const [search, setSearch] = useState("");
   const [candidates, setCandidates] = useState<AdminMerchantSummary[]>([]);
+  const [searched, setSearched] = useState(false);
   const [detail, setDetail] = useState<AdminMerchantDetail | null>(null);
 
   const [endpointId, setEndpointId] = useState("");
   const [range, setRange] = useState(defaultRange);
   const [statuses, setStatuses] = useState<WebhookDeliveryStatus[]>(["exhausted"]);
 
-  const [busy, setBusy] = useState(false);
+  const notify = useToast();
+  const [busy, run] = useAction();
+  const [searching, runSearch] = useAction();
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BatchReplayResult | null>(null);
 
@@ -70,13 +71,16 @@ export function WebhookReplayPage() {
 
   async function handleSearch(event: React.FormEvent): Promise<void> {
     event.preventDefault();
-    setError(null);
-    try {
-      const found = await listMerchants({ q: search.trim() || undefined, limit: 10 });
-      setCandidates(found.merchants ?? []);
-    } catch (err) {
-      setError(errorMessage(err));
-    }
+    await runSearch(async () => {
+      setError(null);
+      try {
+        const found = await listMerchants({ q: search.trim() || undefined, limit: 10 });
+        setCandidates(found.merchants ?? []);
+        setSearched(true);
+      } catch (err) {
+        setError(errorMessage(err));
+      }
+    });
   }
 
   function toggleStatus(status: WebhookDeliveryStatus): void {
@@ -88,24 +92,39 @@ export function WebhookReplayPage() {
   /** Replays keep the original Webhook-Delivery-Id so receivers can dedupe. */
   async function handleReplay(event: React.FormEvent): Promise<void> {
     event.preventDefault();
-    if (!merchantId || !endpointId) return;
-    setBusy(true);
-    setError(null);
-    setResult(null);
-    try {
-      setResult(
-        await replayBatch(merchantId, endpointId, {
+    if (!merchantId || !endpointId || replayRangeError) return;
+    await run(async () => {
+      setError(null);
+      setResult(null);
+      try {
+        const replayed = await replayBatch(merchantId, endpointId, {
           from: fromBahrainInputValue(range.from),
           to: fromBahrainInputValue(range.to),
           statuses: statuses.length > 0 ? statuses : undefined,
-        }),
-      );
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
+        });
+        setResult(replayed);
+        const queued = (replayed.replayedDeliveryIds ?? []).length;
+        notify(
+          queued === 0
+            ? "No deliveries matched. Nothing was replayed"
+            : `${queued} replay${queued === 1 ? "" : "s"} queued`,
+        );
+      } catch (err) {
+        setError(errorMessage(err));
+      }
+    });
   }
+
+  // Plain checks before any request: the window must be in the past and in order.
+  const replayRangeError = (() => {
+    const now = toBahrainInputValue(new Date());
+    if (range.from && range.from > now) return "From can't be later than now.";
+    if (range.to && range.to > now) return "To can't be later than now.";
+    if (range.from && range.to && range.to < range.from) {
+      return "To is before From. Choose a To time on or after the From time.";
+    }
+    return null;
+  })();
 
   if (!merchantId) {
     return (
@@ -126,7 +145,9 @@ export function WebhookReplayPage() {
               placeholder="Display name, merchant id, or contact email"
             />
           </label>
-          <button type="submit" className="admin-btn-primary">Search</button>
+          <button type="submit" className="admin-btn-primary" disabled={searching}>
+            {searching ? "Searching…" : "Search"}
+          </button>
         </form>
         {candidates.length > 0 ? (
           <ul className="admin-pick-list">
@@ -145,13 +166,16 @@ export function WebhookReplayPage() {
             ))}
           </ul>
         ) : (
-          <p className="admin-empty">Search for a merchant to see their endpoints.</p>
+          <p className="admin-empty">
+            {searched ? "No merchants match this search." : "Search for a merchant to see their endpoints."}
+          </p>
         )}
       </section>
     );
   }
 
   const endpoints = detail?.webhookEndpoints ?? [];
+  const nowValue = toBahrainInputValue(new Date());
 
   return (
     <section>
@@ -174,7 +198,7 @@ export function WebhookReplayPage() {
       {error ? <p className="admin-error" role="alert">{error}</p> : null}
 
       {!detail && !error ? (
-        <p className="admin-loading" role="status">Loading endpoints...</p>
+        <p className="admin-loading" role="status">Loading endpoints…</p>
       ) : null}
 
       {detail && endpoints.length === 0 ? (
@@ -210,6 +234,9 @@ export function WebhookReplayPage() {
               <input
                 type="datetime-local"
                 required
+                max={nowValue}
+                aria-invalid={replayRangeError ? true : undefined}
+                aria-describedby={replayRangeError ? "replay-range-error" : undefined}
                 value={range.from}
                 onChange={(e) => setRange({ ...range, from: e.target.value })}
               />
@@ -219,10 +246,19 @@ export function WebhookReplayPage() {
               <input
                 type="datetime-local"
                 required
+                min={range.from || undefined}
+                max={nowValue}
+                aria-invalid={replayRangeError ? true : undefined}
+                aria-describedby={replayRangeError ? "replay-range-error" : undefined}
                 value={range.to}
                 onChange={(e) => setRange({ ...range, to: e.target.value })}
               />
             </label>
+            {replayRangeError ? (
+              <p className="admin-field-error" id="replay-range-error" role="alert">
+                {replayRangeError}
+              </p>
+            ) : null}
           </div>
           <fieldset className="admin-filters">
             <legend>Delivery statuses to replay</legend>
@@ -233,18 +269,21 @@ export function WebhookReplayPage() {
                   checked={statuses.includes(status)}
                   onChange={() => toggleStatus(status)}
                 />
-                {status}
+                {status === "exhausted" ? "exhausted (stopped retrying)" : status}
               </label>
             ))}
             <p className="admin-muted">
-              Defaults to <code>exhausted</code> — the one terminal failure state the dispatcher
-              produces. Replaying a <code>succeeded</code> delivery is allowed but resends an event
-              the receiver already accepted.
+              Only deliveries that did not reach the merchant can be replayed. &ldquo;Exhausted&rdquo;
+              means every retry failed and FilsPay stopped trying; this is the usual choice.
             </p>
           </fieldset>
           <div>
-            <button type="submit" className="admin-btn-primary" disabled={busy || !endpointId}>
-              {busy ? "Replaying..." : "Replay batch"}
+            <button
+              type="submit"
+              className="admin-btn-primary"
+              disabled={busy || !endpointId || replayRangeError !== null}
+            >
+              {busy ? "Replaying…" : "Replay batch"}
             </button>
           </div>
         </form>

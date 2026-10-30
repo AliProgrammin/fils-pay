@@ -50,7 +50,7 @@ export function ImpersonationBanner() {
         {error ? <div className="impersonation-banner-error" role="alert">Could not end it: {error}</div> : null}
       </div>
       <button type="button" onClick={() => void handleExit()} disabled={exiting}>
-        {exiting ? "Exiting..." : "Exit impersonation"}
+        {exiting ? "Exiting…" : "Exit impersonation"}
       </button>
     </div>
   );

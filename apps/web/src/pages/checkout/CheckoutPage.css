@@ -649,3 +649,44 @@
   color: var(--muted);
   white-space: nowrap;
 }
+
+/* ---------- field errors (client-side card checks) ---------- */
+.co-field-error {
+  display: block;
+  font-family: var(--body);
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--red-dk);
+}
+
+.co-field-error::before {
+  content: "! ";
+  font-weight: 700;
+}
+
+.co-field-errors {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: -0.4rem;
+}
+
+.checkout-form input[aria-invalid="true"] {
+  border-color: var(--red);
+  background: #fff8f8;
+}
+
+/* The result card / decline alert takes focus after a payment; show it
+   without the default outline box around the whole card. */
+.co-result:focus,
+.co-alert:focus {
+  outline: none;
+}
+
+.co-result:focus-visible,
+.co-alert:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}

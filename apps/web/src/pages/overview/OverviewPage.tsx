@@ -6,6 +6,8 @@ import { StatusChip } from "../../components/StatusChip.js";
 import { StalenessBadge } from "../../components/StalenessBadge.js";
 import { bhd, calendarDate, dash, dateTime } from "../../format.js";
 import { formatCount } from "../../utils/helpers.js";
+import { DateRangeFields } from "../../components/DateRangeFields.js";
+import { bahrainToday, exclusiveTo, rangeError } from "../../dateRange.js";
 import type { PayoutTrendsResponse, TopLinksResponse, VolumesResponse } from "../../types.js";
 
 /** 60s: comfortably above the reporting worker's 15s worst-case lag, and
@@ -31,8 +33,13 @@ export function OverviewPage() {
   // server would have silently overridden.
   const clampedLimit = Math.min(50, Math.max(1, Math.trunc(topLinksLimit) || 10));
 
+  const dateError = rangeError(from, to, bahrainToday());
+
   const load = useCallback(async () => {
-    const range = { from: from || undefined, to: to || undefined };
+    // A bad range shows its message and makes no request.
+    if (rangeError(from, to, bahrainToday())) return;
+    // "To" is inclusive on screen; the API's `to` is exclusive.
+    const range = { from: from || undefined, to: to ? exclusiveTo(to) : undefined };
     setLoading(true);
     setError(null);
     try {
@@ -70,7 +77,7 @@ export function OverviewPage() {
     <section>
       <div className="dash-page-head">
         <div>
-          <p className="dash-kicker">Analytics · refreshed every minute</p>
+          <p className="dash-kicker">Analytics · refreshed every minute · blank dates show the last 30 days</p>
           <h1>Overview</h1>
         </div>
       </div>
@@ -82,14 +89,15 @@ export function OverviewPage() {
           void load();
         }}
       >
-        <label>
-          From
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-        </label>
-        <label>
-          To (exclusive)
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-        </label>
+        <DateRangeFields
+          from={from}
+          to={to}
+          onChange={(range) => {
+            setFrom(range.from);
+            setTo(range.to);
+          }}
+          error={dateError}
+        />
         <label>
           Top links
           <input
@@ -100,13 +108,18 @@ export function OverviewPage() {
             onChange={(e) => setTopLinksLimit(Number(e.target.value))}
           />
         </label>
-        <button type="submit" className="dash-button dash-button-primary" disabled={loading}>
-          {loading ? "Refreshing..." : "Refresh"}
+        <button
+          type="submit"
+          className="dash-button dash-button-primary"
+          disabled={loading || dateError !== null}
+          aria-busy={loading || undefined}
+        >
+          {loading ? "Refreshing…" : "Refresh"}
         </button>
       </form>
 
       {error ? <p className="dash-error" role="alert">{error}</p> : null}
-      {loading && !volumes ? <p className="dash-loading" role="status">Loading...</p> : null}
+      {loading && !volumes ? <p className="dash-loading" role="status">Loading…</p> : null}
 
       <h2>
         Captured volume{" "}

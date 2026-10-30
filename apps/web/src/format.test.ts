@@ -21,8 +21,21 @@ test("timeOfDay shows the Bahrain wall-clock time", () => {
 
 test("calendarDate formats a business date without shifting the day", () => {
   assert.equal(calendarDate("2026-08-30"), "30 Aug 2026");
-  assert.equal(calendarDate("2026-01-01"), "01 Jan 2026");
+  assert.equal(calendarDate("2026-01-01"), "1 Jan 2026");
   assert.equal(calendarDate("2026-09-30"), "30 Sep 2026");
   assert.equal(calendarDate(null), "—");
   assert.equal(calendarDate("someday"), "someday");
+});
+
+test("bhd groups thousands for display and keeps 3 decimals", async () => {
+  const { bhd } = await import("./format.js");
+  assert.equal(bhd(135882772), "135,882.772 BHD");
+  assert.equal(bhd(4000), "4.000 BHD");
+  assert.equal(bhd(-1234567), "-1,234.567 BHD");
+  assert.equal(bhd(999999), "999.999 BHD");
+});
+
+test("dates use a numeric day and a 3-letter month", () => {
+  assert.equal(dateTime("2026-09-01T05:00:00Z"), "1 Sep 2026, 08:00");
+  assert.equal(calendarDate("2026-09-01"), "1 Sep 2026");
 });

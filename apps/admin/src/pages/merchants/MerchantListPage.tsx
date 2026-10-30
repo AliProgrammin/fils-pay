@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { listMerchants } from "../../api/merchants.js";
 import { bulkApproveKyc } from "../../api/merchantsBulk.js";
 import { errorMessage } from "../../errors.js";
 import { RequireRole } from "../../auth/RequireRole.js";
 import { StatusChip } from "../../components/StatusChip.js";
-import { formatDate } from "../../format.js";
+import { formatDate, label } from "../../format.js";
+import { Pager } from "../../components/Pager.js";
+import { usePagedList } from "../../components/usePagedList.js";
+import { useAction } from "../../components/useAction.js";
+import { useToast } from "../../components/Toast.js";
 import type { AdminMerchantSummary, MerchantOnboardingStatus } from "../../types.js";
 
 const ONBOARDING_STATUSES: MerchantOnboardingStatus[] = [
@@ -15,54 +19,52 @@ const ONBOARDING_STATUSES: MerchantOnboardingStatus[] = [
   "rejected",
 ];
 
-const PAGE_SIZE = 25;
-
 /** The platform's one legitimately cross-merchant view. Searchable by
  *  display name / id / contact email, filterable by onboarding status, and
  *  keyset-paginated like every other list endpoint here. */
 export function MerchantListPage() {
-  const [query, setQuery] = useState("");
-  const [appliedQuery, setAppliedQuery] = useState("");
-  const [statuses, setStatuses] = useState<MerchantOnboardingStatus[]>([]);
-  const [merchants, setMerchants] = useState<AdminMerchantSummary[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const notify = useToast();
+  const [searchParams] = useSearchParams();
+  const appliedQuery = searchParams.get("q") ?? "";
+  const statuses = searchParams
+    .getAll("status")
+    .filter((s): s is MerchantOnboardingStatus => (ONBOARDING_STATUSES as string[]).includes(s));
+  const [query, setQuery] = useState(appliedQuery);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkBusy, setBulkBusy] = useState(false);
-  const [bulkNotice, setBulkNotice] = useState<string | null>(null);
+  const [bulkBusy, runBulk] = useAction();
+  const [bulkError, setBulkError] = useState<string | null>(null);
 
-  const load = useCallback(
-    async (cursor: string | null) => {
-      setLoading(true);
-      setError(null);
-      try {
-        const result = await listMerchants({
-          q: appliedQuery || undefined,
-          onboardingStatus: statuses.length > 0 ? statuses : undefined,
-          limit: PAGE_SIZE,
-          cursor: cursor ?? undefined,
-        });
-        const page = result.merchants ?? [];
-        setMerchants((previous) => (cursor ? [...previous, ...page] : page));
-        setNextCursor(result.nextCursor ?? null);
-      } catch (err) {
-        setError(errorMessage(err));
-      } finally {
-        setLoading(false);
-      }
-    },
-    [appliedQuery, statuses],
-  );
+  // Keep the box in step with the URL (back/forward, Clear filters).
+  useEffect(() => setQuery(appliedQuery), [appliedQuery]);
 
-  useEffect(() => {
-    void load(null);
-  }, [load]);
+  const filterKey = JSON.stringify([appliedQuery, statuses]);
+  const list = usePagedList<AdminMerchantSummary>(filterKey, async (cursor, limit) => {
+    const result = await listMerchants({
+      q: appliedQuery || undefined,
+      onboardingStatus: statuses.length > 0 ? statuses : undefined,
+      limit,
+      cursor,
+    });
+    return { rows: result.merchants ?? [], nextCursor: result.nextCursor ?? null };
+  });
+  const merchants = list.rows;
+  const loading = list.loading;
+  const error = list.error ? errorMessage(list.error) : bulkError;
+  const hasFilters = appliedQuery !== "" || statuses.length > 0;
 
   function toggleStatus(status: MerchantOnboardingStatus): void {
-    setStatuses((previous) =>
-      previous.includes(status) ? previous.filter((s) => s !== status) : [...previous, status],
-    );
+    list.updateParams((params) => {
+      const next = statuses.includes(status) ? statuses.filter((s) => s !== status) : [...statuses, status];
+      params.delete("status");
+      for (const s of next) params.append("status", s);
+    });
+  }
+
+  function clearFilters(): void {
+    list.updateParams((params) => {
+      params.delete("q");
+      params.delete("status");
+    });
   }
 
   function toggleSelected(id: string): void {
@@ -78,29 +80,27 @@ export function MerchantListPage() {
    *  search/status filters. */
   function toggleSelectAllLoaded(): void {
     setSelectedIds((previous) =>
-      previous.size === merchants.length ? new Set() : new Set(merchants.map((m) => m.id)),
+      merchants.every((m) => previous.has(m.id)) ? new Set() : new Set(merchants.map((m) => m.id)),
     );
   }
 
   // only approves the under_review ones (filtered) — am
   // FH: sends every selected id, the server doesn't check status
   async function approveSelected(): Promise<void> {
-    setBulkBusy(true);
-    setError(null);
-    setBulkNotice(null);
-    try {
-      const result = await bulkApproveKyc([...selectedIds]);
-      setBulkNotice(`Approved KYC for ${result.approvedCount} merchant(s).`);
-      setSelectedIds(new Set());
-      await load(null);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBulkBusy(false);
-    }
+    await runBulk(async () => {
+      setBulkError(null);
+      try {
+        const result = await bulkApproveKyc([...selectedIds]);
+        notify(`KYC approved for ${result.approvedCount} merchant${result.approvedCount === 1 ? "" : "s"}`);
+        setSelectedIds(new Set());
+        list.reload();
+      } catch (err) {
+        setBulkError(errorMessage(err));
+      }
+    });
   }
 
-  const allLoadedSelected = merchants.length > 0 && selectedIds.size === merchants.length;
+  const allLoadedSelected = merchants.length > 0 && merchants.every((m) => selectedIds.has(m.id));
 
   return (
     <section>
@@ -117,7 +117,11 @@ export function MerchantListPage() {
         className="admin-form admin-form-inline"
         onSubmit={(e) => {
           e.preventDefault();
-          setAppliedQuery(query.trim());
+          const trimmed = query.trim();
+          list.updateParams((params) => {
+            if (trimmed) params.set("q", trimmed);
+            else params.delete("q");
+          });
         }}
       >
         <label>
@@ -130,6 +134,11 @@ export function MerchantListPage() {
           />
         </label>
         <button type="submit" className="admin-btn-primary">Search</button>
+        {hasFilters ? (
+          <button type="button" onClick={clearFilters}>
+            Clear filters
+          </button>
+        ) : null}
       </form>
 
       <fieldset className="admin-filters">
@@ -141,13 +150,12 @@ export function MerchantListPage() {
               checked={statuses.includes(status)}
               onChange={() => toggleStatus(status)}
             />
-            {status}
+            {label(status)}
           </label>
         ))}
       </fieldset>
 
       {error ? <p className="admin-error" role="alert">{error}</p> : null}
-      {bulkNotice ? <p className="admin-notice" role="status">{bulkNotice}</p> : null}
 
       {selectedIds.size > 0 ? (
         <div className="admin-bulkbar">
@@ -159,7 +167,7 @@ export function MerchantListPage() {
               disabled={bulkBusy}
               onClick={() => void approveSelected()}
             >
-              Bulk approve KYC
+              {bulkBusy ? "Approving…" : "Bulk approve KYC"}
             </button>
           </RequireRole>
           <button type="button" disabled={bulkBusy} onClick={() => setSelectedIds(new Set())}>
@@ -175,7 +183,7 @@ export function MerchantListPage() {
               <th className="admin-cell-check">
                 <input
                   type="checkbox"
-                  aria-label="Select all loaded merchants"
+                  aria-label="Select all merchants on this page"
                   checked={allLoadedSelected}
                   disabled={merchants.length === 0}
                   onChange={toggleSelectAllLoaded}
@@ -185,7 +193,7 @@ export function MerchantListPage() {
               <th>Status</th>
               <th>Onboarding</th>
               <th>KYC</th>
-              <th className="admin-num">MDR</th>
+              <th className="admin-num" title="The merchant\u2019s base rate. A negotiated rate in force is shown on the merchant page.">Base MDR</th>
               <th>Mode</th>
               <th>Created</th>
             </tr>
@@ -217,20 +225,36 @@ export function MerchantListPage() {
             ))}
             {merchants.length === 0 && !loading ? (
               <tr>
-                <td colSpan={8} className="admin-empty">No merchants match this search.</td>
+                <td colSpan={8} className="admin-empty">
+                  {hasFilters ? (
+                    <>
+                      No merchants match these filters.{" "}
+                      <button type="button" className="admin-btn-small" onClick={clearFilters}>
+                        Clear filters
+                      </button>
+                    </>
+                  ) : (
+                    "No merchants yet."
+                  )}
+                </td>
               </tr>
             ) : null}
           </tbody>
         </table>
       </div>
 
-      {loading ? <p className="admin-loading" role="status">Loading merchants...</p> : null}
+      {loading ? <p className="admin-loading" role="status">Loading merchants…</p> : null}
 
-      {nextCursor ? (
-        <button type="button" disabled={loading} onClick={() => void load(nextCursor)}>
-          Load more
-        </button>
-      ) : null}
+      <Pager
+        page={list.page}
+        size={list.size}
+        count={merchants.length}
+        hasNext={list.hasNext}
+        loading={loading}
+        onPrev={list.goPrev}
+        onNext={list.goNext}
+        onSize={list.setSize}
+      />
     </section>
   );
 }
