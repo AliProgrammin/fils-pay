@@ -34,3 +34,27 @@ Money is in integer fils (1 BD = 1,000 fils). Rates are basis points (bps).
 - every pre-built closed batch's `fee_fils` equals the ledger fee of its captures.
 
 Manual check: after the fix, Go `run-batch --date=2026-08-26` for Alpha pays 635,375 and the day's `merchant_payable` ends at exactly **0** (was -1,625). The seed's own REAL assertions all pass.
+
+---
+
+## V2 — Capture picks the fee rate by the API server's clock, not the database clock
+
+- **Severity:** Medium (money)
+- **Ticket:** "venue whiteboard hint" ("My clock says 07:58 / Theirs says 08:30")
+- **Where:** `apps/api/src/payments/capture.ts` (rate lookup), `apps/api/src/fees/feeSchedule.ts`
+
+**What is wrong:** Capture looked up the fee rate with `new Date()`, the API server's clock. But the capture's `transaction_events` row and ledger rows are stamped with the database `now()`. Settlement then charges the rate in force at the event's stored `occurred_at`. So two different clocks chose the rate.
+
+**Why it happens:** The rate lookup took a JS `Date`, and capture passed "now" from the app server. Server clocks drift. Nothing tied the lookup to the instant the rows were written.
+
+**What it breaks:** When the API clock and the DB clock differ near a rate change, capture and settlement charge different fees. Reproduced with a 32-minute skew (API clock ahead, new rate starts 10 minutes later by DB time): capture billed **1,500** fils, settlement charges **2,500** on 100.000 BD. With the clock behind, the reverse: 2,500 vs 1,500. The payout then does not match the ledger.
+
+**Fix:** `getEffectiveMdrBps` now accepts `asOf = null`, which means the database's own `now()` (`effective_from <= COALESCE($2, now())`). Capture passes `null`. Inside the capture transaction `now()` is one fixed instant, the same value the ledger rows and the event's `occurred_at` (DEFAULT `now()`) get. So the rate is chosen at exactly the event's time. Callers that pass a real date (settlement recompute) work as before. API paths and response shapes do not change.
+
+Also checked:
+- `processRefund.ts` does not pick a rate. It reads the fee actually charged from the ledger. No change.
+- `paymentLinks/pay.ts` charges through `captureTransaction`, so this fix covers it. Its `new Date()` is only for the link expiry check, not a rate. No change.
+
+**Test:** `apps/api/src/payments/captureClockSkew.fix.test.ts` moves the JS clock with `mock.timers` (Date only) and checks that the event's `feeFils` and the ledger fee equal the rate in force at the stored `occurred_at`:
+- API clock 32 min ahead, schedule starts in 10 min by DB time (failed before: billed 1,500, expected 2,500);
+- API clock 32 min behind, schedule started 10 min ago by DB time (failed before: billed 2,500, expected 1,500).

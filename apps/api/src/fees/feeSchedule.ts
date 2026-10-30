@@ -12,6 +12,13 @@ import type { PoolClient } from "pg";
  * notion of "the instant this applies to" (a settlement recompute working
  * through past events, not just a live capture) gets the same correct
  * point-in-time answer capture.ts does.
+ *
+ * `asOf = null` means the database's own now() — inside a transaction that
+ * is the transaction's start instant, the same value the caller's
+ * ledger_entries and transaction_events rows are stamped with. A live
+ * capture must use it, never the API server's clock (V2): with clock skew
+ * near a rate change, a JS `new Date()` picks a different rate than the
+ * one settlement later resolves at the event's stored occurred_at.
  // MK: ties on effective_from resolved by created_at DESC, so a same-day correction wins. correct
  // YA: Claude says we need a unique index on (merchant_id, effective_from) or this is
  // nondeterministic — FP-233
@@ -22,12 +29,12 @@ import type { PoolClient } from "pg";
 export async function getEffectiveMdrBps(
   client: PoolClient,
   merchantId: string,
-  asOf: Date,
+  asOf: Date | null,
   fallbackMdrBps: number,
 ): Promise<number> {
   const result = await client.query<{ mdr_bps: number }>(
     `SELECT mdr_bps FROM fee_schedules
-      WHERE merchant_id = $1 AND effective_from <= $2
+      WHERE merchant_id = $1 AND effective_from <= COALESCE($2::timestamptz, now())
       ORDER BY effective_from DESC, created_at DESC
       LIMIT 1`,
     [merchantId, asOf],

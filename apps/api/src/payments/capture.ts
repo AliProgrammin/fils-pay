@@ -166,9 +166,13 @@ export async function captureTransaction(
     // Fee rate resolution: effective-dated (apps/api/src/fees/feeSchedule.ts),
     // falling back to this merchant's plain mdr_bps when no schedule row
     // applies yet — the ordinary case for every merchant that has never had
-    // a negotiated rate change recorded. Resolved at the instant of capture,
-    // inside the same locked transaction that computes and journals the fee.
-    const effectiveMdrBps = await getEffectiveMdrBps(client, input.merchantId, new Date(), merchant.mdr_bps);
+    // a negotiated rate change recorded. Resolved at the DB's now() (null),
+    // inside the same locked transaction that computes and journals the fee:
+    // the exact instant the ledger rows and the transaction_events row
+    // (occurred_at DEFAULT now()) are stamped with, so settlement, which
+    // resolves the rate at that stored occurred_at, charges the same fee.
+    // Never the API server's clock: skew near a rate change splits them (V2).
+    const effectiveMdrBps = await getEffectiveMdrBps(client, input.merchantId, null, merchant.mdr_bps);
     const volumeTierBonusBps = await getVolumeTierBonusBps(client);
 
     // Call the acquirer — awaited here, with the row lock from above still
