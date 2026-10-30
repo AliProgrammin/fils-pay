@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { requireMerchantAuth, requireMerchantRole } from "../auth/requireMerchantAuth.js";
 import { NotFoundError, BadRequestError } from "../lib/errors.js";
+import { isValidDateOnly } from "../lib/dateInput.js";
 import {
   getReconciliationReport,
   getSettlementBatch,
@@ -61,7 +62,7 @@ export async function settlementRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: [requireMerchantAuth, requireMerchantRole("owner", "finance")] },
     async (request) => {
       const { from, to } = request.query;
-      if (!from || !to) {
+      if (!isValidDateOnly(from) || !isValidDateOnly(to)) {
         throw new BadRequestError("invalid_request", "from and to (YYYY-MM-DD) are required");
       }
 
@@ -79,7 +80,7 @@ export async function settlementRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: [requireMerchantAuth, requireMerchantRole("owner", "finance")] },
     async (request) => {
       const { from, to } = request.query;
-      if (!from || !to) {
+      if (!isValidDateOnly(from) || !isValidDateOnly(to)) {
         throw new BadRequestError("invalid_request", "from and to (YYYY-MM-DD) are required");
       }
 

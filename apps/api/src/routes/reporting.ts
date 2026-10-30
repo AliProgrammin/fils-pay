@@ -4,6 +4,7 @@ import { runTransactionsReport, type TransactionReportFilter } from "../reportin
 import { resolveReportMerchantId } from "../reporting/scope.js";
 import { createSavedFilter, listSavedFilters } from "../reporting/savedFilters.js";
 import { BadRequestError } from "../lib/errors.js";
+import { isValidDateOrTimestamp } from "../lib/dateInput.js";
 
 interface ReportQuery {
   filter?: string;
@@ -32,6 +33,18 @@ export async function reportingRoutes(app: FastifyInstance): Promise<void> {
         } catch {
           throw new BadRequestError("invalid_filter", "filter must be valid JSON");
         }
+        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new BadRequestError("invalid_filter", "filter must be a JSON object");
+        }
+      }
+      // W8: bad values are a 400 here, never a Postgres cast error (500).
+      for (const key of ["from", "to"] as const) {
+        if (parsed[key] && !isValidDateOrTimestamp(parsed[key])) {
+          throw new BadRequestError("invalid_request", `filter.${key} must be a YYYY-MM-DD date or ISO timestamp`);
+        }
+      }
+      if (parsed.status && typeof parsed.status !== "string") {
+        throw new BadRequestError("invalid_request", "filter.status must be a string");
       }
 
       const merchantId = await resolveReportMerchantId(

@@ -85,3 +85,45 @@ test("GET /v1/reporting/transactions with a non-UUID filter merchantId answers 4
     assert.equal(res.json().error, "invalid_request");
   }
 });
+
+// W8: bad dates and odd filter values are bad input (400), not a 500.
+test("bad reporting filter values and bad reconciliation dates answer 400", async () => {
+  const m = await pool.query<{ id: string }>(
+    `INSERT INTO merchants (display_name, mdr_bps) VALUES ($1, 250) RETURNING id`,
+    [`Report Bad Input ${randomUUID()}`],
+  );
+  const merchantId = m.rows[0]!.id;
+  const u = await pool.query<{ id: string }>(
+    `INSERT INTO merchant_users (merchant_id, email, role, password_hash) VALUES ($1, $2, 'owner', 'x') RETURNING id`,
+    [merchantId, `owner-${randomUUID()}@example.test`],
+  );
+  const { rawKey } = await issueApiKey(pool, config, { merchantId, createdBy: u.rows[0]!.id, label: "bad-input" });
+  const headers = { authorization: `Bearer ${rawKey}` };
+
+  for (const filter of ['{"from":"x","__proto__":{"a":1}}', '{"to":"2026-13-45"}', '{"status":{"a":1}}', "null"]) {
+    const res = await app.inject({
+      method: "GET",
+      url: `/v1/reporting/transactions?filter=${encodeURIComponent(filter)}`,
+      headers,
+    });
+    assert.equal(res.statusCode, 400, `${filter}: ${res.body}`);
+  }
+  const ok = await app.inject({
+    method: "GET",
+    url: `/v1/reporting/transactions?filter=${encodeURIComponent('{"from":"2026-01-01","to":"2026-02-01T00:00:00Z"}')}`,
+    headers,
+  });
+  assert.equal(ok.statusCode, 200, ok.body);
+
+  for (const path of ["reconciliation", "summary"]) {
+    const res = await app.inject({ method: "GET", url: `/v1/settlement/${path}?from=2026-13-45&to=xyz`, headers });
+    assert.equal(res.statusCode, 400, `${path}: ${res.body}`);
+    assert.equal(res.json().error, "invalid_request");
+  }
+  const okRecon = await app.inject({
+    method: "GET",
+    url: "/v1/settlement/reconciliation?from=2026-01-01&to=2026-01-31",
+    headers,
+  });
+  assert.equal(okRecon.statusCode, 200, okRecon.body);
+});
