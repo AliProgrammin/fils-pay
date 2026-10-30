@@ -14,9 +14,9 @@ import {
   REFUND_REASON_MAX,
 } from "./inputRules.js";
 
-test("filterAmountInput keeps digits and one dot, at most 3 decimals", () => {
+test("filterAmountInput keeps digits and one dot", () => {
   assert.equal(filterAmountInput("12.750"), "12.750");
-  assert.equal(filterAmountInput("12.7509"), "12.750", "a 4th decimal cannot be typed");
+  assert.equal(filterAmountInput("12.7509"), "12.7509", "a 4th decimal is kept so checkAmount can refuse it");
   assert.equal(filterAmountInput("abc"), "", "letters cannot be typed");
   assert.equal(filterAmountInput("1a2b.3c"), "12.3");
   assert.equal(filterAmountInput("1.2.3"), "1.23", "only the first dot counts");
@@ -108,4 +108,11 @@ test("lengthNote warns near the API limit", () => {
   assert.equal(lengthNote("a".repeat(10), REFUND_REASON_MAX), null);
   assert.equal(lengthNote("a".repeat(460), REFUND_REASON_MAX), "40 characters left");
   assert.equal(lengthNote("a".repeat(500), REFUND_REASON_MAX), "You reached the limit of 500 characters");
+});
+
+test("an amount with more than 3 decimals is refused with a clear message, never cut", () => {
+  const typed = filterAmountInput("1.2345");
+  const checked = checkAmount(typed);
+  assert.equal(checked.ok, false, "1.2345 BD must not become 1.234 BD");
+  assert.match((checked as { message: string }).message, /at most 3 decimals/);
 });

@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { requireMerchantAuth, requireMerchantRole } from "../auth/requireMerchantAuth.js";
 import { NotFoundError, BadRequestError } from "../lib/errors.js";
 import { isValidDateOnly } from "../lib/dateInput.js";
+import { parseLimitQuery } from "../lib/pagination.js";
+import { UUID_RE } from "../admin/merchants.js";
 import {
   getReconciliationReport,
   getSettlementBatch,
@@ -42,12 +44,12 @@ export async function settlementRoutes(app: FastifyInstance): Promise<void> {
     async (request) => {
       const q = request.query;
       const status = q.status === undefined ? undefined : Array.isArray(q.status) ? q.status : [q.status];
-      const limit = q.limit !== undefined ? Number.parseInt(q.limit, 10) : undefined;
+      const limit = parseLimitQuery(q.limit);
 
       return listSettlementBatches(app.db, {
         merchantId: request.merchantAuth!.merchantId,
-        from: q.from ? new Date(q.from) : undefined,
-        to: q.to ? new Date(q.to) : undefined,
+        from: parseDateQuery(q.from, "from"),
+        to: parseDateQuery(q.to, "to"),
         status,
         limit,
         cursor: q.cursor ?? null,
@@ -96,6 +98,7 @@ export async function settlementRoutes(app: FastifyInstance): Promise<void> {
     "/batches/:id",
     { preHandler: requireMerchantAuth },
     async (request) => {
+      assertBatchId(request.params.id);
       const batch = await getSettlementBatch(app.db, {
         merchantId: request.merchantAuth!.merchantId,
         batchId: request.params.id,
@@ -114,6 +117,7 @@ export async function settlementRoutes(app: FastifyInstance): Promise<void> {
       // Same merchant-scoped existence check as the detail route first
       // (404 if the parent batch isn't found/owned) before reading its
       // transactions.
+      assertBatchId(request.params.id);
       const batch = await getSettlementBatch(app.db, {
         merchantId: request.merchantAuth!.merchantId,
         batchId: request.params.id,
@@ -125,4 +129,21 @@ export async function settlementRoutes(app: FastifyInstance): Promise<void> {
       return { transactions };
     },
   );
+}
+
+/** An unparseable from/to is a 400, not a 500 from Postgres. */
+function parseDateQuery(raw: string | undefined, name: string): Date | undefined {
+  if (!raw) return undefined;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    throw new BadRequestError("invalid_request", `${name} must be a date (YYYY-MM-DD)`);
+  }
+  return date;
+}
+
+/** A non-UUID id cannot name a batch: 404, same as an unknown one. */
+function assertBatchId(id: string): void {
+  if (!UUID_RE.test(id)) {
+    throw new NotFoundError("settlement_batch_not_found");
+  }
 }

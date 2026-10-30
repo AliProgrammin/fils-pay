@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
+import { listBackHref } from "../../pager.js";
 import { getMerchant, recomputeTransactionStatuses, setRefundsEnabled, submitKycReview } from "../../api/merchants.js";
 import { adjustBalance } from "../../api/balanceAdjustments.js";
 import { issueCredit } from "../../api/credits.js";
@@ -46,6 +47,7 @@ const CREDIT_REASONS: Array<{ value: CreditReasonCode; label: string }> = [
 
 export function MerchantDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const backHref = listBackHref("/merchants", useLocation().state);
   const { rememberImpersonation } = useAdminAuth();
 
   const [detail, setDetail] = useState<AdminMerchantDetail | null>(null);
@@ -280,7 +282,7 @@ export function MerchantDetailPage() {
       <NotFoundPanel
         title="Merchant not found"
         text="No merchant has this id. The link may be old or mistyped. Nothing was changed."
-        backTo="/merchants"
+        backTo={backHref}
         backLabel="Back to merchants"
       />
     );
@@ -290,7 +292,7 @@ export function MerchantDetailPage() {
     return (
       <section>
         <p className="admin-back">
-          <Link to="/merchants">&larr; Merchants</Link>
+          <Link to={backHref}>&larr; Merchants</Link>
         </p>
         <p className="admin-error" role="alert">{loadError}</p>
       </section>
@@ -311,7 +313,7 @@ export function MerchantDetailPage() {
   return (
     <section>
       <p className="admin-back">
-        <Link to="/merchants">&larr; Merchants</Link>
+        <Link to={backHref}>&larr; Merchants</Link>
       </p>
       <header className="admin-page-head">
         <p className="admin-kicker">Merchant file</p>

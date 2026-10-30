@@ -119,3 +119,13 @@ export async function loadPage<T>(
     current += 1;
   }
 }
+
+/**
+ * Where a detail page's Back link goes. A list row link passes its own query
+ * string (filters, search, page, size) as router state `{ listSearch }`;
+ * without it (a detail opened directly) Back goes to the plain list.
+ */
+export function listBackHref(listPath: string, state: unknown): string {
+  const search = (state as { listSearch?: unknown } | null)?.listSearch;
+  return typeof search === "string" && search.startsWith("?") ? `${listPath}${search}` : listPath;
+}

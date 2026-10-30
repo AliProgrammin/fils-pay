@@ -16,8 +16,8 @@ import {
 
 const ID = "3f2a9c1e-0b4d-4e8a-9c2f-1a2b3c4d5e6f";
 
-test("filterAmountInput: digits, one dot, 3 decimals, minus only when allowed", () => {
-  assert.equal(filterAmountInput("50.0001"), "50.000");
+test("filterAmountInput: digits, one dot, minus only when allowed", () => {
+  assert.equal(filterAmountInput("50.0001"), "50.0001", "a 4th decimal is kept so checkAmount can refuse it");
   assert.equal(filterAmountInput("abc"), "");
   assert.equal(filterAmountInput(" 1 234,5 "), "12345");
   assert.equal(filterAmountInput("-12.5"), "12.5", "credit: no negatives");
@@ -86,4 +86,12 @@ test("checkAdjustmentCsv names every bad line", () => {
   ]);
   assert.deepEqual(checkAdjustmentCsv("  ").problems, ["Paste the CSV: a header line and at least one row"]);
   assert.deepEqual(checkAdjustmentCsv("merchantId,amount,reason").problems, ["Add at least one row under the header"]);
+});
+
+test("an amount with more than 3 decimals is refused with a clear message, never cut", () => {
+  for (const opts of [{}, { allowNegative: true }]) {
+    const checked = checkAmount(filterAmountInput("1.2345", opts), opts);
+    assert.equal(checked.ok, false, "1.2345 BD must not become 1.234 BD");
+    assert.match((checked as { message: string }).message, /at most 3 decimals/);
+  }
 });

@@ -32,13 +32,13 @@ export function derivePublicStatus(
   if (row.status === "paid") return "paid";
   if (row.status === "canceled") return "canceled";
 
-  if (row.status === "active") {
-    return row.expiresAt.getTime() <= Date.now() ? "expired" : "active";
+  if (row.status === "reserved") {
+    if (row.paymentInFlight) return "processing";
+    const reservedAtMs = row.reservedAt?.getTime() ?? 0;
+    const stillReserved = reservedAtMs > Date.now() - reservationTimeoutSeconds * 1000;
+    if (stillReserved) return "processing";
+    // A timed-out reservation is claimable again, so it is 'active' or 'expired'.
   }
 
-  // row.status === 'reserved'
-  if (row.paymentInFlight) return "processing";
-  const reservedAtMs = row.reservedAt?.getTime() ?? 0;
-  const stillReserved = reservedAtMs > Date.now() - reservationTimeoutSeconds * 1000;
-  return stillReserved ? "processing" : "active";
+  return row.expiresAt.getTime() <= Date.now() ? "expired" : "active";
 }

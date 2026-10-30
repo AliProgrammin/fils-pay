@@ -26,7 +26,7 @@ export async function recomputeTransactionStatusesForMerchant(
   const candidates = await client.query<CandidateRow>(
     `SELECT id, status, amount_fils, captured_fils, refunded_fils
        FROM transactions
-      WHERE merchant_id = $1 AND status NOT IN ('authorized', 'voided')
+      WHERE merchant_id = $1 AND status NOT IN ('authorized', 'voided', 'chargeback')
       FOR UPDATE`,
     [merchantId],
   );

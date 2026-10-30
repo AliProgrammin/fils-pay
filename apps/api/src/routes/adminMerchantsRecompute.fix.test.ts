@@ -100,3 +100,17 @@ test("recompute keeps test_mode for a test merchant with nothing open", async ()
   await recompute(cookie, merchantId);
   assert.equal(await testMode(merchantId), true, "a test merchant must stay out of real settlement");
 });
+
+test("recompute never changes a chargeback transaction", async () => {
+  const cookie = await signedInFinanceAdmin();
+  const merchantId = await testMerchantWith([]);
+  const txn = await pool.query<{ id: string }>(
+    `INSERT INTO transactions (merchant_id, status, amount_fils, captured_fils, acquirer_reference)
+     VALUES ($1, 'chargeback', 5000, 5000, $2) RETURNING id`,
+    [merchantId, `acq_${randomUUID()}`],
+  );
+
+  await recompute(cookie, merchantId);
+  const row = await pool.query<{ status: string }>(`SELECT status FROM transactions WHERE id = $1`, [txn.rows[0]!.id]);
+  assert.equal(row.rows[0]!.status, "chargeback", "a chargeback must stay a chargeback (and so stay unrefundable)");
+});

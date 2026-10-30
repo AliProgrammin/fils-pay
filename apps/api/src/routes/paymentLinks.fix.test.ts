@@ -281,3 +281,26 @@ test("W10: an over-long reference or Idempotency-Key is 400 invalid_request", as
   assert.equal(longCaptureKey.statusCode, 400, longCaptureKey.body);
   assert.equal(longCaptureKey.json().error, "invalid_request");
 });
+
+test("an expired link with a timed-out reservation reads expired and pay says 410", async () => {
+  const { merchantId, rawKey } = await merchantWithKey("expired-reserved");
+  const link = await createLink(rawKey, merchantId);
+  await pool.query(
+    `UPDATE payment_links SET status = 'reserved', reserved_at = now() - interval '2 hours',
+            expires_at = now() - interval '1 hour' WHERE id = $1`,
+    [link.id],
+  );
+
+  const read = await app.inject({ method: "GET", url: `/v1/payment-links/${link.token}` });
+  assert.equal(read.statusCode, 200, read.body);
+  assert.equal(read.json().status, "expired");
+
+  const pay = await app.inject({
+    method: "POST",
+    url: `/v1/payment-links/${link.token}/pay`,
+    headers: { "idempotency-key": randomUUID() },
+    payload: { card: APPROVED_CARD },
+  });
+  assert.equal(pay.statusCode, 410, pay.body);
+  assert.equal(pay.json().error, "payment_link_expired");
+});

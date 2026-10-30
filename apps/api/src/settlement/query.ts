@@ -1,4 +1,7 @@
 import type { Pool } from "pg";
+import { BadRequestError } from "../lib/errors.js";
+import { isValidDateOnly } from "../lib/dateInput.js";
+import { UUID_RE } from "../admin/merchants.js";
 import { estimateFeeFils } from "../fees/estimate.js";
 import { getVolumeTierBonusBps } from "../fees/platformVolumeTier.js";
 
@@ -92,19 +95,16 @@ interface DecodedCursor {
   id: string;
 }
 
+/** A malformed cursor is a 400 invalid_request, never a 500 from Postgres. */
 function decodeCursor(cursor: string | null | undefined): DecodedCursor | null {
   if (!cursor) return null;
-  let decoded: string;
-  try {
-    decoded = Buffer.from(cursor, "base64url").toString("utf8");
-  } catch {
-    return null;
-  }
+  const decoded = Buffer.from(cursor, "base64url").toString("utf8");
   const separatorIndex = decoded.indexOf("|");
-  if (separatorIndex === -1) return null;
   const batchDate = decoded.slice(0, separatorIndex);
   const id = decoded.slice(separatorIndex + 1);
-  if (!batchDate || !id) return null;
+  if (separatorIndex === -1 || !isValidDateOnly(batchDate) || !UUID_RE.test(id)) {
+    throw new BadRequestError("invalid_request", "cursor is malformed");
+  }
   return { batchDate, id };
 }
 

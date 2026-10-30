@@ -5,6 +5,7 @@ import type { Config } from "../config.js";
 import { withTransaction } from "../db/withTransaction.js";
 import { sha256Hex } from "../lib/crypto.js";
 import { NotFoundError, UnprocessableEntityError } from "../lib/errors.js";
+import { UUID_RE } from "../admin/merchants.js";
 import { detectFileType, extensionFor, mimeTypeFor } from "./fileSignature.js";
 import { generateKycThumbnail } from "./kycThumbnail.js";
 
@@ -214,6 +215,9 @@ export async function getKycDocumentFile(
   merchantId: string,
   documentId: string,
 ): Promise<KycDocumentFile> {
+  if (!UUID_RE.test(documentId)) {
+    throw new NotFoundError("kyc_document_not_found");
+  }
   const result = await pool.query<{ storage_key: string; mime_type: string; file_name: string }>(
     `SELECT storage_key, mime_type, file_name FROM kyc_documents WHERE id = $1 AND merchant_id = $2`,
     [documentId, merchantId],
@@ -236,6 +240,9 @@ export async function getKycThumbnailFile(
   merchantId: string,
   documentId: string,
 ): Promise<KycDocumentFile> {
+  if (!UUID_RE.test(documentId)) {
+    throw new NotFoundError("kyc_thumbnail_not_found");
+  }
   const result = await pool.query<{
     thumbnail_storage_key: string | null;
     thumbnail_mime_type: string | null;

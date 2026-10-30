@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { decodeKeysetCursor } from "../lib/pagination.js";
 
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
@@ -62,20 +63,10 @@ interface DecodedCursor {
   id: string;
 }
 
+/** A malformed cursor is a 400 invalid_request (decodeKeysetCursor). */
 function decodeCursor(cursor: string | null | undefined): DecodedCursor | null {
-  if (!cursor) return null;
-  let decoded: string;
-  try {
-    decoded = Buffer.from(cursor, "base64url").toString("utf8");
-  } catch {
-    return null;
-  }
-  const separatorIndex = decoded.indexOf("|");
-  if (separatorIndex === -1) return null;
-  const createdAt = decoded.slice(0, separatorIndex);
-  const id = decoded.slice(separatorIndex + 1);
-  if (!createdAt || !id) return null;
-  return { createdAt, id };
+  const decoded = decodeKeysetCursor(cursor);
+  return decoded ? { createdAt: decoded.timestamp, id: decoded.id } : null;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { listMerchants } from "../../api/merchants.js";
 import { bulkApproveKyc } from "../../api/merchantsBulk.js";
 import { errorMessage } from "../../errors.js";
@@ -26,6 +26,7 @@ const ONBOARDING_STATUSES: MerchantOnboardingStatus[] = [
 export function MerchantListPage() {
   const notify = useToast();
   const [searchParams] = useSearchParams();
+  const listSearch = useLocation().search;
   const appliedQuery = searchParams.get("q") ?? "";
   const statuses = searchParams
     .getAll("status")
@@ -214,7 +215,7 @@ export function MerchantListPage() {
                   />
                 </td>
                 <td className="admin-card-head">
-                  <Link to={`/merchants/${merchant.id}`}>{merchant.displayName}</Link>
+                  <Link to={`/merchants/${merchant.id}`} state={{ listSearch }}>{merchant.displayName}</Link>
                   <div className="admin-sub">
                     <code>{merchant.id}</code>
                   </div>
@@ -227,7 +228,7 @@ export function MerchantListPage() {
                 <td data-label="Mode"><StatusChip value={merchant.testMode ? "test" : "live"} /></td>
                 <td data-label="Created">{formatDate(merchant.createdAt)}</td>
                 <td className="admin-card-link">
-                  <Link to={`/merchants/${merchant.id}`} aria-label={`Open ${merchant.displayName}`}>
+                  <Link to={`/merchants/${merchant.id}`} state={{ listSearch }} aria-label={`Open ${merchant.displayName}`}>
                     Open merchant &rarr;
                   </Link>
                 </td>
