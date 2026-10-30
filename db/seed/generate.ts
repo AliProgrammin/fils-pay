@@ -208,8 +208,10 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
   try {
     await client.query("BEGIN");
     try {
-      // AM: only touches the fixture tables listed in TABLES_TO_RESET, so it's
-      // safe to run against a shared/staging database. (see RUNBOOK)
+      // TRUNCATE ... CASCADE wipes every merchant, transaction and ledger row
+      // (and every table that references them). Never run it against a shared
+      // or production database: index.ts refuses a database that has
+      // merchants unless SEED_ALLOW_RESET=1 (W1).
       // ledger_entries is append-only (migration 0076); the seed is the one
       // caller allowed to TRUNCATE it, for this transaction only.
       await client.query(`SET LOCAL filspay.allow_ledger_reset = 'on'`);

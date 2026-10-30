@@ -117,6 +117,6 @@ Tests (Postgres from `ops/docker-compose.yml`, then a migrated database):
 npm install
 export DATABASE_URL=postgres://filspay:filspay_dev_password@localhost:5432/filspay
 npm run migrate && npm test
-npm run seed            # the Go tests read the seeded fee schedule
+SEED_ALLOW_RESET=1 npm run seed   # resets the DB; the Go tests read the seeded fee schedule
 cd apps/settlement && go test ./...
 ```

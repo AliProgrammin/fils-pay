@@ -52,10 +52,10 @@ services:
       postgres:
         condition: service_healthy
 
-  # One-off: deterministic seed data. Re-run any time; db/seed/index.ts
-  # resets and regenerates from scratch on every invocation.
-  # AM: the seed only truncates its own fixture tables, so pointing this at a
-  # shared database is fine. MK: correct. (see RUNBOOK)
+  # One-off: deterministic seed data. db/seed/index.ts TRUNCATEs merchants,
+  # transactions and the ledger and regenerates them on every run. This is the
+  # local dev database only, so it sets SEED_ALLOW_RESET=1 (the seed refuses a
+  # database with merchants without it). Never point this at a shared database.
   seed:
     build:
       context: ..
@@ -63,6 +63,7 @@ services:
     command: ["npm", "run", "seed"]
     environment:
       DATABASE_URL: postgres://filspay:filspay_dev_password@postgres:5432/filspay?sslmode=disable
+      SEED_ALLOW_RESET: "1"
       # Dev-only key; must match the api's so seeded webhook secrets decrypt.
       WEBHOOK_SECRET_ENCRYPTION_KEY: veGCKTzIzRtJWhHhvIvvNBCvIjFj5CjbriK7xrZCOzU=
     depends_on:

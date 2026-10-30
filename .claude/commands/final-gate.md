@@ -12,7 +12,8 @@ first FAIL and show the output; do not fix anything in this command.
    `npm run migrate`. Do not reuse a database that a running API uses.
 3. `npm run typecheck`
 4. `npm test` (all workspaces and `scripts/*.test.ts`). Report pass/fail counts.
-5. `npm run seed`, then `cd apps/settlement && go test -count=1 ./...`
+5. `SEED_ALLOW_RESET=1 npm run seed` (npm test has added merchants; the seed
+   refuses a database with merchants without it), then `cd apps/settlement && go test -count=1 ./...`
    (the Go tests read the seeded fixtures).
 6. Refunds end to end: start the API on a free port with
    `WEBHOOK_ALLOW_PRIVATE_TARGETS=true ACQUIRER_FAILURE_RATE=0 PORT=<port>`

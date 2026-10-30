@@ -4,10 +4,15 @@
  * self-verify assertion against it. Exits non-zero iff any REAL assertion
  * fails.
  *
+ * It TRUNCATEs merchants, transactions and the ledger first, so it refuses a
+ * database that already has merchants unless SEED_ALLOW_RESET=1 (W1).
+ *
  * Usage: DATABASE_URL=postgres://... npx tsx db/seed/index.ts
+ *        SEED_ALLOW_RESET=1 DATABASE_URL=postgres://... npx tsx db/seed/index.ts
  */
 import { Pool } from "pg";
 import { generate } from "./generate.js";
+import { assertSeedResetAllowed } from "./resetGuard.js";
 import { buildAssertions, runAssertions } from "./selfVerify.js";
 
 async function main(): Promise<void> {
@@ -30,6 +35,7 @@ async function main(): Promise<void> {
   const pool = new Pool({ connectionString: databaseUrl, max: 5 });
 
   try {
+    await assertSeedResetAllowed(pool, process.env);
     const summary = await generate(pool);
     console.log(
       `seed: generated ${summary.merchantCount} merchants, ${summary.merchantUserCount} merchant_users, ` +
