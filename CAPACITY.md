@@ -1,33 +1,39 @@
 # FilsPay capacity
 
-## Our estimate
+## Our estimate (measured on the live Dilmune server)
 
-**About 120 concurrent checkout users: about 30 completed checkouts per
-second, about 150 HTTP requests per second, p95 latency about 620 ms for all
-requests.** At this load the ledger balances and no payment is lost or
-charged twice in any run. The final run at 120 users (final configuration)
-had 0 errors and 0 refused requests; earlier runs at 100 to 120 users had
-0 to 0.04 % refused or failed requests, and one had 4 database-connection
-timeouts that the final configuration fixes (see "Results").
+**About 70 concurrent checkout users: about 12 completed checkouts per
+second, about 63 HTTP requests per second, pay call p95 about 1.4 s.**
+0 failed checkouts, 0 server errors, 0 refused requests. Measured on the
+live server `Orbit` (1 vCPU, 2 GB, Bangalore) over HTTPS, from a laptop in
+Bahrain, with `scripts/load/run.sh` (scenario `link`: create a payment link,
+open the checkout page, pay, double-click check).
 
-| What | Value |
-|---|---|
-| Concurrent users | 120 |
-| Completed checkouts | 29.9 per second |
-| HTTP requests | 154 per second |
-| p95 / p99, all requests | 625 ms / 830 ms |
-| p95 of the pay call (2 acquirer calls inside) | 817 ms |
-| p95 of the other calls | create link 41 ms, read link 22 ms, checkout page 1 ms |
-| Errors, refused (503) requests | 0, 0 |
+## Live server
 
-These numbers come from our own test (below), on a laptop with the same CPU
-and memory limits as the server. **The Dilmune server may give slightly
-different numbers** (other CPU, other disk). The limit moves with the disk:
-see "What limits capacity".
+| Users | Checkouts/s | HTTP req/s | Pay p95 | Failed checkouts | 5xx | Refused (503) |
+|---|---|---|---|---|---|---|
+| 30 | 5.4 | 28 | 1.06 s | 0 | 0 | 0 |
+| 50 | 9.0 | 46 | 1.05 s | 0 | 0 | 0 |
+| **70** | **12.4** | **63** | **1.41 s** | **0** | **0** | **0** |
+| 90 | 14.0 | 72 | 2.17 s | 0 | 0 | 0 |
+| 120 | 10.7 | 56 | 7.37 s | 0 | 0 | 92 (0.6/s) |
 
-Past 120 users the API starts to refuse some requests with a fast 503 (see
-"Overload"). At 150 users 0.4 % of requests got a 503 and the pay p95 went
-to 2.3 s, so we put the limit at 120.
+- The rows 30 to 90 are with the final CPU caps (Postgres 0.90, Caddy 0.40,
+  API 0.50). At 90 users it still completes every checkout, but slower. At
+  120 users it is past the limit: it turns the excess away with fast 503s
+  and still completes every checkout it accepts.
+- A first run with Postgres capped at 0.30 CPU (all caps adding up to
+  exactly 1.0) served only about 30 users at the same speed (50 users: pay
+  p95 3.0 s). The live server's shared vCPU is about 3x slower than our
+  laptop's core, and Postgres needs the CPU. The hosting rule caps only the
+  API (0.5 vCPU / 512 MB), so the other caps now only stop one service from
+  taking the whole machine (`ops/docker-compose.tls.yml`).
+- "Declined" checkouts in the k6 output are the bank simulator's planned
+  card declines, not errors.
+
+The laptop numbers below (about 120 users) show the same code on a faster
+CPU with the same Docker limits. They are not our estimate for the server.
 
 ## Machine limits
 
@@ -42,6 +48,10 @@ The whole stack runs from `ops/docker-compose.prod.yml` on one server with
 | settlement (Go) | 0.03 | 64 MB | always | port 8091 open |
 | reporting (Node) | 0.05 | 192 MB | always | none (no HTTP port; restart covers a crash) |
 | **Total** | **1.00** | **1.47 GB** | | |
+
+On the live server the HTTPS layer (`ops/docker-compose.tls.yml`) adds Caddy
+(0.40 CPU, 96 MB) and raises Postgres to 0.90 CPU. Only the API keeps the
+rule's hard cap of 0.5 vCPU / 512 MB; total memory caps stay under 1.6 GB.
 
 `migrate` and `seed` are one-off jobs that end before the api starts.
 Postgres data is in the named volume `pgdata`, so a container restart or a
@@ -103,7 +113,7 @@ The script also has `SCENARIO=api`: authorize (`POST /v1/transactions`),
 replay of the same authorize (must return the same transaction id), then
 capture (`POST /v1/transactions/:id/capture`), all with Idempotency-Keys.
 
-### Results (laptop, Docker with the limits above)
+### Results on a laptop (same limits, faster CPU: not the server estimate)
 
 Payment-link checkout, 3 minutes per step after a 30 s ramp:
 

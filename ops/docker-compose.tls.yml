@@ -18,17 +18,15 @@ services:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    cpus: 0.10
+    cpus: 0.40
     mem_limit: 96m
-  # Caddy's 0.10 CPU is taken from these, so the stack still adds up to
-  # exactly 1.0 CPU: api 0.50 + postgres 0.30 + caddy 0.10 + web 0.05
-  # + reporting 0.02 + settlement 0.03.
+  # The hosting rule caps only the API (0.5 vCPU / 512 MB). The server has
+  # 1 vCPU in total, so the other caps only stop one service from taking
+  # the whole machine. Measured on the live 1 vCPU server: Postgres capped
+  # at 0.30 limited the stack to about 30 users; at 0.90 it serves about 70
+  # (CAPACITY.md, "Live server").
   postgres:
-    cpus: 0.30
-  web:
-    cpus: 0.05
-  reporting:
-    cpus: 0.02
+    cpus: 0.90
 
 volumes:
   caddy_data:
