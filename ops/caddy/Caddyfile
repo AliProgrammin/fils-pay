@@ -2,6 +2,8 @@
 # server (e.g. 1-2-3-4.sslip.io); Caddy gets and renews the certificate.
 {$FILSPAY_DOMAIN} {
 	encode gzip
+	# The web app has no page at "/": send visitors to the merchant sign-in.
+	redir / /dashboard/login 302
 	reverse_proxy web:80
 	header Strict-Transport-Security "max-age=31536000"
 }
