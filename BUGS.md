@@ -12,8 +12,8 @@ When an existing test asserted the buggy behaviour, we changed it in the same co
 
 | | Before | After |
 |---|---|---|
-| Fresh database | migrations stop at 0054 | 84 migrations + seed pass |
-| TypeScript tests | 414 / 430 pass | 595 / 595 pass |
+| Fresh database | migrations stop at 0054 | 85 migrations + seed pass |
+| TypeScript tests | 414 / 430 pass | 605 / 605 pass |
 | Go tests | 54 / 54 pass | 84 / 84 pass |
 | Refunds (FP-300) | `POST /v1/refunds` returned `501`; the dashboard drawer posted to an unregistered path (`404`) | end to end: API, ledger, fees, payouts, webhook, timeline, reports, reconciliation |
 
@@ -41,7 +41,7 @@ How we found them: three independent audit rounds, then a separate agent that sa
 | R1 | Critical | Two refunds at the same time both succeed | FP-209 | Refunds | [explain](docs/bugs/refunds.md#r1-two-refunds-at-the-same-time-both-succeed) |
 | R2 | Critical | Refund limit uses the authorized amount, not the captured amount | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r2-refund-limit-uses-the-authorized-amount-not-the-captured-amount) |
 | R3 | Critical | A merchant can refund another merchant's transaction | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r3-a-merchant-can-refund-another-merchants-transaction) |
-| R7 | Critical | Every refund fails with `chk_refunds_reason_not_null` | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r7-every-refund-fails-with-chkrefundsreasonnotnull) |
+| R7 | Critical | Every refund fails with `chk_refunds_reason_not_null` | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r7-every-refund-fails-with-chk_refunds_reason_not_null) |
 | S1 | Critical | A fresh database cannot be migrated | none | Setup (could not start) | [explain](docs/bugs/setup.md#s1-a-fresh-database-cannot-be-migrated) |
 | A12 | High | Impersonation could still write through routes with no role gate | some admin actions don't seem to have the right role checks | Auth and admin | [explain](docs/bugs/wave-a.md#a12-impersonation-could-still-write-through-routes-with-no-role-gate) |
 | A3 | High | Support admin can issue credits | case card | Auth and admin | [explain](docs/bugs/wave-a.md#a3-support-admin-can-issue-credits) |
@@ -49,7 +49,7 @@ How we found them: three independent audit rounds, then a separate agent that sa
 | A5 | High | API key rotation never revokes the old key | case card | Auth and admin | [explain](docs/bugs/wave-a.md#a5-api-key-rotation-never-revokes-the-old-key) |
 | A6 | High | OTP codes, payment link tokens and invite codes use Math.random | case card | Auth and admin | [explain](docs/bugs/wave-a.md#a6-otp-codes-payment-link-tokens-and-invite-codes-use-mathrandom) |
 | A7 | High | OTP attempt limit can be raced, and resend resets the budget | case card | Auth and admin | [explain](docs/bugs/wave-a.md#a7-otp-attempt-limit-can-be-raced-and-resend-resets-the-budget) |
-| A8 | High | Impersonation gives finance and super_admin write roles | case card | Auth and admin | [explain](docs/bugs/wave-a.md#a8-impersonation-gives-finance-and-superadmin-write-roles) |
+| A8 | High | Impersonation gives finance and super_admin write roles | case card | Auth and admin | [explain](docs/bugs/wave-a.md#a8-impersonation-gives-finance-and-super_admin-write-roles) |
 | A9 | High | Recompute statuses takes test merchants out of test mode | case card | Auth and admin | [explain](docs/bugs/wave-a.md#a9-recompute-statuses-takes-test-merchants-out-of-test-mode) |
 | B4 | High | One payment link charged twice (the real cause of incident 2026-05-14) | incident 2026-05-14 | Payments and links | [explain](docs/bugs/wave-b.md#b4-one-payment-link-charged-twice-the-real-cause-of-incident-2026-05-14) |
 | B5 | High | Merchant A can cancel merchant B's payment link (IDOR) | none | Payments and links | [explain](docs/bugs/wave-b.md#b5-merchant-a-can-cancel-merchant-bs-payment-link-idor) |
@@ -77,7 +77,7 @@ How we found them: three independent audit rounds, then a separate agent that sa
 | H4 | High | Payment-link captures never get the negotiated discount in the ledger | H4 | Payments and API | [explain](docs/bugs/hunt-2-h4.md#h4-payment-link-captures-never-get-the-negotiated-discount-in-the-ledger) |
 | L1 | High | The ledger balance check reads the whole ledger on every write | none | Capacity (load test) | [explain](docs/bugs/load.md#l1-the-ledger-balance-check-reads-the-whole-ledger-on-every-write) |
 | L3 | High | A payment cut off by a crash leaves the link stuck and the card held | INC 05-14 family | Capacity (load test) | [explain](docs/bugs/load.md#l3-a-payment-cut-off-by-a-crash-leaves-the-link-stuck-and-the-card-held) |
-| R4 | High | `refunds_enabled = NULL` is treated as enabled | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r4-refundsenabled--null-is-treated-as-enabled) |
+| R4 | High | `refunds_enabled = NULL` is treated as enabled | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r4-refunds_enabled--null-is-treated-as-enabled) |
 | R5 | High | Fee reversal does not add up to the fee charged | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r5-fee-reversal-does-not-add-up-to-the-fee-charged) |
 | R8 | High | No way to turn refunds on, except raw SQL | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r8-no-way-to-turn-refunds-on-except-raw-sql) |
 | S2 | High | The Dockerfiles that compose needs are missing | none | Setup (could not start) | [explain](docs/bugs/setup.md#s2-the-dockerfiles-that-compose-needs-are-missing) |
@@ -91,7 +91,7 @@ How we found them: three independent audit rounds, then a separate agent that sa
 | C10 | Medium | `rebuild-balances --merchant=X` never writes, and the full rebuild races CloseBatch/PayoutBatch | HANDOVER | Settlement money (Go) | [explain](docs/bugs/wave-c.md#c10-rebuild-balances---merchantx-never-writes-and-the-full-rebuild-races-closebatchpayoutbatch) |
 | C11 | Medium | Lifetime payout estimate drifts (float32 into a REAL column) | ops monitoring | Settlement money (Go) | [explain](docs/bugs/wave-c.md#c11-lifetime-payout-estimate-drifts-float32-into-a-real-column) |
 | C9 | Medium | Scheme rounding residue is never journaled | ADR-0002 | Settlement money (Go) | [explain](docs/bugs/wave-c.md#c9-scheme-rounding-residue-is-never-journaled) |
-| D10 | Medium | Reporting consumer is stopped by poison events (null merchant_id, missing rollup row) | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d10-reporting-consumer-is-stopped-by-poison-events-null-merchantid-missing-rollup-row) |
+| D10 | Medium | Reporting consumer is stopped by poison events (null merchant_id, missing rollup row) | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d10-reporting-consumer-is-stopped-by-poison-events-null-merchant_id-missing-rollup-row) |
 | D11 | Medium | Replays mint a new Webhook-Delivery-Id; batch replay resends succeeded deliveries | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d11-replays-mint-a-new-webhook-delivery-id-batch-replay-resends-succeeded-deliveries) |
 | D12 | Medium | Dev fallback webhook encryption key is 34 bytes, so the API cannot boot in dev | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d12-dev-fallback-webhook-encryption-key-is-34-bytes-so-the-api-cannot-boot-in-dev) |
 | D14 | Medium | Deleting a webhook endpoint with history crashes with a 500 | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d14-deleting-a-webhook-endpoint-with-history-crashes-with-a-500) |
@@ -102,7 +102,7 @@ How we found them: three independent audit rounds, then a separate agent that sa
 | E5 | Medium | "Adjust balance" changes only the cached balance, not the ledger | E5 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e5-adjust-balance-changes-only-the-cached-balance-not-the-ledger) |
 | E6 | Medium | Refund summary view joins the wrong column and double counts captures | E6 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e6-refund-summary-view-joins-the-wrong-column-and-double-counts-captures) |
 | G11 | Medium | A late capture or refund makes two days fail reconciliation | none | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g11-a-late-capture-or-refund-makes-two-days-fail-reconciliation) |
-| G4 | Medium | merchant_balances drifts after every rebuild | none | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g4-merchantbalances-drifts-after-every-rebuild) |
+| G4 | Medium | merchant_balances drifts after every rebuild | none | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g4-merchant_balances-drifts-after-every-rebuild) |
 | H3 | Medium | Bad input gives a 500, not a 400 | none | Payments and API | [explain](docs/bugs/hunt-2.md#h3-bad-input-gives-a-500-not-a-400) |
 | H5 | Medium | KYC image decompression bomb | none | Payments and API | [explain](docs/bugs/hunt-2.md#h5-kyc-image-decompression-bomb) |
 | H6 | Medium | KYC upload takes many files and leaves orphan files | none | Payments and API | [explain](docs/bugs/hunt-2.md#h6-kyc-upload-takes-many-files-and-leaves-orphan-files) |
@@ -119,9 +119,9 @@ How we found them: three independent audit rounds, then a separate agent that sa
 | D13 | Low | Report export summary had no login check | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d13-report-export-summary-had-no-login-check) |
 | E7 | Low | Dashboard crashes on a negative amount | E7 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e7-dashboard-crashes-on-a-negative-amount) |
 | G10 | Low | Bad daemon timing values crash or stall the daemon | none | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g10-bad-daemon-timing-values-crash-or-stall-the-daemon) |
-| G9 | Low | Batch event lookups scan the whole transaction_events table | none | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g9-batch-event-lookups-scan-the-whole-transactionevents-table) |
+| G9 | Low | Batch event lookups scan the whole transaction_events table | none | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g9-batch-event-lookups-scan-the-whole-transaction_events-table) |
 | H10 | Low | Three inputs still crashed the API with a 500 | none | Payments and API | [explain](docs/bugs/hunt-2.md#h10-three-inputs-still-crashed-the-api-with-a-500) |
-| H7 | Low | api_keys.revoke_after is ignored | none | Payments and API | [explain](docs/bugs/hunt-2.md#h7-apikeysrevokeafter-is-ignored) |
+| H7 | Low | api_keys.revoke_after is ignored | none | Payments and API | [explain](docs/bugs/hunt-2.md#h7-api_keysrevoke_after-is-ignored) |
 | H8 | Low | Dead BD parser with the wrong unit | none | Payments and API | [explain](docs/bugs/hunt-2.md#h8-dead-bd-parser-with-the-wrong-unit) |
 | H9 | Low | No index for releasing a hold | none | Payments and API | [explain](docs/bugs/hunt-2.md#h9-no-index-for-releasing-a-hold) |
 | U11 | Low | Admin Settlement page default date is two days ago after midnight | R11 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u11-admin-settlement-page-default-date-is-two-days-ago-after-midnight) |

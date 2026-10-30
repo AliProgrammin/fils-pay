@@ -57,10 +57,12 @@ rule's hard cap of 0.5 vCPU / 512 MB; total memory caps stay under 1.6 GB.
 Postgres data is in the named volume `pgdata`, so a container restart or a
 rebuild keeps it. Logs are capped at 3 x 10 MB per service.
 
-If you add the HTTPS layer (`ops/docker-compose.tls.yml`, Caddy with 0.10
-CPU), the CPU limits add up to 1.10. Docker limits are caps, not
-reservations, so this works, but under full load Caddy and the other
-services then share the one vCPU.
+With the HTTPS layer (`ops/docker-compose.tls.yml`, used on the live
+server) Caddy gets 0.40 CPU and Postgres 0.90, so the caps add up to about
+1.95 CPU. Docker CPU limits are caps, not reservations: all services share
+the one vCPU, and the caps only stop one service from taking all of it.
+Only the API has the rule's hard cap (0.5 vCPU / 512 MB). Caddy's logs are
+capped like the others.
 
 Sizing that matters:
 

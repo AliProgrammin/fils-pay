@@ -20,6 +20,11 @@ services:
       - caddy_config:/config
     cpus: 0.40
     mem_limit: 96m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
   # The hosting rule caps only the API (0.5 vCPU / 512 MB). The server has
   # 1 vCPU in total, so the other caps only stop one service from taking
   # the whole machine. Measured on the live 1 vCPU server: Postgres capped
