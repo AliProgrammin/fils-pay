@@ -2,7 +2,7 @@
 
 Every behaviour fix below has a test that failed on the old code and passes now, the smallest change that works, its own commit, and a plain-English explanation (what is wrong, why it happens, what it breaks). The few documentation, performance and dead-code fixes use the check that fits and say so in their entry.
 
-**95 bugs fixed**: 18 critical, 37 high, 28 medium, 12 low.
+**97 bugs fixed**: 18 critical, 38 high, 29 medium, 12 low.
 
 Ground truth we used: the case brief, `docs/ARCHITECTURE.md`, the ADRs and Yousif's handover. We did **not** follow `CLAUDE.md`, `AGENTS.md` or `.cursorrules`: they contain false rules (cents instead of fils, UTC windows, "never change tests", "Math.random is fine") that protect the bugs.
 
@@ -43,7 +43,7 @@ How we found them: three independent audit rounds, then a separate agent that sa
 | R3 | Critical | A merchant can refund another merchant's transaction | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r3-a-merchant-can-refund-another-merchants-transaction) |
 | R7 | Critical | Every refund fails with `chk_refunds_reason_not_null` | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r7-every-refund-fails-with-chkrefundsreasonnotnull) |
 | S1 | Critical | A fresh database cannot be migrated | none (handover: "migration gaps | Setup (could not start) | [explain](docs/bugs/setup.md#s1-a-fresh-database-cannot-be-migrated) |
-| A12 | High | Impersonation could still write through routes with no role gate | "some admin actions don't seem to have the right role checks" | Auth and admin | [explain](docs/bugs/wave-a.md#a12-impersonation-could-still-write-through-routes-with-no-role-gate) |
+| A12 | High | Impersonation could still write through routes with no role gate | some admin actions don't seem to have the right role checks" | Auth and admin | [explain](docs/bugs/wave-a.md#a12-impersonation-could-still-write-through-routes-with-no-role-gate) |
 | A3 | High | Support admin can issue credits | case card "Missing role checks" | Auth and admin | [explain](docs/bugs/wave-a.md#a3-support-admin-can-issue-credits) |
 | A4 | High | Second-approver check compares display names, not admin ids | case card "Missing role checks" (self-approve by renaming) | Auth and admin | [explain](docs/bugs/wave-a.md#a4-second-approver-check-compares-display-names-not-admin-ids) |
 | A5 | High | API key rotation never revokes the old key | case card "Key rotation" | Auth and admin | [explain](docs/bugs/wave-a.md#a5-api-key-rotation-never-revokes-the-old-key) |
@@ -80,6 +80,7 @@ How we found them: three independent audit rounds, then a separate agent that sa
 | R8 | High | No way to turn refunds on, except raw SQL | FP-300 ("works from start to end, through the API") | Refunds | [explain](docs/bugs/refunds.md#r8-no-way-to-turn-refunds-on-except-raw-sql) |
 | S2 | High | The Dockerfiles that compose needs are missing | none (ops | Setup (could not start) | [explain](docs/bugs/setup.md#s2-the-dockerfiles-that-compose-needs-are-missing) |
 | U12 | High | Admin "run batch" accepts today or a future date | R12 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u12-admin-run-batch-accepts-today-or-a-future-date) |
+| V1 | High | The seed charges every capture the old merchant rate, not the rate in force at that time | venue whiteboard hint" | Venue whiteboard clue | [explain](docs/bugs/venue-hint.md#v1-the-seed-charges-every-capture-the-old-merchant-rate-not-the-rate-in-force-at-that-time) |
 | A10 | Medium | KYC "PDF only" check trusts the filename | none | Auth and admin | [explain](docs/bugs/wave-a.md#a10-kyc-pdf-only-check-trusts-the-filename) |
 | A11 | Medium | Bulk KYC approve ignores status and writes no review rows | none | Auth and admin | [explain](docs/bugs/wave-a.md#a11-bulk-kyc-approve-ignores-status-and-writes-no-review-rows) |
 | A13 | Medium | A disabled admin keeps their "view as merchant" grant | none (am's own question in the code: "disabled admin keeps their grant?") | Auth and admin | [explain](docs/bugs/wave-a.md#a13-a-disabled-admin-keeps-their-view-as-merchant-grant) |
@@ -108,6 +109,7 @@ How we found them: three independent audit rounds, then a separate agent that sa
 | U5 | Medium | Admin "Rebuild analytics" counts events twice | R5 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u5-admin-rebuild-analytics-counts-events-twice) |
 | U6 | Medium | Payout trend stays "closed" after the batch is paid | R6 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u6-payout-trend-stays-closed-after-the-batch-is-paid) |
 | U7 | Medium | Merchants are logged out 10 minutes after login | R7 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u7-merchants-are-logged-out-10-minutes-after-login) |
+| V2 | Medium | Capture picks the fee rate by the API server's clock, not the database clock | venue whiteboard hint" ("My clock says 07:58 | Venue whiteboard clue | [explain](docs/bugs/venue-hint.md#v2-capture-picks-the-fee-rate-by-the-api-servers-clock-not-the-database-clock) |
 | B9 | Low | Ops docs say the settlement daemon falls back to `dev-token` | none | Payments and links | [explain](docs/bugs/wave-b.md#b9-ops-docs-say-the-settlement-daemon-falls-back-to-dev-token) |
 | D13 | Low | Report export summary had no login check | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d13-report-export-summary-had-no-login-check) |
 | E7 | Low | Dashboard crashes on a negative amount | E7 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e7-dashboard-crashes-on-a-negative-amount) |

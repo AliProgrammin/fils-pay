@@ -4,7 +4,7 @@ Money is in integer fils (1 BD = 1,000 fils). Rates are basis points (bps).
 
 ---
 
-## V1 — The seed charges every capture the old merchant rate, not the rate in force at that time
+### V1 The seed charges every capture the old merchant rate, not the rate in force at that time
 
 - **Severity:** High (money)
 - **Ticket:** "venue whiteboard hint"
@@ -37,7 +37,7 @@ Manual check: after the fix, Go `run-batch --date=2026-08-26` for Alpha pays 635
 
 ---
 
-## V2 — Capture picks the fee rate by the API server's clock, not the database clock
+### V2 Capture picks the fee rate by the API server's clock, not the database clock
 
 - **Severity:** Medium (money)
 - **Ticket:** "venue whiteboard hint" ("My clock says 07:58 / Theirs says 08:30")
