@@ -11,6 +11,8 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 - What it breaks: No refund could be written at all.
 - Fix: `processRefund` now uses the caller's reason (trimmed), or `'unspecified'` (the same value as the 0070 default) when there is none. The constraint is not weakened. The route (see FP-300 wiring) requires a reason from the merchant.
 - Test: `apps/api/src/payments/processRefund.test.ts` ("a refund without a reason stores 'unspecified'...") plus the 11 tests that now pass.
+- How found and reproduced: Our first test run on the handed-over code (414 of 430 TS tests passed): 11 refund tests failed with `chk_refunds_reason_not_null`. Reproduced by the test "a refund without a reason stores 'unspecified'..." in `processRefund.test.ts`.
+- Effect on existing data: None. No refund could be inserted, so no refund row exists from the old code.
 
 ### R1 Two refunds at the same time both succeed
 - Severity: Critical
@@ -21,6 +23,8 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 - What it breaks: Double refunds (real money lost), a wrong `refunded_fils`, and a ledger that does not match the transaction row.
 - Fix: One database transaction from the idempotency claim to the journal, same as capture. The transaction row is locked with `SELECT ... FOR UPDATE` before validation and the lock is held across the acquirer call. A second refund waits for the lock, then is validated against the new refunded total and is refused (409 `transaction_not_refundable` once the row is `refunded`, or 422 `refund_exceeds_refundable` if only part is left).
 - Test: `apps/api/src/payments/processRefund.test.ts` ("two concurrent full refunds: exactly one succeeds ...")
+- How found and reproduced: Case card ticket FP-209 and audit round 1 (finding 3). Reproduced by the test "two concurrent full refunds: exactly one succeeds ...": it sends two full refunds at the same time with different idempotency keys; on the old code both succeeded.
+- Effect on existing data: None. Refunds were not live before (`POST /v1/refunds` returned 501 and every refund insert failed, R7), so no refund row exists from the old code.
 
 ### R2 Refund limit uses the authorized amount, not the captured amount
 - Severity: Critical
@@ -31,6 +35,8 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 - What it breaks: The platform pays the cardholder money it never collected. The merchant's payable goes negative.
 - Fix: `refundable = captured_fils - refunded_fils`. The test fixture uses the same formula. New migration `0082_transactions_refunded_le_captured.sql` adds `CHECK (refunded_fils <= captured_fils)`, so the database refuses an over-refund from any code path.
 - Test: `apps/api/src/payments/processRefund.test.ts` ("a partially captured transaction cannot refund more than it captured", "the database refuses refunded_fils greater than captured_fils"), `refundValidation.test.ts` ("... cannot refund past what it captured").
+- How found and reproduced: Audit round 1 (finding 4, from the "refund > charged?" note). Reproduced by the test "a partially captured transaction cannot refund more than it captured" (authorize 10.000 BD, capture 4.000 BD, refund more), which the old code accepted.
+- Effect on existing data: None. Refunds were not live before (`POST /v1/refunds` returned 501 and every refund insert failed, R7), so no refund row exists from the old code. Migration 0082 adds the CHECK without `NOT VALID`; it applied with no error on a fresh database and the seed, so no row has `refunded_fils > captured_fils`.
 
 ### R3 A merchant can refund another merchant's transaction
 - Severity: Critical
@@ -41,6 +47,8 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 - What it breaks: Any merchant (or a leaked API key) can drain another merchant's captured payments.
 - Fix: Both lookups are `WHERE id = $1 AND merchant_id = $2` with the authenticated merchant id, and the authenticated id is what is passed on. Another merchant's transaction answers 404 (`transaction_not_found`), never 403, so its existence is not confirmed.
 - Test: `apps/api/src/payments/processRefund.test.ts` ("another merchant's transaction answers 404 ..."), `apps/api/src/refunds/initiateMerchantRefund.test.ts` ("another merchant's existing transactionId is a 404 ...").
+- How found and reproduced: Audit round 1 (finding 5). The test that would have caught it had been deleted as "redundant". Reproduced by "another merchant's transaction answers 404 ..." in `processRefund.test.ts` and `initiateMerchantRefund.test.ts`; the old code refunded merchant A's payment for merchant B.
+- Effect on existing data: None. Refunds were not live before (`POST /v1/refunds` returned 501 and every refund insert failed, R7), so no refund row exists from the old code.
 
 ### R5 Fee reversal does not add up to the fee charged
 - Severity: High
@@ -51,6 +59,8 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 - What it breaks: Merchant payable for a fully refunded payment is not 0. Fees and payouts are off by a few fils per refund, and by the whole discount for discounted merchants.
 - Fix: Cumulative reversal. `reversed_after = round(fee * refunded_after / captured)` (banker's rounding, bigint), this refund reverses `reversed_after - already_reversed`. When everything is refunded, `reversed_after = fee` exactly, so the last refund takes the exact remainder. The fee base is now the net fee: capture fee credits minus discount debits on `platform_fee_revenue` for this transaction (refund reversals left out); `already_reversed` is the sum of earlier `refunds.fee_reversed_fils`. `calculateRefundFee` takes a named-field object so the five inputs cannot be swapped by mistake.
 - Test: `packages/money/src/fils.test.ts` ("ten partial refunds of 100 ... reverse exactly the 25 fee", "any split ... sums back to the fee"), `apps/api/src/payments/processRefund.test.ts` ("ten partial refunds reverse, in total, exactly the fee charged", "a full refund for a discounted merchant reverses the net fee and leaves payable at 0").
+- How found and reproduced: Audit round 1 (finding 40), against Huda's rule in the 2026-07-08 finance meeting and Yousif's handover claim. Reproduced by "ten partial refunds of 100 ... reverse exactly the 25 fee" in `fils.test.ts`; the old code reversed 20.
+- Effect on existing data: None. Refunds were not live before (`POST /v1/refunds` returned 501 and every refund insert failed, R7), so no refund row exists from the old code.
 
 ### R6 A partial capture that is fully refunded never shows `refunded`
 - Severity: Medium
@@ -61,6 +71,8 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 - What it breaks: Dashboards, filters and reports showed fully refunded payments as open captures. The merchant could even capture more on a payment the customer was already refunded for, and the hold on the unused authorization was never released.
 - Fix: Status now follows the refunded total first: 0 refunded keeps the capture status; `0 < refunded < captured` is `partially_refunded`; `refunded = captured` is `refunded`. When a refund moves a payment out of the capture statuses, `processRefund` releases the active hold, because capture is no longer possible (same rule capture uses when nothing is left).
 - Test: `apps/api/src/payments/refundState.test.ts` ("a partial capture refunded in full is refunded", "... in part is partially_refunded"), `apps/api/src/payments/processRefund.test.ts` ("refunding everything captured on a partial capture lands on refunded and releases the hold").
+- How found and reproduced: Audit round 1 (finding 42). Reproduced by "a partial capture refunded in full is refunded" in `refundState.test.ts`; the old code returned `partially_captured`.
+- Effect on existing data: None. Refunds were not live before (`POST /v1/refunds` returned 501 and every refund insert failed, R7), so no refund row exists from the old code.
 
 ### R8 No way to put refunds on hold, except raw SQL
 - Severity: High
@@ -71,3 +83,5 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 - What it breaks: support cannot put a merchant's refunds on hold (a chargeback-rate review, a compliance hold), or release the hold, without editing the production database by hand. Found by our blind judge.
 - Fix: `PUT /v1/admin/merchants/:id/refunds-enabled` (`enabled: false` puts refunds on hold, `true` releases the hold) for finance and super_admin, with an audit row in the same transaction, a "Put refunds on hold" / "Release the hold" button on the admin merchant page, and `refundsEnabled` in the admin merchant data (`refunds_enabled !== false`, so NULL shows as refunds on). While on hold a refund answers 403 `refunds_on_hold`, as in the original code.
 - Test: apps/api/src/routes/adminRefundsEnabled.fix.test.ts
+- How found and reproduced: Our blind FP-300 judge marked "works from start to end, through the API" as FAIL, because only raw SQL could change the switch. Reproduced by `apps/api/src/routes/adminRefundsEnabled.fix.test.ts` (the route did not exist).
+- Effect on existing data: None. NULL still means "no hold", so no merchant row changes. The new route only writes when an admin uses it, with an audit row.

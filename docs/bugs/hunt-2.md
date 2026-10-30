@@ -9,6 +9,8 @@
 - What it breaks: Anyone with a payment link (a link is made to be shared) sees part of the merchant's live key and its full SHA-256 hash. The prefix narrows the search for the raw key. The hash is the exact value `verifyApiKey` matches on, so it must never leave the server. No client used these fields.
 - Fix: Remove the join and both fields. The other fields and the response shape stay the same.
 - Test: apps/api/src/routes/paymentLinks.test.ts, "payment link lifecycle" (now checks that neither field and no `fp_` text is in the public read).
+- How found and reproduced: Hunt round 2 (an independent code audit), by reading `paymentLinks/read.ts`. Reproduced by the "payment link lifecycle" test, which now checks that no key field and no `fp_` text is in the public read; the old response had both.
+- Effect on existing data: No stored row is wrong. Key prefixes and hashes already shown to link viewers cannot be called back. To be safe, merchants with shared links should rotate their live keys; we did not force a rotation.
 
 ### H2 Support role can capture and void
 - Severity: High
@@ -19,6 +21,8 @@
 - What it breaks: A support user (read-only by role) captures or voids a payment by calling the API. Refunds already had the owner/finance gate, so this was the one money route without it.
 - Fix: Add `requireMerchantRole("owner", "finance")` to both routes, the same gate as refunds. API keys still pass, by design (an owner issues them). The web comments now say the server checks too.
 - Test: apps/api/src/routes/transactions.fix.test.ts, "H2: a support session cannot capture or void (403); owner and finance sessions and API keys can"
+- How found and reproduced: Hunt round 2. The old TODO on void and the web comment pointed to it. Reproduced by "H2: a support session cannot capture or void (403) ...", which got 200 on the old routes.
+- Effect on existing data: Past captures and voids stay as they are. To find any done by a support user: `SELECT te.transaction_id, te.event_type, te.occurred_at FROM transaction_events te JOIN sessions s ON s.id = te.actor_id JOIN merchant_users u ON u.id = s.merchant_user_id WHERE te.actor_type = 'merchant_session' AND u.role = 'support' AND te.event_type IN ('captured', 'partially_captured', 'voided');`
 
 ### H3 Bad input gives a 500, not a 400
 - Severity: Medium
@@ -33,6 +37,8 @@
 - What it breaks: A client's mistake looks like a server crash. It fills the error log, sets off alerts, and hides real 500s.
 - Fix: Check input in the routes and answer with the repo's existing codes: `400 invalid_request` for from/to/limit/cursor/id, `400 invalid_amount` for amounts (the same rule as refunds: a positive safe integer). One shared cursor decoder (`lib/pagination.ts`) checks that the timestamp is a real Postgres timestamp and the id is a UUID before the SQL runs. Numeric limits still clamp as before (`limit=0` gives 1 row). Success responses do not change.
 - Test: apps/api/src/routes/transactions.fix.test.ts, the five "H3: ..." tests (bad list input, real cursor still pages, non-UUID id on every `/:id` route, bad amounts on authorize and capture, payment-link list).
+- How found and reproduced: Hunt round 2, by sending bad input to each route. Reproduced by the five "H3: ..." tests in `transactions.fix.test.ts`, which got 500 on the old code.
+- Effect on existing data: None. Request-time checks only.
 
 ### H4 Payment-link captures never get the negotiated discount in the ledger
 - Severity: High (money)
@@ -43,6 +49,8 @@
 - What it breaks: merchant_payable drifts from the real payouts for every discounted merchant that uses payment links, and can go negative. Reconciliation shows false gaps. The pending estimate disagreed with settlement by 1 fils at some amounts.
 - Fix: captureTransaction posts the discount legs itself, inside the same DB transaction as the capture, with the same description ("capture: negotiated discount adjustment"). The discount is MDR fee minus netCaptureFeeFils, and netCaptureFeeFils uses the same rule and rounding as settlement's ComputeSettlementFee. So the ledger net fee always equals the fee the payout deducts. A replayed capture returns its cached response before any ledger write, so the discount is posted exactly once. The post-commit call in the capture route is removed (and the old applyCaptureDiscountAdjustment with it). estimateFeeFils uses the same helper. API paths and response shapes do not change. Refunds need no change: processRefund already reads the net fee (fee credits minus discount debits) from the ledger.
 - Test: apps/api/src/payments/discountAdjustment.test.ts (net fee equals the Go ComputeSettlementFee table; a link capture posts 21 fils of discount and payable = 100,000 - 2,729; the 602-fil rounding case follows settlement; a replayed capture posts the discount once; a full refund of a discounted link payment reverses 2,729 and leaves payable 0). apps/settlement/internal/settlement/discount_payout_test.go (the same legs, then CloseBatch and PayoutBatch: batch fee 2,729 and merchant_payable 0).
+- How found and reproduced: Audit round 1 (finding 47: payment links skip the discount), then hunt round 2. Reproduced by `discountAdjustment.test.ts`: a 100.000 BD link for Alpha Retail (275 bps, 75 bps discount) posted no discount legs, and payable was 21 fils negative after the Go payout (`discount_payout_test.go`).
+- Effect on existing data: Yes. Past link captures for discounted merchants have no discount legs, so `merchant_payable` is too low by the discount. The fix does not backfill them; finance must post the missing legs as new entries. To list them: `SELECT pl.transaction_id FROM payment_links pl JOIN merchants m ON m.id = pl.merchant_id WHERE pl.status = 'paid' AND m.negotiated_discount_bps > 0 AND NOT EXISTS (SELECT 1 FROM ledger_entries le WHERE le.transaction_id = pl.transaction_id AND le.description = 'capture: negotiated discount adjustment');`
 
 ### H5 KYC image decompression bomb
 - Severity: Medium
@@ -53,6 +61,8 @@
 - What it breaks: A few uploads of a small "bomb" PNG make the API decode gigabytes of pixels, so memory and CPU run out for every merchant. A broken image that only has the right magic bytes gave a 500.
 - Fix: `limitInputPixels: 40_000_000` (40 MP is more than any phone photo or scan). Any sharp failure becomes `422 invalid_image`.
 - Test: apps/api/src/onboarding/kycThumbnail.fix.test.ts, "H5: a PNG over the pixel limit (small file, 48 MP) is rejected 422 before it is decoded" and "H5: bytes with a JPEG signature that sharp cannot decode are rejected 422, not 500"
+- How found and reproduced: Hunt round 2, by reading `kycThumbnail.ts`. Reproduced by "H5: a PNG over the pixel limit (small file, 48 MP) is rejected 422 before it is decoded" and the broken-JPEG test; the old code decoded the bomb and gave 500 on bad bytes.
+- Effect on existing data: None. Request-time check only.
 
 ### H6 KYC upload takes many files and leaves orphan files
 - Severity: Medium
@@ -63,6 +73,8 @@
 - What it breaks: One request with many 8 MiB files makes the server hold them all in memory. A failed thumbnail (now a 422, see H5) or a failed insert leaves a file on disk with no row, so private ID documents pile up with nothing pointing to them.
 - Fix: The route answers `400 invalid_request` on a second file, before it reads it. The plugin caps file parts at 2, not 1: at the limit busboy destroys the file stream the handler is still reading, so with 1 a second file made the first read fail with "Premature close" (a 500). With 2 the route sees the second part and rejects it; a third is cut by the plugin. The thumbnail now runs before any write. Files are written with `wx` (create only), and on any error only the files this call created are removed. Files are named by content hash, so an earlier row with the same bytes keeps its file.
 - Test: apps/api/src/routes/kyc.fix.test.ts, "H6: an upload with two or three files is rejected 400 and stores nothing", "H6: an image that fails the thumbnail step leaves no file on disk", "H6: a failed DB insert removes the file it wrote, but never a file an earlier upload owns"
+- How found and reproduced: Hunt round 2. The plugin comment said the route enforces one file; it did not. Reproduced by the three "H6: ..." tests in `kyc.fix.test.ts`, which failed on the old code.
+- Effect on existing data: Files from past failed uploads may still be on disk with no row. We did not clean them. To find them, compare the files in the KYC storage folder with `SELECT storage_key FROM kyc_documents;`
 
 ### H7 api_keys.revoke_after is ignored
 - Severity: Low
@@ -73,6 +85,8 @@
 - What it breaks: A staged key rotation never ends. The old key, which the merchant thinks is dead, keeps working forever.
 - Fix: Add `AND (revoke_after IS NULL OR revoke_after > now())` to the verify query. The key list (`listApiKeys`) reports a passed `revoke_after` as `revokedAt`, so the dashboard does not show a dead key as active.
 - Test: apps/api/src/apiKeys/verify.fix.test.ts, "H7: a key past its revoke_after time is rejected", "H7: a key with a future revoke_after, or none, still works", "H7: the key list shows a passed revoke_after as revokedAt, ..."
+- How found and reproduced: Hunt round 2. Migration 0056 promised a sweep job that does not exist. Reproduced by "H7: a key past its revoke_after time is rejected", which passed the key on the old code.
+- Effect on existing data: No row is changed. Keys past `revoke_after` stop working at once. Keys used after that time: `SELECT id, merchant_id, revoke_after, last_used_at FROM api_keys WHERE revoke_after < now() AND last_used_at > revoke_after;`
 
 ### H8 Dead BD parser with the wrong unit
 - Severity: Low
@@ -83,6 +97,8 @@
 - What it breaks: Nothing today. But it is an exported, plausible-looking helper, so the next person to need a BD parser could wire it in and pay out a tenth of every discount.
 - Fix: Delete it. Text BD amounts use `parseBhdToFils` from `@filspay/money`.
 - Test: apps/api/src/payments/discountAdjustment.fix.test.ts, "H8: the float BD parser is gone; parseBhdToFils gives the right fils"
+- How found and reproduced: Hunt round 2, by searching for float maths on money. Proof: "H8: the float BD parser is gone; parseBhdToFils gives the right fils".
+- Effect on existing data: None. Dead code, never called.
 
 ### H9 No index for releasing a hold
 - Severity: Low
@@ -96,6 +112,8 @@
   - Before: `Seq Scan on holds ... Rows Removed by Filter: 192464`, Execution Time 6.074 ms
   - After: `Index Scan using idx_holds_active_transaction on holds`, Execution Time 0.128 ms
 - Test: apps/api/src/payments/holdsIndex.fix.test.ts, "H9: the hold-release UPDATE is planned as an index scan on the active-holds index"
+- How found and reproduced: Hunt round 2, by checking the hold-release UPDATE against the schema. Reproduced with EXPLAIN ANALYZE on 192,465 holds (old plan: Seq Scan) and the test "H9: the hold-release UPDATE is planned as an index scan ...".
+- Effect on existing data: None. A new index only.
 
 ### H10 Three inputs still crashed the API with a 500
 - Severity: Low
@@ -106,6 +124,8 @@
 - What it breaks: clients get a server error for their own mistake; on the pay path the link also stays reserved until the timeout.
 - Fix: reject amounts of 0 or less with 400 `invalid_amount`; require a string `pan`; map Postgres 22021 to 400 `invalid_request` in the one error handler.
 - Test: apps/api/src/routes/transactions.fix.test.ts, the three "H10" tests
+- How found and reproduced: Our blind verifier, after H3, sent these three inputs and got 500. Reproduced by the three "H10" tests in `transactions.fix.test.ts`.
+- Effect on existing data: None. Request-time checks only. A link that one of these calls left reserved was freed at the reservation timeout.
 
 ### H11 Dead v1 transaction routes with an unauthenticated capture endpoint
 - Severity: Low
@@ -116,6 +136,8 @@
 - What it breaks: Nothing today. But it was one import away from an unauthenticated, unscoped capture of any merchant's transaction, with the wrong fee. The handover note invited the next developer to wire it up for "a partner".
 - Fix: Removed `apps/api/src/v1/` and the comment in `app.ts` that pointed at it. No live route, path, body or response changed.
 - Test: `npm run typecheck` passes; `git grep -n "transactionRoutesV1\|calculateMdrFeeV1"` finds nothing; the full API suite passes with the same routes as before (`apps/api/src/app.ts` unchanged except the comment).
+- How found and reproduced: Found in the final clean-up; our second-opinion Codex review also named `apps/api/src/v1/` as dead code. Proof: `app.ts` never registers the tree and `git grep` finds no import.
+- Effect on existing data: None. The route was never registered, so it never ran.
 
 ### H12 An expired card is approved
 - Severity: Medium
@@ -126,6 +148,8 @@
 - What it breaks: payments on expired cards are approved and captured, which a real bank refuses. Merchants see a payment that would fail in production.
 - Fix: an expired card is declined as the bank would: 402 `card_declined` with `declineReason: "card_expired"`. A card is valid through the last day of its expiry month on the Asia/Bahrain calendar and the server clock; a 2-digit year means 20YY. Magic test numbers keep priority, and input with no valid month or year is not judged, so every card shape the original API accepted keeps its answer (other teams' tests rely on it). On a payment link, the decline releases the link, which stays payable.
 - Test: apps/api/src/routes/cardValidation.fix.test.ts (expired declined, 2-digit year, magic cards, old shapes still approved, link stays payable); apps/api/src/acquirer/simulator.test.ts ("an expired card is declined as card_expired regardless of the failure-rate roll")
+- How found and reproduced: Found in the final card-handling review (commit `ca4e91d`, narrowed in `70eed80` to keep the original API's card rules). Reproduced by `cardValidation.fix.test.ts`, where the old simulator approved an expired card.
+- Effect on existing data: Past payments on expired cards stay approved. The card expiry is not stored, so the data cannot show which ones they were. In this repo the acquirer is a simulator, so no real bank was charged.
 
 ### H13 A request body that is not valid JSON gives a 500
 - Severity: Low
@@ -136,3 +160,5 @@
 - What it breaks: a client mistake looks like a server fault: wrong alerts in the logs and a client that retries a request that can never work.
 - Fix: map Fastify body-parse errors to their own 4xx status with `invalid_request`. Every other unexpected error still gives 500.
 - Test: apps/api/src/plugins/errorHandler.test.ts ("a JSON body that does not parse is a 400, not a server error", "an empty JSON body is a 400")
+- How found and reproduced: Our blind live check on 30 Oct sent `notjson` to the pay route and got 500. Reproduced by the two tests in `apps/api/src/plugins/errorHandler.test.ts`.
+- Effect on existing data: None. Request-time mapping only.

@@ -9,6 +9,8 @@
 - What it breaks: Every finance correction since the import shipped. A 4.75 BD correction paid 0.475 BD. ADR-0001 says finance sheets must go through `parseBhdToFils`.
 - Fix: Use `parseBhdToFils` from `@filspay/money`. It gives exact fils, accepts 0-3 decimals and rejects more than 3 (the row fails with `invalid_amount`, the whole import rolls back). Fixed the tests that locked in the bug: `adjustmentImport.test.ts` (475->4750, 125->1250, 600->6000, 350->3500, 500->5000) and `adminAdjustmentImport.test.ts` (600->6000, removed the wrong "2dp" comment).
 - Test: `apps/api/src/admin/adjustmentCsvParsing.fix.test.ts`
+- How found and reproduced: Audit round 1 (finding 8, "CSV 10x"). Yousif's commit `9567ea0` had already said the import is 10x off. Reproduced by `adjustmentCsvParsing.fix.test.ts` ("4.75 BD parses to 4750 fils, not 475"), which failed on the old parser.
+- Effect on existing data: Yes. Every import made before the fix is booked 10x too small, and the fix does not change past rows (the ledger is append-only, E4). Finance must post the difference as new correcting entries; we did not rewrite history. The rows to correct: `SELECT adjustment_import_id, row_number, merchant_id, raw_amount_text, parsed_amount_fils FROM adjustment_import_rows WHERE parsed_amount_fils <> round(trim(raw_amount_text)::numeric * 1000);`
 
 ### E2 March residue sweep uses the UTC month, posts the wrong legs, and double-posts on re-run
 - Severity: High
@@ -20,6 +22,8 @@
 - Fix: `monthBounds` subtracts the fixed UTC+3 offset. The group id is now a hash of (merchant, year, month); before insert the script checks the group does not exist, under a transaction advisory lock so two parallel runs cannot both post. Legs follow ADR-0002. `reconcile_march.test.ts` asserted the UTC window (`getUTCMonth() === 2`); it now asserts the Bahrain bounds.
 - Follow-up (not done here): the groups already posted by earlier real runs stay in the ledger (append-only). Finance must reverse them with new correcting entries.
 - Test: `scripts/reconcile_march.fix.test.ts`
+- How found and reproduced: Audit round 1 (finding 37), from FP-187 in `docs/ONBOARDING.md` and the 2026-07-08 finance meeting note (the 3 July "dry run" posted 13 lines / 70 fils again). Reproduced by `scripts/reconcile_march.fix.test.ts`: the Bahrain-month test and "running the residue posting twice posts one balanced ADR-0002 group" both failed on the old script. The seed fixture has 528 captures in the first 3 Bahrain hours of 1 March (4,750 fils of residue) that the UTC window misses.
+- Effect on existing data: Yes, in the real ledger. The groups from the first run and the 3 July re-run stay; by team decision we did not correct them, because the ledger is append-only. Finance must reverse them with new entries and post the March residue once, on the ADR-0002 legs. Our seed has no such groups. To list them: `SELECT entry_group_id, merchant_id, account_id, direction, amount_fils, occurred_at FROM ledger_entries WHERE description LIKE 'March 2026 scheme rounding residue sweep%' ORDER BY occurred_at;`
 
 ### E3 Hold expiry job deletes holds (and can delete every hold)
 - Severity: High
@@ -30,6 +34,8 @@
 - What it breaks: Lost hold history (audit, disputes). On a quiet night all active holds vanish, so open authorizations lose their hold and the merchant's available balance is wrong.
 - Fix: One atomic statement: `UPDATE holds SET status = 'expired' WHERE status = 'active' AND expires_at < now()`. The status re-check is in the same statement, so no race. Removed the now-unused `scripts/lib/sqlFilter.ts` (its unscoped DELETE is a trap). `expire_holds.test.ts` asserted DELETE; it now asserts the UPDATE. (The stale comment in migration 0005 is left as is, because applied migrations are not edited.)
 - Test: `scripts/expire_holds.fix.test.ts`
+- How found and reproduced: Audit round 1 (finding 38). The handover says "Holds are never deleted". The unscoped `DELETE FROM holds` was found by reading `buildDelete` with an empty id list. Reproduced by `scripts/expire_holds.fix.test.ts` ("expireHolds flips only active, past-due holds to 'expired' and deletes nothing"), which failed on the old job.
+- Effect on existing data: Holds that past runs deleted are gone. The database cannot bring them back; only a backup can. The fix stops new loss. Open authorizations that lost their hold: `SELECT t.id FROM transactions t WHERE t.status IN ('authorized', 'partially_captured') AND NOT EXISTS (SELECT 1 FROM holds h WHERE h.transaction_id = t.id);`
 
 ### E4 Ledger can be edited or wiped without error
 - Severity: Medium
@@ -40,6 +46,8 @@
 - What it breaks: ARCHITECTURE says the ledger is the record of money and corrections are new entries; `settlement rebuild-balances` reads only the ledger. Anyone with DB write access (or a bad script) could silently change history and the rebuild would trust it.
 - Fix: New migration `0076_ledger_entries_append_only.sql` adds BEFORE UPDATE/DELETE (row) and BEFORE TRUNCATE (statement) triggers that raise "ledger_entries is append-only". I checked TS, Go, scripts, seed and tests: no code updates or deletes ledger rows. The only TRUNCATE is the dev seed (`db/seed/generate.ts`, also via CASCADE from `merchants`); it now runs `SET LOCAL filspay.allow_ledger_reset = 'on'` inside its own transaction. UPDATE and DELETE have no exception. Seed re-run verified ("all REAL assertions passed").
 - Test: `apps/api/src/db/ledgerAppendOnly.fix.test.ts`
+- How found and reproduced: Audit round 1 (finding 43), by reading the 0007 trigger and its comment. Reproduced by `apps/api/src/db/ledgerAppendOnly.fix.test.ts`: a balanced UPDATE, a whole-group DELETE and a TRUNCATE all passed on the old schema.
+- Effect on existing data: No row is changed by the fix. The old schema kept no history, so the table alone cannot prove that no one edited the ledger before 0076. Only a compare with backups can show that.
 
 ### E5 "Adjust balance" changes only the cached balance, not the ledger
 - Severity: Medium
@@ -50,6 +58,8 @@
 - What it breaks: The cache and the ledger drift. The next `settlement rebuild-balances` (reads only the ledger) silently wipes the 50.000 BD, and payouts and reconciliation do not see it. No ledger trail for the money.
 - Fix: The route now calls `adjustMerchantBalanceJournaled`, which posts a balanced group (merchant_payable vs manual_balance_adjustment_contra) and moves the cache in the same transaction, with an audit row that holds the entry group id. Response shape is the same. Removed a test comment that claimed "the ledger is untouched by this endpoint".
 - Test: new test "an adjustment posts a balanced ledger group, not just a cache edit" in `apps/api/src/routes/adminBalanceAdjustments.test.ts`
+- How found and reproduced: Audit round 1 (finding 44), by comparing the route with `docs/ADMIN.md`. Reproduced by the new test "an adjustment posts a balanced ledger group, not just a cache edit", which found no ledger group on the old route.
+- Effect on existing data: Yes. Past "Adjust balance" calls changed only the cache. The September audit export (`docs/exports/admin-audit-2026-09.csv`) has 17 succeeded `balance_adjustment` rows with no ledger posting. A ledger rebuild removes them (the cache now always equals the ledger, G4). Finance must decide which were real and post them again as journaled adjustments; we did not. To list them: `SELECT id, created_at, target_id, metadata FROM admin_audit_log WHERE action = 'balance_adjustment' AND outcome = 'succeeded' ORDER BY created_at;`
 
 ### E6 Refund summary view joins the wrong column and double counts captures
 - Severity: Medium
@@ -60,6 +70,8 @@
 - What it breaks: Refund reporting for finance (Huda: "reconciliation still ties out after refunds"). Refund rate (refunded / captured) is either missing or about half the real value for multi-refund transactions.
 - Fix: New migration `0077_refund_merchant_summary_fix_join.sql` (0072 may already be applied, so it is not edited). It drops and recreates the view: join on `r.transaction_id`, and aggregate per transaction first so each captured amount counts once per merchant and business day. Same columns, types and unique index (no code reads the view yet, so nothing else changes).
 - Test: `apps/api/src/db/refundMerchantSummary.fix.test.ts`
+- How found and reproduced: Audit round 1 (finding 51), by reading migration 0072. Reproduced by `apps/api/src/db/refundMerchantSummary.fix.test.ts` ("two partial refunds of one 10.000 BD capture count 10.000 BD captured once"), which got an empty view on the old SQL.
+- Effect on existing data: None. It is a view. Migration 0077 recreates it, so it shows correct figures for all past rows at once. No code read the view.
 
 ### E7 Dashboard crashes on a negative amount
 - Severity: Low
@@ -70,6 +82,8 @@
 - What it breaks: The render throws, React unmounts the page, and the user sees a blank screen exactly when there is a gap to investigate.
 - Fix: `toFils(amountFils, { allowNegative: true })`. `formatBhd` already prints the sign.
 - Test: new test "bhd renders a negative amount instead of throwing" in `apps/web/src/dashboard.test.ts`
+- How found and reproduced: Audit round 1 (finding 53). Reproduced by the new test "bhd renders a negative amount instead of throwing", which threw on the old code.
+- Effect on existing data: None. Display only; no stored data.
 
 ### E8 Settlement summary counts a multi-capture transaction once per capture
 - Severity: High
@@ -80,6 +94,8 @@
 - What it breaks: Merchants who capture in parts see an inflated gross on the settlement page (about 38% for Delta Wholesale). Support told them it was a timing difference. The summary does not match the batches, so finance cannot tie it out.
 - Fix: Sum the capture event amounts (`te.amount_fils`), grouped per transaction first, then filter by merchant. This is the same rule the Go batch uses (`batch.go`: gross = sum of event amounts). Same route, same response fields. New migration `0086_transaction_events_captures_occurred.sql`: a partial index on capture events by `occurred_at`, with `transaction_id` and `amount_fils` included, so the window is read from the index alone. On a scaled copy (621k events, Delta Wholesale 120k transactions in 2-3 parts, 30-day window): before 43.9 ms median and 13,760 pages; after 34.0 ms median and 1,547 pages (index-only scan, about 9x less I/O). The old query returned 390,117,000 fils; the sum of capture events is 149,784,000 fils. The perf note now has a correction.
 - Test: new test "GET /v1/settlement/summary counts a multi-capture transaction once, equal to the sum of its capture events" in `apps/api/src/routes/settlement.test.ts`
+- How found and reproduced: Found in our sweep of the organizer hints, from the slow-query note `docs/perf/2026-07-settlement-summary-slow.md` (a 38% gap called a "timing difference"). Reproduced by the new test in `apps/api/src/routes/settlement.test.ts`: 10,000 fils captured as 4,000 + 3,000 + 3,000 plus one 2,500 capture. The old query reported 32,500 fils; the sum of capture events is 12,500.
+- Effect on existing data: None stored. The summary is computed at request time, so past periods show correct figures now. Answers that support already gave merchants (the "timing difference") cannot be fixed in the data.
 
 ### E9 The same adjustment CSV can be applied twice and double every posting
 - Severity: Critical
@@ -90,3 +106,5 @@
 - What it breaks: Real money. Every re-upload (a double click, a retry after a slow response, a second person who is not sure it ran) doubles every adjustment in the ledger and in the cached balance, and the next payout pays it out. Finance had to find and reverse it by hand.
 - Fix: New migration `0087_adjustment_imports_content_sha256.sql` adds `content_sha256` with a unique index. The hash is over the normalised rows (merchant id lower case, amount as parsed fils, reason, rows sorted), so line endings, spacing, header case, row order, file name and "4.75" vs "4.750" do not make a repeat look new. The migration backfills past imports from their stored rows (if a sheet was already applied twice, only the first gets the hash). The insert uses `ON CONFLICT DO NOTHING` inside the same transaction as the postings, so two parallel uploads cannot both post. A duplicate returns `409 adjustment_import_duplicate` with `existingImportId` and a message that names the earlier import. Nothing is posted. The success response (201) is the same. The admin page already shows the server message, so finance sees the 409 there. Removed the false comments and updated `docs/ADMIN.md`.
 - Test: new tests "uploading the same CSV content twice is a 409 adjustment_import_duplicate and posts nothing" and "a CSV with different content is not a duplicate" in `apps/api/src/routes/adminAdjustmentImport.test.ts`
+- How found and reproduced: Found in our sweep of the case files: the 2026-07-08 finance meeting (Huda asked for a guard) and the Slack export of 2026-09-04 (Huda "double-clicked"). The audit export confirms two imports of `aug-adjustments-v3-FINAL.csv`. Reproduced by the new test "uploading the same CSV content twice is a 409 adjustment_import_duplicate and posts nothing", which posted twice on the old code.
+- Effect on existing data: Yes. The audit export shows `aug-adjustments-v3-FINAL.csv` applied twice on 2026-09-04 (11:18:40 and 11:19:02, 31 rows, 428,677 fils each). Slack says an engineer would reverse it by hand; we could not verify that he did. Migration 0087 gives the hash only to the first copy and does not reverse the second; finance must check and reverse it with new entries. Later copies: `SELECT id, original_filename, created_at FROM adjustment_imports WHERE content_sha256 IS NULL;`

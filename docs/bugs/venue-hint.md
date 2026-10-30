@@ -35,6 +35,10 @@ Money is in integer fils (1 BD = 1,000 fils). Rates are basis points (bps).
 
 Manual check: after the fix, Go `run-batch --date=2026-08-26` for Alpha pays 635,375 and the day's `merchant_payable` ends at exactly **0** (was -1,625). The seed's own REAL assertions all pass.
 
+**How found and reproduced:** Venue whiteboard hint (see "How the whiteboard leads here" above), traced to the ghost commit `098c2de`. Reproduced by Go `run-batch --date=2026-08-26` (Alpha `merchant_payable` ended at -1,625 fils) and by `db/seed/feeAtEventTime.integration.test.ts` (54 wrong ledger groups on the old seed).
+
+**Effect on existing data:** Seed data only; no production code wrote these rows. A database seeded before commit `f6fbe4f` keeps the wrong fees and must be seeded again. We reseeded the live server after the fix.
+
 ---
 
 ### V2 Capture picks the fee rate by the API server's clock, not the database clock
@@ -59,6 +63,10 @@ Also checked:
 - API clock 32 min ahead, schedule starts in 10 min by DB time (failed before: billed 1,500, expected 2,500);
 - API clock 32 min behind, schedule started 10 min ago by DB time (failed before: billed 2,500, expected 1,500).
 
+**How found and reproduced:** Runner-up lead from the venue whiteboard ("My clock says 07:58 / Theirs says 08:30"). Reproduced by `apps/api/src/payments/captureClockSkew.fix.test.ts` with a 32-minute clock skew (billed 1,500, settlement 2,500).
+
+**Effect on existing data:** Not known for stored rows: a wrong fee needs clock skew near a rate change. Only captures close to a schedule start are at risk: `SELECT te.transaction_id, te.occurred_at, te.amount_fils, te.metadata->>'feeFils' AS fee_fils, f.mdr_bps, f.effective_from FROM transaction_events te JOIN transactions t ON t.id = te.transaction_id JOIN fee_schedules f ON f.merchant_id = t.merchant_id WHERE te.event_type IN ('captured','partially_captured') AND te.occurred_at BETWEEN f.effective_from - interval '1 hour' AND f.effective_from + interval '1 hour';` Check each fee by hand.
+
 ### V3 An admin credit reverses the fee at the old merchant rate, not the rate in force
 
 - **Severity:** Medium (money)
@@ -74,3 +82,7 @@ Also checked:
 **Fix:** The credit path calls `getEffectiveMdrBps(client, merchantId, null, merchant.mdr_bps)`, the same lookup capture uses (DB `now()`, falls back to `mdr_bps` when no schedule applies). The admin label shows the rate in force. API paths and response shapes do not change.
 
 **Test:** `apps/api/src/admin/credits.test.ts` "V3: a fee reversal uses the merchant's rate in force" (merchant at 250 bps with a 225 bps schedule in force; failed before: 500, expected 450).
+
+**How found and reproduced:** Found while checking the admin console after V1 (same rate rule). Reproduced by `apps/api/src/admin/credits.test.ts` "V3: a fee reversal uses the merchant's rate in force" (500 fils on the old code, 450 expected).
+
+**Effect on existing data:** Credits with a fee reversal made before the fix, for merchants with a fee schedule, gave back too much fee. We did not change them; finance must decide on a correction. Query: `SELECT id, merchant_id, base_amount_fils, fee_reversal_fils, effective_date, status FROM credit_requests WHERE fee_reversal_fils > 0 AND merchant_id IN (SELECT merchant_id FROM fee_schedules);`
