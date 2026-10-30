@@ -48,7 +48,7 @@ export function AdminLayout() {
         </div>
       </header>
 
-      {error ? <p className="admin-error">{error}</p> : null}
+      {error ? <p className="admin-error" role="alert">{error}</p> : null}
 
       {impersonation ? (
         // An explicit "exit view-as-merchant" action is required before

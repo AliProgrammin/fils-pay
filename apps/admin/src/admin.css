@@ -226,3 +226,10 @@ button:disabled {
   margin-top: 0.4rem;
   font-weight: 700;
 }
+
+/* A checkbox sits on the same line as its text. */
+.admin-form label.admin-checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}

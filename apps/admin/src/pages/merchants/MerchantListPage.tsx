@@ -137,7 +137,7 @@ export function MerchantListPage() {
         ))}
       </fieldset>
 
-      {error ? <p className="admin-error">{error}</p> : null}
+      {error ? <p className="admin-error" role="alert">{error}</p> : null}
       {bulkNotice ? <p className="admin-muted">{bulkNotice}</p> : null}
 
       {selectedIds.size > 0 ? (

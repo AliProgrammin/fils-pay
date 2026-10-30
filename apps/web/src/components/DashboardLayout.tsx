@@ -57,7 +57,7 @@ export function DashboardLayout() {
         </div>
       </header>
 
-      {error ? <p className="dash-error">{error}</p> : null}
+      {error ? <p className="dash-error" role="alert">{error}</p> : null}
 
       <main className="dash-main">
         <Outlet />

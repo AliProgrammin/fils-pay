@@ -74,7 +74,7 @@ export function LoginPage() {
       <h1>FilsPay Admin</h1>
       <p className="admin-muted">Internal operations console.</p>
 
-      {error ? <p className="admin-error">{error}</p> : null}
+      {error ? <p className="admin-error" role="alert">{error}</p> : null}
 
       {step.kind === "credentials" ? (
         <form onSubmit={(e) => void handleCredentials(e)} className="admin-form">

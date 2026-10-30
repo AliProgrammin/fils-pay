@@ -1,4 +1,5 @@
 .checkout-page {
+  box-sizing: border-box;
   max-width: 420px;
   margin: 2rem auto;
   padding: 1.5rem;
@@ -37,13 +38,23 @@
 }
 
 .checkout-form input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   padding: 0.5rem;
   font-size: 1rem;
 }
 
+/* Three equal columns that shrink with the screen, so the CVV box never
+   runs off the right edge of a 375px phone. */
 .checkout-form-row {
   display: flex;
   gap: 0.5rem;
+}
+
+.checkout-form-row label {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .checkout-form button {
@@ -63,6 +74,21 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: #555;
+}
+
+.checkout-receipt {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 1rem;
+}
+
+.checkout-receipt dt {
+  color: #555;
+}
+
+.checkout-receipt dd {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .checkout-help {

@@ -88,7 +88,7 @@ export function PaymentLinkDetailPage() {
     return (
       <section>
         <h1>Payment link</h1>
-        <p className="dash-error">{state.message}</p>
+        <p className="dash-error" role="alert">{state.message}</p>
       </section>
     );
   }
@@ -157,7 +157,7 @@ export function PaymentLinkDetailPage() {
         </dd>
       </dl>
 
-      {actionError ? <p className="dash-error">{actionError}</p> : null}
+      {actionError ? <p className="dash-error" role="alert">{actionError}</p> : null}
 
       {link.status === "active" ? (
         <RequireRole allow={["owner", "finance"]}>

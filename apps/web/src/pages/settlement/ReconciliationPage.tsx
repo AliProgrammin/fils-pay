@@ -69,7 +69,7 @@ export function ReconciliationPage() {
     return (
       <section>
         <h1>Reconciliation</h1>
-        <p className="dash-error">
+        <p className="dash-error" role="alert">
           You don&apos;t have permission to view this report — ask an owner or
           finance user on your account.
         </p>
@@ -101,7 +101,7 @@ export function ReconciliationPage() {
         </button>
       </form>
 
-      {error ? <p className="dash-error">{error}</p> : null}
+      {error ? <p className="dash-error" role="alert">{error}</p> : null}
 
       {report ? (
         <>

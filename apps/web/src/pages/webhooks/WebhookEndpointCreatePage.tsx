@@ -103,7 +103,7 @@ export function WebhookEndpointCreatePage() {
     <section>
       <h1>New webhook endpoint</h1>
 
-      {error ? <p className="dash-error">{error}</p> : null}
+      {error ? <p className="dash-error" role="alert">{error}</p> : null}
 
       <form className="dash-form" onSubmit={(e) => void handleSubmit(e)}>
         <label>

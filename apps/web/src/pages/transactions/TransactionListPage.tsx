@@ -124,7 +124,7 @@ export function TransactionListPage() {
         </label>
       </fieldset>
 
-      {error ? <p className="dash-error">{error}</p> : null}
+      {error ? <p className="dash-error" role="alert">{error}</p> : null}
 
       <p>{pluralize(transactions.length, "transaction")} loaded</p>
 

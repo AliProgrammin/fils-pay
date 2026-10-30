@@ -157,7 +157,7 @@ export function WebhookEndpointDetailPage() {
         ))}
       </fieldset>
 
-      {error ? <p className="dash-error">{error}</p> : null}
+      {error ? <p className="dash-error" role="alert">{error}</p> : null}
 
       <table className="dash-table">
         <thead>

@@ -137,11 +137,11 @@ export function AdjustmentImportPage() {
         </form>
       </RequireRole>
 
-      {error ? <p className="admin-error">{error}</p> : null}
+      {error ? <p className="admin-error" role="alert">{error}</p> : null}
       {notice ? <p>{notice}</p> : null}
 
       <h2>Past imports</h2>
-      {listError ? <p className="admin-error">{listError}</p> : null}
+      {listError ? <p className="admin-error" role="alert">{listError}</p> : null}
       {imports.length === 0 ? (
         <p className="admin-muted">No imports yet.</p>
       ) : (
@@ -171,7 +171,7 @@ export function AdjustmentImportPage() {
         </table>
       )}
 
-      {rowsError ? <p className="admin-error">{rowsError}</p> : null}
+      {rowsError ? <p className="admin-error" role="alert">{rowsError}</p> : null}
 
       {openImportId ? (
         <div>

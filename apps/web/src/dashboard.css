@@ -308,3 +308,38 @@
   min-width: 1px;
   background: #4a7ebb;
 }
+
+/* Phone width: the label/value grid stacks, and a wide table scrolls inside
+   itself instead of pushing the whole page past the screen edge. */
+@media (max-width: 40rem) {
+  .dash-main {
+    padding: 1rem;
+  }
+
+  .dash-dl {
+    grid-template-columns: 1fr;
+  }
+
+  .dash-dl dd {
+    margin-bottom: 0.5rem;
+    overflow-wrap: anywhere;
+  }
+
+  .dash-table {
+    display: block;
+    overflow-x: auto;
+  }
+}
+
+/* A button that looks like a text link (e.g. "Sign in to a specific shop"). */
+.dash-text-button {
+  align-self: flex-start;
+  padding: 0;
+  font: inherit;
+  font-size: 0.9em;
+  border: none;
+  background: none;
+  color: #1a4f8b;
+  text-decoration: underline;
+  cursor: pointer;
+}

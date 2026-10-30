@@ -80,7 +80,7 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
   return (
     <RequireRole allow={["owner", "finance"]}>
       <div className="dash-actions">
-        {error ? <p className="dash-error">{error}</p> : null}
+        {error ? <p className="dash-error" role="alert">{error}</p> : null}
         {open ? (
           <form className="dash-form dash-form-inline" onSubmit={(e) => void handleRefund(e)}>
             <label>

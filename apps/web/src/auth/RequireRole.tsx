@@ -59,7 +59,7 @@ export function RoleGatedPage({
       fallback={
         <section>
           <h1>{title}</h1>
-          <p className="dash-error">
+          <p className="dash-error" role="alert">
             You don&apos;t have permission to use this page — ask an owner or finance
             user on your account.
           </p>

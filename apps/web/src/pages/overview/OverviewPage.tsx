@@ -99,7 +99,7 @@ export function OverviewPage() {
         </button>
       </form>
 
-      {error ? <p className="dash-error">{error}</p> : null}
+      {error ? <p className="dash-error" role="alert">{error}</p> : null}
 
       <h2>
         Captured volume{" "}

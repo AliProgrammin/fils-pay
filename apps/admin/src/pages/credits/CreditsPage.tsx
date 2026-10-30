@@ -125,8 +125,8 @@ export function CreditsPage() {
         ))}
       </nav>
 
-      {loadError ? <p className="admin-error">{loadError}</p> : null}
-      {actionError ? <p className="admin-error">{actionError}</p> : null}
+      {loadError ? <p className="admin-error" role="alert">{loadError}</p> : null}
+      {actionError ? <p className="admin-error" role="alert">{actionError}</p> : null}
       {notice ? <p className="admin-notice">{notice}</p> : null}
 
       {items.length === 0 ? (

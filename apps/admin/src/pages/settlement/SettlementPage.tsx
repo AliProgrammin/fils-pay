@@ -131,7 +131,7 @@ export function SettlementPage() {
         paid is safe — the settlement service reports it as already-done rather than doing it twice.
       </p>
 
-      {runError ? <p className="admin-error">{runError}</p> : null}
+      {runError ? <p className="admin-error" role="alert">{runError}</p> : null}
 
       <RequireRole
         allow={["finance", "super_admin"]}
@@ -215,7 +215,7 @@ export function SettlementPage() {
         merchant on the platform at once, so it asks before it runs.
       </p>
 
-      {rebuildError ? <p className="admin-error">{rebuildError}</p> : null}
+      {rebuildError ? <p className="admin-error" role="alert">{rebuildError}</p> : null}
 
       <RequireRole
         allow={["finance", "super_admin"]}
@@ -279,13 +279,13 @@ export function SettlementPage() {
 
       <h2>Rebuild analytics</h2>
       <p className="admin-muted">
-        Recomputes the analytics read model — daily volumes and payout trends — from scratch, for
-        when a merchant reports their dashboard looking behind and you would rather not wait for the
-        reporting worker to catch up. Like the balance rebuild above, it touches every merchant at
-        once, so it asks before it runs.
+        Clears the analytics read model — daily volumes and payout trends — and makes the reporting
+        worker refill it from the full event history. Use it when a merchant&apos;s dashboard figures
+        look wrong. The tables are empty until the worker catches up. Like the balance rebuild above,
+        it touches every merchant at once, so it asks before it runs.
       </p>
 
-      {analyticsError ? <p className="admin-error">{analyticsError}</p> : null}
+      {analyticsError ? <p className="admin-error" role="alert">{analyticsError}</p> : null}
 
       <RequireRole
         allow={["finance", "super_admin"]}
@@ -372,7 +372,7 @@ export function SettlementPage() {
         </form>
       </RequireRole>
 
-      {mdrError ? <p className="admin-error">{mdrError}</p> : null}
+      {mdrError ? <p className="admin-error" role="alert">{mdrError}</p> : null}
 
       {mdrResult ? (
         <div>

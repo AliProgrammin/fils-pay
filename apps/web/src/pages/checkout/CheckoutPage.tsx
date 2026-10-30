@@ -110,11 +110,23 @@ export function CheckoutPage() {
       <main className="checkout-page">
         <h1>Payment successful</h1>
         <p>Thank you — your payment has been received.</p>
-        <dl>
-          <dt>Transaction ID</dt>
-          <dd>{payState.result.transactionId}</dd>
+        <dl className="checkout-receipt">
+          <dt>Paid to</dt>
+          <dd>{link.merchantDisplayName}</dd>
+          <dt>Amount</dt>
+          <dd>{formatBhd(toFils(link.amountFils))} BHD</dd>
+          {link.reference ? (
+            <>
+              <dt>Reference</dt>
+              <dd>{link.reference}</dd>
+            </>
+          ) : null}
           <dt>Paid at</dt>
-          <dd>{payState.result.paidAt}</dd>
+          <dd>{new Date(payState.result.paidAt).toLocaleString()}</dd>
+          <dt>Transaction ID</dt>
+          <dd>
+            <code>{payState.result.transactionId}</code>
+          </dd>
         </dl>
       </main>
     );
@@ -173,7 +185,11 @@ export function CheckoutPage() {
       {link.description ? <p className="checkout-description">{link.description}</p> : null}
       {link.reference ? <p className="checkout-reference">Reference: {link.reference}</p> : null}
 
-      {payState.kind === "declined" ? <p className="checkout-error">{payState.message}</p> : null}
+      {payState.kind === "declined" ? (
+        <p className="checkout-error" role="alert">
+          {payState.message}
+        </p>
+      ) : null}
 
       <form onSubmit={handleSubmit} className="checkout-form">
         <label>

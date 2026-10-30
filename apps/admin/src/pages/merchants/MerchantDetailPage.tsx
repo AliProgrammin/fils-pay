@@ -49,7 +49,7 @@ export function MerchantDetailPage() {
   const [creditReverseFee, setCreditReverseFee] = useState(false);
   const [creditEffectiveDate, setCreditEffectiveDate] = useState(todayIso());
 
-  const [adjustDeltaFils, setAdjustDeltaFils] = useState("");
+  const [adjustDeltaBhd, setAdjustDeltaBhd] = useState("");
   const [adjustReason, setAdjustReason] = useState("");
 
   const load = useCallback(async () => {
@@ -115,9 +115,16 @@ export function MerchantDetailPage() {
   // MK: it's the journaled one since Sep
   async function handleAdjustBalance(): Promise<void> {
     if (!id) return;
-    const deltaFils = Number(adjustDeltaFils.trim());
-    if (!Number.isInteger(deltaFils) || deltaFils === 0) {
-      setActionError("Enter a non-zero whole number of fils.");
+    // Typed in BD like the credit form below; parsed to exact fils (no float).
+    let deltaFils: number;
+    try {
+      deltaFils = parseBhdToFils(adjustDeltaBhd);
+    } catch {
+      setActionError("Enter an amount in BD, for example 50.000 or -12.500.");
+      return;
+    }
+    if (deltaFils === 0) {
+      setActionError("The amount must not be 0.");
       return;
     }
     setBusy(true);
@@ -130,7 +137,7 @@ export function MerchantDetailPage() {
           result.cachedPayableFilsBefore,
         )} → ${bhd(result.cachedPayableFilsAfter)}.`,
       );
-      setAdjustDeltaFils("");
+      setAdjustDeltaBhd("");
       setAdjustReason("");
       await load();
     } catch (err) {
@@ -238,7 +245,7 @@ export function MerchantDetailPage() {
   if (loadError) {
     return (
       <section>
-        <p className="admin-error">{loadError}</p>
+        <p className="admin-error" role="alert">{loadError}</p>
         <Link to="/merchants">Back to merchants</Link>
       </section>
     );
@@ -265,7 +272,7 @@ export function MerchantDetailPage() {
         <code>{merchant.id}</code>
       </p>
 
-      {actionError ? <p className="admin-error">{actionError}</p> : null}
+      {actionError ? <p className="admin-error" role="alert">{actionError}</p> : null}
       {notice ? <p className="admin-notice">{notice}</p> : null}
 
       <h2>Profile</h2>
@@ -349,12 +356,12 @@ export function MerchantDetailPage() {
       >
         <div className="admin-form">
           <label>
-            Delta (fils, may be negative)
+            Delta (BD, up to 3 decimals, may be negative)
             <input
-              value={adjustDeltaFils}
-              onChange={(e) => setAdjustDeltaFils(e.target.value)}
-              inputMode="numeric"
-              placeholder="50000"
+              value={adjustDeltaBhd}
+              onChange={(e) => setAdjustDeltaBhd(e.target.value)}
+              inputMode="decimal"
+              placeholder="50.000"
             />
           </label>
           <label>
@@ -368,7 +375,7 @@ export function MerchantDetailPage() {
           <div>
             <button
               type="button"
-              disabled={busy || !adjustDeltaFils.trim() || !adjustReason.trim()}
+              disabled={busy || !adjustDeltaBhd.trim() || !adjustReason.trim()}
               onClick={() => void handleAdjustBalance()}
             >
               Adjust balance
@@ -423,13 +430,13 @@ export function MerchantDetailPage() {
               onChange={(e) => setCreditEffectiveDate(e.target.value)}
             />
           </label>
-          <label>
+          <label className="admin-checkbox">
             <input
               type="checkbox"
               checked={creditReverseFee}
               onChange={(e) => setCreditReverseFee(e.target.checked)}
             />{" "}
-            Also reverse the MDR on this amount ({(merchant.mdrBps / 100).toFixed(2)}%)
+            Also reverse the MDR on this amount ({((detail.currentFeeSchedule?.mdrBps ?? merchant.mdrBps) / 100).toFixed(2)}%)
           </label>
           <label>
             Memo (optional)
