@@ -4,7 +4,13 @@ import { ZERO_FILS, addFils, calculateRefundFee, compareFils, subtractFils, toFi
 import { enqueueEvent } from "@filspay/events";
 import { withTransaction } from "../db/withTransaction.js";
 import type { AcquirerSimulator } from "../acquirer/types.js";
-import { claimIdempotencyKey, completeIdempotencyKey, failIdempotencyKey, hashRequest } from "./idempotency.js";
+import {
+  acquirerIdempotencyKey,
+  claimIdempotencyKey,
+  completeIdempotencyKey,
+  failIdempotencyKey,
+  hashRequest,
+} from "./idempotency.js";
 import { recordTransactionEvent } from "../transactions/events.js";
 import { nextStatusAfterRefund } from "./refundState.js";
 import { validateRefundRequest } from "./refundValidation.js";
@@ -153,7 +159,7 @@ export async function processRefund(
     const acquirerResult = await acquirer.refund({
       acquirerReference: txn.acquirer_reference,
       amountFils: prepared.requestedAmount,
-      idempotencyKey: `${claim.row.id}:${claim.row.attemptCount}`,
+      idempotencyKey: acquirerIdempotencyKey(input.merchantId, ENDPOINT, input.idempotencyKey, claim.row.attemptCount),
     });
 
     if (acquirerResult.outcome === "declined") {
