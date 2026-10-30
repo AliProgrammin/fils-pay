@@ -85,7 +85,7 @@ if [ "$CODE" = "200" ] && grep -q 'id="root"' "$WORK/body"; then pass "merchant 
 api "$WORK/none" GET /dashboard/transactions
 if [ "$CODE" = "200" ] && grep -q 'id="root"' "$WORK/body"; then pass "SPA fallback for /dashboard/transactions"; else fail "SPA fallback ($CODE)"; fi
 api "$WORK/none" GET /admin/
-if [ "$CODE" = "200" ] && grep -q 'FilsPay Admin' "$WORK/body"; then pass "admin console HTML at /admin/"; else fail "admin console at /admin/ ($CODE)"; fi
+if [ "$CODE" = "200" ] && grep -q 'FilsPay Operations' "$WORK/body"; then pass "admin console HTML at /admin/"; else fail "admin console at /admin/ ($CODE)"; fi
 
 # 2. Admin: find the merchant, turn refunds on --------------------------------
 ADMIN_JAR="$WORK/admin"
