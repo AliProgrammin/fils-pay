@@ -4,6 +4,7 @@ import { rebuildAnalytics, rebuildBalances, runBatch } from "../../api/settlemen
 import { recalculateMdr } from "../../api/mdrRecalculation.js";
 import { describeError } from "../../api/client.js";
 import { RequireRole } from "../../auth/RequireRole.js";
+import { bahrainYesterdayIso } from "../../bahrainDate.js";
 import type {
   AnalyticsRebuildSummary,
   BalanceRebuildSummary,
@@ -15,12 +16,6 @@ function bhd(fils: number): string {
   return `${formatBhd(toFils(fils, { allowNegative: true }))} BHD`;
 }
 
-// YA: browser-local yesterday
-function yesterdayIso(): string {
-  const date = new Date();
-  date.setDate(date.getDate() - 1);
-  return date.toISOString().slice(0, 10);
-}
 
 /**
  * The two cross-process operations. Both are `finance` /
@@ -33,7 +28,7 @@ function yesterdayIso(): string {
  * transaction of SQL, so its audit row is simply part of that transaction.
  */
 export function SettlementPage() {
-  const [date, setDate] = useState(yesterdayIso());
+  const [date, setDate] = useState(bahrainYesterdayIso());
   const [merchantId, setMerchantId] = useState("");
   const [runBusy, setRunBusy] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
@@ -149,7 +144,13 @@ export function SettlementPage() {
         <form className="admin-form" onSubmit={(e) => void handleRunBatch(e)}>
           <label>
             Business date
-            <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} />
+            <input
+              type="date"
+              required
+              max={bahrainYesterdayIso()}
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
           </label>
           <label>
             Merchant id (optional — leave blank to run every eligible merchant)
