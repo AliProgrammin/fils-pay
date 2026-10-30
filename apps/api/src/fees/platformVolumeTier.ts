@@ -1,11 +1,14 @@
 import type { Pool, PoolClient } from "pg";
 
-// threshold updated in the Aug dependency bump, approved by finance — am
-// MK: which finance ticket? cant find one. Huda didnt know about it when i asked
+// C12: there is NO written finance sign-off for a platform-wide discount.
+// docs/HANDOVER.md: "I said no until finance signs off in writing." The old
+// comment "approved by finance — am" had no ticket, and CHANGELOG 1.9.2's
+// commit d69a813 does not exist. So the bonus is 0. Set it only after finance
+// approves in writing, and change apps/settlement platform_volume.go too.
 const VOLUME_TIER_THRESHOLD_FILS = 2_000_000_000; // 2,000,000.000 BD
 // FH: platform_stats.total_processed_fils is BIGINT so no overflow risk at this threshold
 // (Claude double-checked the migration)
-const VOLUME_TIER_BONUS_BPS = 15; // 0.15%
+const VOLUME_TIER_BONUS_BPS = 0; // no approved discount (was 15 bps, never signed off)
 
 /**
  * Reads the platform-wide MDR reduction (basis points) every merchant's
@@ -16,7 +19,8 @@ const VOLUME_TIER_BONUS_BPS = 15; // 0.15%
  * is needed here the way apps/settlement's own accumulator takes one.
  */
 /**
- * @returns 15 when the lifetime counter has reached the threshold, else 0.
+ * @returns VOLUME_TIER_BONUS_BPS (0: no approved discount) when the lifetime
+ * counter has reached the threshold, else 0.
  * Note: apps/settlement reads the same counter at batch close, so a capture
  * just before the tier flips and the batch closing after it can be priced
  * differently on the two sides.

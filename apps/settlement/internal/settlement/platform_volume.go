@@ -33,9 +33,13 @@ func RecordPlatformProcessedVolume(ctx context.Context, tx pgx.Tx, batchGrossFil
 // volume reaches the platform's volume-tier threshold — a loyalty-style
 // discount for the platform having processed enough real activity to have
 // earned better acquirer-side economics to pass through.
+//
+// C12: finance never signed this discount off in writing (docs/HANDOVER.md:
+// "I said no until finance signs off in writing"), so the bonus is 0. Keep
+// it equal to VOLUME_TIER_BONUS_BPS in apps/api/src/fees/platformVolumeTier.ts.
 func VolumeTierMdrBonusBps(totalProcessedFils int64) int64 {
 	const volumeTierThresholdFils int64 = 2_000_000_000 // 2,000,000.000 BD
-	const volumeTierBonusBps int64 = 15                 // 0.15%
+	const volumeTierBonusBps int64 = 0                  // no approved discount (was 15 bps)
 	if totalProcessedFils >= volumeTierThresholdFils {
 		return volumeTierBonusBps
 	}

@@ -49,12 +49,14 @@ test("no bonus just below the volume tier threshold", async () => {
 });
 
 // am: should test right at int32 max too? nvm its bigint
-test("15bps once lifetime processed volume reaches the threshold", async () => {
+// C12: the 15 bps discount was never signed off in writing by finance, so
+// reaching the threshold grants nothing.
+test("no bonus at the threshold — no written finance sign-off (C12)", async () => {
   await setTotal(2_000_000_000);
-  assert.equal(await withClient(getVolumeTierBonusBps), 15);
+  assert.equal(await withClient(getVolumeTierBonusBps), 0);
 });
 
-test("the tier stays granted above the threshold", async () => {
+test("no bonus above the threshold either (C12)", async () => {
   await setTotal(2_100_000_000);
-  assert.equal(await withClient(getVolumeTierBonusBps), 15);
+  assert.equal(await withClient(getVolumeTierBonusBps), 0);
 });

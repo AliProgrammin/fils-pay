@@ -41,7 +41,8 @@ func TestRecordPlatformProcessedVolume_PastInt32Max_Fix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-read: %v", err)
 	}
-	if bonus := VolumeTierMdrBonusBps(after); bonus != 15 {
-		t.Errorf("tier bonus past int32 max = %d, want 15", bonus)
+	// C12: no approved discount, so the bonus is 0 at any counter value.
+	if bonus := VolumeTierMdrBonusBps(after); bonus != 0 {
+		t.Errorf("tier bonus past int32 max = %d, want 0", bonus)
 	}
 }

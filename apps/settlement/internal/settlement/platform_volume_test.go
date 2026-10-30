@@ -63,7 +63,8 @@ func TestVolumeTierMdrBonusBps_BelowAndAtThreshold(t *testing.T) {
 	if got := VolumeTierMdrBonusBps(1_999_999_999); got != 0 {
 		t.Errorf("just below threshold: got %d, want 0", got)
 	}
-	if got := VolumeTierMdrBonusBps(2_000_000_000); got != 15 {
-		t.Errorf("exactly at threshold: got %d, want 15", got)
+	// C12: no written finance sign-off, so the threshold grants nothing.
+	if got := VolumeTierMdrBonusBps(2_000_000_000); got != 0 {
+		t.Errorf("exactly at threshold: got %d, want 0 (no approved discount)", got)
 	}
 }
