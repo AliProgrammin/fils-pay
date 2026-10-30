@@ -59,3 +59,19 @@
 - What it breaks: a poll of 0 panics in `time.NewTicker`. A delay of one day or more is never reached before the next midnight, so the daemon never closes a day and nobody is told.
 - Fix: boot fails with a clear error unless poll > 0 and 0 <= delay <= 1439.
 - Test: `TestLoad_RejectsBadDaemonTiming_Fix`, `TestLoad_AcceptsDaemonTimingBounds_Fix`.
+
+### G11 A late capture or refund makes two days fail reconciliation
+- Severity: Medium (no money is lost; the report says money is missing when it is not)
+- Ticket: none (regression from G2; reproduced on a migrated and seeded DB with the Go CLI and the API)
+- Where: apps/api/src/settlement/query.ts `getReconciliationReport` (`GET /v1/settlement/reconciliation`); apps/web ReconciliationPage
+- What is wrong: since G2, close claims every unbatched capture and refund with `occurred_at < end`. A capture of day D written after D was closed is paid in the D+1 batch. The report shows a gap on both days. Reproduction, 250 bps, capture of 10.000 BD on D, close D, late capture of 7.000 BD stamped D 23:59, capture of 4.000 BD on D+1, close D+1:
+  - [D, D+1): ledger 16575, batches 9750, pending 0, gap +6825, explained false
+  - [D+1, D+2): ledger 3900, batches 10725, pending 0, gap -6825, explained false
+  - [D, D+2): gap 0
+  - A late refund has the same effect with the sign reversed: refund of 2.000 BD (fee reversed 50) gives -1950 on D and +1950 on D+1.
+- Why it happens: the report counts the ledger and pending by the event's own business day, but counts batches by `batch_date`. A carried item is in D's ledger, but in D+1's batch. No line in the report bridges the two days.
+- What it breaks: finance sees an "unexplained" gap on two days for each late item, and the two gaps cancel. A real gap on those days is hidden in the noise.
+- Fix: two new fields; no field changed. `carriedToLaterBatchFils` is the net of captures and refunds that happened in the period but were settled by a batch dated after it. `carriedFromEarlierDaysFils` is the net of items that happened before the period but were settled by a batch dated in it. Gap = ledger - batches - pending - carried to later + carried from earlier. A capture is priced with the same rule as pending (fee schedule at the capture time, volume tier); a refund uses its stored fee reversal. The dashboard shows both lines.
+  - Why this and not "count batches by event day": `settlementNetPayoutFils` stays the exact frozen batch total, the same figure as the batch list and the bank payout. Re-dating batch events would turn that figure into a fee estimate, and the report would no longer compare the ledger with what was really paid.
+  - After the fix, the same reproduction gives gap 0 and explained true on D (carried to later 6825), on D+1 (carried from earlier 6825) and on [D, D+2) (both 0). The refund case gives -1950 in the carried lines and gap 0.
+- Test: apps/api/src/routes/settlement.carry.test.ts. "a late capture and a late refund carried into the next batch reconcile to 0 on both days" (before the fix: the new fields are missing and the gap is not 0). "a carried item is pending until the later batch claims it, then carried, with no gap either way".

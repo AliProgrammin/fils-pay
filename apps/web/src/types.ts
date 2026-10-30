@@ -278,6 +278,8 @@ export interface ReconciliationReport {
   ledgerMerchantPayableNetFils: number;
   settlementNetPayoutFils: number;
   pendingUnbatchedFils: number;
+  carriedToLaterBatchFils: number;
+  carriedFromEarlierDaysFils: number;
   gapFils: number;
   explained: boolean;
 }

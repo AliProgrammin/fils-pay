@@ -127,14 +127,20 @@ export function ReconciliationPage() {
             <dd>{bhd(report.settlementNetPayoutFils)}</dd>
             <dt>Pending, not yet batched</dt>
             <dd>{bhd(report.pendingUnbatchedFils)}</dd>
+            <dt>Happened in this period, settled by a later batch</dt>
+            <dd>{bhd(report.carriedToLaterBatchFils)}</dd>
+            <dt>Happened earlier, settled by a batch in this period</dt>
+            <dd>{bhd(report.carriedFromEarlierDaysFils)}</dd>
             <dt>Gap</dt>
             <dd>{bhd(report.gapFils)}</dd>
           </dl>
 
           <p className="dash-muted">
             Gap = ledger merchant payable − settlement net payout − pending
-            unbatched. A zero gap means every captured fil is accounted for in
-            either a settled batch or the pending queue.
+            unbatched − settled by a later batch + happened earlier. A zero gap
+            means every captured fil is accounted for in either a settled batch
+            or the pending queue. A late capture or refund is settled by the
+            next batch, so it shows in both carried lines, one on each day.
           </p>
         </>
       ) : null}

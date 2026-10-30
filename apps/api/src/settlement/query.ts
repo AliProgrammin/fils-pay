@@ -259,9 +259,15 @@ export async function listBatchTransactions(
 
 /**
  * gapFils = ledgerMerchantPayableNetFils - settlementNetPayoutFils -
- * pendingUnbatchedFils. A refund moves merchant_payable in the ledger when
- * it happens; until a batch claims it, it is in pending as
- * -(amount - fee reversed), so a period with refunds still explains to zero.
+ * pendingUnbatchedFils - carriedToLaterBatchFils + carriedFromEarlierDaysFils.
+ * A refund moves merchant_payable in the ledger when it happens; until a
+ * batch claims it, it is in pending as -(amount - fee reversed), so a period
+ * with refunds still explains to zero.
+ *
+ * The ledger side counts an event on its own business day; the batch side
+ * counts a batch on its batch_date. CloseBatch carries a late capture or
+ * refund into a later batch (G2), so the two days differ for those items.
+ * The two carried lines bridge that difference (G11).
  */
 export interface ReconciliationReport {
   periodFrom: string;
@@ -269,9 +275,15 @@ export interface ReconciliationReport {
   ledgerMerchantPayableNetFils: number;
   settlementNetPayoutFils: number;
   pendingUnbatchedFils: number;
+  /** Net of captures/refunds that happened in this period but were settled by a batch dated after it. */
+  carriedToLaterBatchFils: number;
+  /** Net of captures/refunds that happened before this period but were settled by a batch dated in it. */
+  carriedFromEarlierDaysFils: number;
   gapFils: number;
   explained: boolean;
 }
+
+type Bucket = "pending" | "out" | "in";
 
 /** Fixed UTC+3 midnight for a Bahrain business-day boundary. */
 function bahrainLocalMidnightUtc(dateStr: string): Date {
@@ -320,53 +332,92 @@ export async function getReconciliationReport(
           AND status IN ('closed', 'paid')`,
       [input.merchantId, input.from, input.to],
     ),
+    // Captures whose business day and batch_date fall on different sides
+    // of the period, in three buckets: 'pending' (in the period, not yet
+    // batched), 'out' (in the period, batched by a later-dated batch),
+    // 'in' (before the period, batched by a batch dated in the period).
     // Rate per capture = the fee_schedules row in effect at the capture
     // instant, else merchants.mdr_bps: the same rule as
     // fees/feeSchedule.ts getEffectiveMdrBps, which capture.ts bills with.
-    pool.query<{ amount_fils: string | number; mdr_bps: number; negotiated_discount_bps: number }>(
-      `SELECT te.amount_fils,
+    pool.query<{ bucket: Bucket; amount_fils: string | number; mdr_bps: number; negotiated_discount_bps: number }>(
+      `WITH ev AS (
+         SELECT te.id, te.amount_fils, te.occurred_at,
+                CASE WHEN te.settlement_batch_id IS NULL THEN 'pending' ELSE 'out' END AS bucket
+           FROM transaction_events te
+           JOIN transactions t ON t.id = te.transaction_id
+           LEFT JOIN settlement_batches sb ON sb.id = te.settlement_batch_id
+          WHERE t.merchant_id = $1 AND te.event_type IN ('captured', 'partially_captured')
+            AND te.occurred_at >= $2 AND te.occurred_at < $3
+            AND (te.settlement_batch_id IS NULL OR sb.batch_date >= $5)
+         UNION ALL
+         SELECT te.id, te.amount_fils, te.occurred_at, 'in'
+           FROM settlement_batches sb
+           JOIN transaction_events te ON te.settlement_batch_id = sb.id
+          WHERE sb.merchant_id = $1 AND sb.batch_date >= $4 AND sb.batch_date < $5
+            AND te.event_type IN ('captured', 'partially_captured')
+            AND te.occurred_at < $2
+       )
+       SELECT ev.bucket, ev.amount_fils,
               COALESCE(fs.mdr_bps, m.mdr_bps) AS mdr_bps,
               m.negotiated_discount_bps
-         FROM transaction_events te
-         JOIN transactions t ON t.id = te.transaction_id
-         JOIN merchants m ON m.id = t.merchant_id
+         FROM ev
+         JOIN merchants m ON m.id = $1
          LEFT JOIN LATERAL (
            SELECT mdr_bps FROM fee_schedules
-            WHERE merchant_id = t.merchant_id AND effective_from <= te.occurred_at
+            WHERE merchant_id = $1 AND effective_from <= ev.occurred_at
             ORDER BY effective_from DESC, created_at DESC
             LIMIT 1
-         ) fs ON true
-        WHERE t.merchant_id = $1 AND te.event_type IN ('captured', 'partially_captured')
-          AND te.settlement_batch_id IS NULL
-          AND te.occurred_at >= $2 AND te.occurred_at < $3`,
-      [input.merchantId, windowStart, windowEnd],
+         ) fs ON true`,
+      [input.merchantId, windowStart, windowEnd, input.from, input.to],
     ),
     getVolumeTierBonusBps(pool),
-    // Exact, not estimated: the refund row stores the fee it reversed.
-    pool.query<{ net: string }>(
-      `SELECT COALESCE(SUM(amount_fils - fee_reversed_fils), 0) AS net
-         FROM refunds
-        WHERE merchant_id = $1 AND status = 'succeeded' AND settlement_batch_id IS NULL
-          AND occurred_at >= $2 AND occurred_at < $3`,
-      [input.merchantId, windowStart, windowEnd],
+    // Same three buckets for refunds. Exact, not estimated: the refund row
+    // stores the fee it reversed.
+    pool.query<{ bucket: Bucket; net: string }>(
+      `SELECT CASE WHEN r.settlement_batch_id IS NULL THEN 'pending' ELSE 'out' END AS bucket,
+              SUM(r.amount_fils - r.fee_reversed_fils) AS net
+         FROM refunds r
+         LEFT JOIN settlement_batches sb ON sb.id = r.settlement_batch_id
+        WHERE r.merchant_id = $1 AND r.status = 'succeeded'
+          AND r.occurred_at >= $2 AND r.occurred_at < $3
+          AND (r.settlement_batch_id IS NULL OR sb.batch_date >= $5)
+        GROUP BY 1
+       UNION ALL
+       SELECT 'in', SUM(r.amount_fils - r.fee_reversed_fils)
+         FROM settlement_batches sb
+         JOIN refunds r ON r.settlement_batch_id = sb.id
+        WHERE sb.merchant_id = $1 AND sb.batch_date >= $4 AND sb.batch_date < $5
+          AND r.status = 'succeeded' AND r.occurred_at < $2
+       HAVING COUNT(*) > 0`,
+      [input.merchantId, windowStart, windowEnd, input.from, input.to],
     ),
   ]);
 
+  // Net merchant_payable effect per bucket: capture net minus refund net.
+  const net: Record<Bucket, number> = { pending: 0, out: 0, in: 0 };
   // merchants.mdr_bps is NOT kept in sync with fee_schedules (no such
   // trigger exists), so the rate is resolved per capture above.
-  let pendingUnbatchedFils = 0;
   for (const row of pendingResult.rows) {
     const amountFils = Number(row.amount_fils);
     const rateBps = Math.max(0, row.mdr_bps - volumeTierBonusBps);
     const feeFils = estimateFeeFils(amountFils, rateBps, row.negotiated_discount_bps);
-    pendingUnbatchedFils += amountFils - feeFils;
+    net[row.bucket] += amountFils - feeFils;
+  }
+  for (const row of pendingRefundResult.rows) {
+    net[row.bucket] -= Number(row.net);
   }
 
-  pendingUnbatchedFils -= Number(pendingRefundResult.rows[0]?.net ?? 0);
-
+  const pendingUnbatchedFils = net.pending;
+  const carriedToLaterBatchFils = net.out;
+  const carriedFromEarlierDaysFils = net.in;
   const ledgerMerchantPayableNetFils = Number(ledgerResult.rows[0]?.net ?? 0);
   const settlementNetPayoutFils = Number(settlementResult.rows[0]?.total ?? 0);
-  const gapFils = ledgerMerchantPayableNetFils - settlementNetPayoutFils - pendingUnbatchedFils;
+  const gapFils =
+    ledgerMerchantPayableNetFils -
+    settlementNetPayoutFils -
+    pendingUnbatchedFils -
+    carriedToLaterBatchFils +
+    carriedFromEarlierDaysFils;
 
   return {
     periodFrom: input.from,
@@ -374,6 +425,8 @@ export async function getReconciliationReport(
     ledgerMerchantPayableNetFils,
     settlementNetPayoutFils,
     pendingUnbatchedFils,
+    carriedToLaterBatchFils,
+    carriedFromEarlierDaysFils,
     gapFils,
     explained: gapFils === 0,
   };
