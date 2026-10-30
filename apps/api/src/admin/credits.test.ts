@@ -354,3 +354,19 @@ test("the list projection carries the posted total and both operators' names", a
   assert.equal(item.postedAmountFils, 82_000, "postedAmountFils is base + reversal, always");
   assert.equal(item.status, "posted");
 });
+
+// V3: the fee reversal must use the rate in force (fee_schedules), like capture does, not merchants.mdr_bps.
+test("V3: a fee reversal uses the merchant's rate in force from fee_schedules, not merchants.mdr_bps", async () => {
+  const merchantId = await createMerchant("scheduled-rate", 250);
+  await pool.query(
+    `INSERT INTO fee_schedules (merchant_id, mdr_bps, effective_from) VALUES ($1, 225, now() - interval '1 day')`,
+    [merchantId],
+  );
+  const admin = await createAdmin("scheduled-rate");
+  const record = await createCreditRequest(pool, {
+    merchantId,
+    adminUserId: admin.id,
+    body: { baseAmountFils: 20_000, reasonCode: "dispute_resolution", effectiveDate: todayIso(), reverseFee: true },
+  });
+  assert.equal(record.feeReversalFils, 450, "20.000 BD @ 225 bps, the rate capture charged");
+});

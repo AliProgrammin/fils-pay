@@ -58,3 +58,19 @@ Also checked:
 **Test:** `apps/api/src/payments/captureClockSkew.fix.test.ts` moves the JS clock with `mock.timers` (Date only) and checks that the event's `feeFils` and the ledger fee equal the rate in force at the stored `occurred_at`:
 - API clock 32 min ahead, schedule starts in 10 min by DB time (failed before: billed 1,500, expected 2,500);
 - API clock 32 min behind, schedule started 10 min ago by DB time (failed before: billed 2,500, expected 1,500).
+
+### V3 An admin credit reverses the fee at the old merchant rate, not the rate in force
+
+- **Severity:** Medium (money)
+- **Ticket:** found while checking the admin console (same family as V1)
+- **Where:** `apps/api/src/admin/credits.ts` (`createCreditRequest`), `apps/admin/src/pages/merchants/MerchantDetailPage.tsx` (label)
+
+**What is wrong:** When finance issues a credit with "Also reverse the MDR", the reversal used `merchants.mdr_bps`. Capture charges the rate from `fee_schedules` (the negotiated rate in force). For Alpha Retail that is 250 bps against 225 bps. The admin form also showed 2.50%.
+
+**Why it happens:** `merchants.mdr_bps` is not kept in sync with `fee_schedules` (the code says so in `settlement/query.ts`). Capture and settlement use `getEffectiveMdrBps`; the credit path did not.
+
+**What it breaks:** The platform gives back more fee than it charged. A 20.000 BD credit with fee reversal posted 500 fils, but the capture fee was 450. The extra 50 fils per 20 BD is a direct loss, and the admin screen shows a rate the merchant does not pay.
+
+**Fix:** The credit path calls `getEffectiveMdrBps(client, merchantId, null, merchant.mdr_bps)`, the same lookup capture uses (DB `now()`, falls back to `mdr_bps` when no schedule applies). The admin label shows the rate in force. API paths and response shapes do not change.
+
+**Test:** `apps/api/src/admin/credits.test.ts` "V3: a fee reversal uses the merchant's rate in force" (merchant at 250 bps with a 225 bps schedule in force; failed before: 500, expected 450).

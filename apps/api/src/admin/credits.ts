@@ -3,6 +3,7 @@ import type { Pool, PoolClient } from "pg";
 import { addFils, toFils, ZERO_FILS, type Fils } from "@filspay/money";
 import { insertAdminAuditLog } from "../adminAudit/log.js";
 import { withTransaction } from "../db/withTransaction.js";
+import { getEffectiveMdrBps } from "../fees/feeSchedule.js";
 import { ConflictError, NotFoundError } from "../lib/errors.js";
 import { decodeKeysetCursor } from "../lib/pagination.js";
 import { assertDistinctApprover } from "./creditApproval.js";
@@ -220,9 +221,13 @@ export async function createCreditRequest(
     }
 
     // Never operator-supplied: the reversal is the merchant's own contracted
-    // rate applied to the amount they asked to credit.
+    // rate applied to the amount they asked to credit. V3: the rate in force
+    // (fee_schedules, the one capture charged), not merchants.mdr_bps.
     const feeReversalFils = draft.reverseFee
-      ? calculateCreditFeeReversal(draft.baseAmountFils, merchant.mdr_bps)
+      ? calculateCreditFeeReversal(
+          draft.baseAmountFils,
+          await getEffectiveMdrBps(client, input.merchantId, null, merchant.mdr_bps),
+        )
       : ZERO_FILS;
     // FH: threshold compares base + reversal, so a 50.000 BD credit with a fee reversal needs a second approver
     // MK: no — base only. fee reversal is mechanical. intended.
