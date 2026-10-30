@@ -25,7 +25,7 @@ export const OTP_LENGTH = 6;
 
 /**
  * What an amount box keeps of what was typed or pasted: digits and one dot,
- * at most 3 decimals and 9 whole digits, and a leading minus only when the
+ * at most 9 whole digits, and a leading minus only when the
  * field allows negatives. Spaces, commas, letters and "BD" are dropped.
  */
 export function filterAmountInput(raw: string, opts: { allowNegative?: boolean } = {}): string {
@@ -33,7 +33,7 @@ export function filterAmountInput(raw: string, opts: { allowNegative?: boolean }
   const kept = raw.replace(/[^\d.]/g, "");
   const dot = kept.indexOf(".");
   const whole = (dot === -1 ? kept : kept.slice(0, dot)).slice(0, AMOUNT_MAX_WHOLE_DIGITS);
-  const fraction = dot === -1 ? null : kept.slice(dot + 1).replace(/\./g, "").slice(0, 3);
+  const fraction = dot === -1 ? null : kept.slice(dot + 1).replace(/\./g, "");
   return `${negative ? "-" : ""}${whole}${fraction === null ? "" : `.${fraction}`}`;
 }
 
@@ -60,6 +60,10 @@ export function checkAmount(text: string, rules: AmountRules = {}): AmountCheck 
   if (t === "" || t === "-") return { ok: false, message: "Enter an amount in BD" };
   if (!rules.allowNegative && t.startsWith("-")) {
     return { ok: false, message: "The amount cannot be negative" };
+  }
+  // Never cut a 4th decimal: 1.2345 BD is refused, not sent as 1.234 BD.
+  if (/\.\d{4,}$/.test(t)) {
+    return { ok: false, message: "BD amounts have at most 3 decimals (1 BD = 1000 fils)" };
   }
   let fils: number;
   try {
