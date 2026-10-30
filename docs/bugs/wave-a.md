@@ -119,3 +119,13 @@
 - What it breaks: an operator can move money (capture or void) as the merchant, and the audit records it as a merchant session.
 - Fix: the auth hook rejects every non-GET request that arrives with an impersonation grant (one check, one place).
 - Test: apps/api/src/auth/impersonationReadOnly.fix.test.ts
+
+### A13 A disabled admin keeps their "view as merchant" grant
+- Severity: Medium/High (security)
+- Ticket: none (am's own question in the code: "disabled admin keeps their grant?")
+- Where: apps/api/src/admin/impersonation.ts:104 (`lookupImpersonationGrant`)
+- What is wrong: The grant lookup checks the grant's `revoked_at`, `ended_at` and `expires_at`, but not `admin_users.status`. When an admin is disabled, their live grants keep working.
+- Why it happens: The code comment said "revoked_at gets set by the admin-disable trigger". There is no such trigger in db/migrations, and no code sets `revoked_at` when an admin is disabled. Admin sessions (`lookupAdminSession`) do check `au.status = 'active'`, so disabling an admin ends their sessions. The grant lookup skipped that same check.
+- What it breaks: A support person leaves or is suspended. Finance disables the account. Their open grant cookie still opens that merchant's transactions, customers and payouts until the grant expires. Nothing in the audit log shows that a disabled account read merchant data.
+- Fix: The lookup adds `AND au.status = 'active'` (it already joins `admin_users`), the same rule as `lookupAdminSession`. Admin sessions were already correct; a regression test now guards them.
+- Test: apps/api/src/admin/impersonationDisabledAdmin.fix.test.ts, "A13: a disabled admin's impersonation grant stops working" (was 200 after disable, now 401) and "A13: a disabled admin's admin session also stops working (regression guard)".
