@@ -172,7 +172,9 @@ FILSPAY_DOMAIN=64-227-145-174.sslip.io FILSPAY_HTTP_PORT=127.0.0.1:8080 docker c
 ```
 
 It rebuilds the images, runs new migrations, and replaces only the
-containers that changed.
+containers that changed. Check it with
+`BASE_URL=https://64-227-145-174.sslip.io scripts/smoke_hosted.sh` (last
+line `RESULT: ALL PASS`).
 
 **Where secrets come from.** From `ops/.env.production` on the server only
 (`chmod 600`, gitignored, never committed, never copied from a laptop).
@@ -287,7 +289,7 @@ lists the shops by name and you pick one. The merchant ID is only needed for
 The seed makes the same IDs each time. The admin console's merchant list
 shows all of them.
 
-**Refunds** are on for each merchant unless support puts them on hold. To
+**Refunds** are on for each merchant unless a finance admin (finance or super_admin role) puts them on hold. To
 demo a refund, refund a captured payment from the merchant dashboard or the
 API (see `scripts/smoke_hosted.sh` for the API calls). To demo the hold:
 sign in to the admin console as `finance@filspay.test`, open the merchant,

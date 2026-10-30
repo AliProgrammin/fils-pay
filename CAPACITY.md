@@ -9,15 +9,27 @@ live server `Orbit` (1 vCPU, 2 GB, Bangalore) over HTTPS, from a laptop in
 Bahrain, with `scripts/load/run.sh` (scenario `link`: create a payment link,
 open the checkout page, pay, double-click check).
 
+The estimate of about 70 users uses these rules: pay p95 under 1.5 s,
+0 failed checkouts, 0 server errors, 0 refused (503) requests. It does
+**not** meet our other rule, p95 under 300 ms for create link and read
+link: on the live server create link p95 was 318, 333 and 365 ms at 30,
+50 and 70 users, and read link p95 was 389 ms at 70 users (299 and 301 ms
+at 30 and 50). Most of this time is the network path from the laptop in
+Bahrain to the server in Bangalore, over HTTPS: the checkout page is a
+static file from nginx with no database work, and its median is already
+about 155 ms (p95 210 to 222 ms). The median of create link (170 to
+178 ms) and read link (165 to 167 ms) is only about 10 to 20 ms more. The
+laptop runs below have no such network path.
+
 ## Live server
 
-| Users | Checkouts/s | HTTP req/s | Pay p95 | Failed checkouts | 5xx | Refused (503) |
-|---|---|---|---|---|---|---|
-| 30 | 5.4 | 28 | 1.06 s | 0 | 0 | 0 |
-| 50 | 9.0 | 46 | 1.05 s | 0 | 0 | 0 |
-| **70** | **12.4** | **63** | **1.41 s** | **0** | **0** | **0** |
-| 90 | 14.0 | 72 | 2.17 s | 0 | 0 | 0 |
-| 120 | 10.7 | 56 | 7.37 s | 0 | 0 | 92 (0.6/s) |
+| Users | Checkouts/s | HTTP req/s | Pay p95 | Create link p95 | Read link p95 | Failed checkouts | 5xx | Refused (503) |
+|---|---|---|---|---|---|---|---|---|
+| 30 | 5.4 | 28 | 1.06 s | 318 ms | 299 ms | 0 | 0 | 0 |
+| 50 | 9.0 | 46 | 1.05 s | 333 ms | 301 ms | 0 | 0 | 0 |
+| **70** | **12.4** | **63** | **1.41 s** | **365 ms** | **389 ms** | **0** | **0** | **0** |
+| 90 | 14.0 | 72 | 2.17 s | 531 ms | 494 ms | 0 | 0 | 0 |
+| 120 | 10.7 | 56 | 7.37 s | 1076 ms | 785 ms | 0 | 0 | 92 (0.6/s) |
 
 - The rows 30 to 90 are with the final CPU caps (Postgres 0.90, Caddy 0.40,
   API 0.50). At 90 users it still completes every checkout, but slower. At
@@ -48,7 +60,7 @@ Docker enforces these limits:
 |---|---|---|---|---|---|
 | api (Node) | 0.50 | **0.50** (hard cap) | **512 MB** (hard cap; heap max 320 MB) | always | `GET /readyz` |
 | postgres 16 | 0.35 | 0.90 | 640 MB | always | `pg_isready` |
-| caddy (HTTPS) | none | 0.40 | 96 MB | always | none |
+| caddy (HTTPS) | not in this file | 0.40 | 96 MB | always | `GET /config/` on its admin API (127.0.0.1:2019, inside the container) |
 | web (nginx) | 0.07 | 0.07 | 64 MB | always | `GET /` |
 | settlement (Go) | 0.03 | 0.03 | 64 MB | always | port 8091 open |
 | reporting (Node) | 0.05 | 0.05 | 192 MB | always | none (no HTTP port; restart covers a crash) |
@@ -112,7 +124,9 @@ answer, not an error.
 
 Pass rule (k6 thresholds): p95 under 300 ms for create link, read link and
 checkout page; p95 under 1.5 s for pay; 0 server errors; 0 failed
-checkouts; 0 refused (503) requests.
+checkouts; 0 refused (503) requests. On the live server the 300 ms rule
+fails for create link and read link because of the network path (see "Our
+estimate" above); the live estimate uses the other rules.
 
 After each run, `scripts/load/verify.sql` checks the database: every ledger
 entry group balances, the whole ledger nets to zero, each captured payment
@@ -245,9 +259,14 @@ the Docker host, not with `docker stop`.
 
 - Docker restarted the api. It was healthy again **8 s** after the kill
   (restart count 1).
+- 47 checkouts failed in this test (k6 `checkouts_failed`: 4 at create
+  link, 6 at read link, 30 at pay, 7 at the double-click check). Each got
+  an error answer, so the client saw an error, not a false "paid". The
+  live runs without a kill had 0 failed checkouts.
 - Database check after the test: 0 unbalanced ledger groups, ledger net
   0 fils, 0 double charges, 0 transactions captured twice. Transactions,
-  captures and ledger agree.
+  captures and ledger agree. So no checkout was charged twice and the
+  ledger stayed balanced.
 - 59 links were caught mid-payment at the kill:
   - 19 reserved with no transaction: they free themselves after the 60 s
     reservation timeout (checked by a test).

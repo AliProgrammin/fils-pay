@@ -1,6 +1,6 @@
 # FilsPay: bugs found, fixed and explained
 
-Every bug below has the smallest fix and a plain-English write-up: what is wrong, why it happens (root cause), what it breaks, how we found and reproduced it, the fix, the test, and the effect on data already stored. Bugs that share a cause are grouped in [Root causes](#root-causes); what we chose not to change and what is still open is in [Decisions and open risks](#decisions-and-open-risks). Every behaviour bug has a test that failed on the old code and passes now; the few speed and capacity fixes are proven by the load test instead (CAPACITY.md).
+Every bug below has the smallest fix and a plain-English write-up: what is wrong, why it happens (root cause), what it breaks, how we found and reproduced it, the fix, the test, and the effect on data already stored. Bugs that share a cause are grouped in [Root causes](#root-causes); what we chose not to change and what is still open is in [Decisions and open risks](#decisions-and-open-risks). 97 of the 105 bugs have a test that failed on the old code and passes now. The other 8 have no such test and are proven another way: S1, S2 and S3 (setup) by building and starting the stack from an empty database; L1, L2 and L4 (speed and memory) by the load test (CAPACITY.md); B9 (docs only) by reading the code; H11 (dead code removed) by the typecheck and the full test suite.
 
 **105 bugs fixed**: 18 critical, 40 high, 33 medium, 14 low.
 
@@ -19,7 +19,7 @@ When an existing test asserted the buggy behaviour, we changed it in the same co
 
 Run the refunds proof yourself: `scripts/demo_refund.sh` (see the comment at the top for setup). It ends in `RESULT: ALL PASS`.
 
-How we found them: three independent audit rounds, then a separate agent that saw only the requirements (not our fixes) re-tested them. Its first pass on 45 requirements found 44 correct, the refunds check found one gap, and the final pass on 23 new requirements found 22 correct. Every miss (A12, R8, H10) is fixed. Bugs we could not prove with a test are not listed.
+How we found them: three independent audit rounds, then a separate agent that saw only the requirements (not our fixes) re-tested them. Its first pass on 45 requirements found 44 correct, the refunds check found one gap, and the final pass on 23 new requirements found 22 correct. Every miss (A12, R8, H10) is fixed. Bugs we could not prove are not listed.
 
 ## All bugs
 

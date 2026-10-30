@@ -26,7 +26,7 @@
 
 ## 2. Findings report (correctness)
 
-The full report is [BUGS.md](BUGS.md): every bug with severity, ticket, area and a write-up (what is wrong, why it happens, what it breaks, how we found and reproduced it, the fix, the test, the effect on existing data) in [docs/bugs/](docs/bugs/). BUGS.md ends with [Root causes](BUGS.md#root-causes) (8 groups) and [Decisions and open risks](BUGS.md#decisions-and-open-risks). Every behaviour fix has a test that failed on the old code and passes now. Fixes are small commits, each with the why in its message. The security review (threat model, security bugs, live header checks) is [SECURITY.md](SECURITY.md).
+The full report is [BUGS.md](BUGS.md): every bug with severity, ticket, area and a write-up (what is wrong, why it happens, what it breaks, how we found and reproduced it, the fix, the test, the effect on existing data) in [docs/bugs/](docs/bugs/). BUGS.md ends with [Root causes](BUGS.md#root-causes) (8 groups) and [Decisions and open risks](BUGS.md#decisions-and-open-risks). 97 of the 105 fixes have a test that failed on the old code and passes now; the other 8 (setup S1 to S3, speed L1, L2, L4, docs B9, dead code H11) are proven another way, as BUGS.md says. Fixes are small commits, each with the why in its message. The security review (threat model, security bugs, live header checks) is [SECURITY.md](SECURITY.md).
 
 The five we lead with:
 
@@ -52,9 +52,9 @@ Proof: `scripts/demo_refund.sh` (29 checks, all pass) and `scripts/smoke_hosted.
 
 Full method and numbers: [CAPACITY.md](CAPACITY.md). Load test: `scripts/load/` (k6, checkout scenario: create a payment link, open checkout, pay, double-click check).
 
-- **Estimate: about 70 concurrent checkout users** on the live server: about 12 completed checkouts per second, about 63 HTTP requests per second, pay call p95 1.4 s, 0 failed checkouts, 0 server errors.
+- **Estimate: about 70 concurrent checkout users** on the live server: about 12 completed checkouts per second, about 63 HTTP requests per second, pay call p95 1.4 s, 0 failed checkouts, 0 server errors. These are the rules the estimate uses (pay p95 under 1.5 s, 0 failed checkouts, 0 errors, 0 refused). Our rule of p95 under 300 ms for create link and read link is not met on the live server: create link p95 318, 333 and 365 ms at 30, 50 and 70 users, read link p95 389 ms at 70. Most of that is the network path from Bahrain to Bangalore: the static checkout page alone has a median of about 155 ms.
 - **Past the limit:** at 90 users every checkout still completes (pay p95 2.2 s); at 120 users it is past the limit: checkouts drop to 10.7/s, pay p95 rises to 7.4 s, and 92 requests (0.6/s) are refused with `503` + `Retry-After`; 0 failed checkouts, 0 server errors. The API refuses work when its database queue is full, not when it gets slow, so accepted payments slow down before the excess is refused. At 400 users (laptop test): 0 errors other than 503s, median 1 ms to get the 503.
-- **Restart and recovery:** we killed the API (`kill -9`) in the middle of a 200-user test on the live server. Docker restarted it; it was healthy again in 8 s (6 s on the laptop). The ledger balanced, 0 double charges. That test found L5 (links cut off mid-payment stayed reserved); the fix is a recovery sweep, see CAPACITY.md.
+- **Restart and recovery:** we killed the API (`kill -9`) in the middle of a 200-user test on the live server. Docker restarted it; it was healthy again in 8 s (6 s on the laptop). 47 checkouts failed during the test and the client saw an error for each; none was charged twice and the ledger stayed balanced. That test found L5 (links cut off mid-payment stayed reserved); the fix is a recovery sweep, see CAPACITY.md.
 - **Five bugs found by the load and crash tests** and fixed: L1 ledger check scanned the whole ledger on every write, L2 hot API-key row, L3 payment cut off by a crash left the card held, L4 unbounded simulator memory, L5 links cut off by a crash stayed reserved for ever (now a recovery sweep).
 
 ## 5. Hosting architecture
@@ -374,7 +374,7 @@ Bug **H10** (Low), commit `a5fa13b` "fix(api): return 400, not 500, for a zero l
 - The check that worked was a second agent that saw only the requirement, not the fix, with its own fresh database.
 - Every miss became a bug id, a test that failed first, and one commit.
 
-One more case of the same kind, not quoted in full here: the FP-300 refunds judge marked "works from start to end, through the API" as FAIL, because at that time we read `refunds_enabled = NULL` as "off" and only raw SQL could change the switch. We had already noted this as an open item; the judge made it a blocker. Fixed as **R8**, commit `f169666`, test `apps/api/src/routes/adminRefundsEnabled.fix.test.ts`. Later we withdrew the "NULL = off" reading (bug R4): the handed-over code and migration 0052 say NULL means "no hold", so refunds are on by default and only `false` (a hold) refuses them with `403 refunds_on_hold`. R8 stays: without the switch, support could not put a merchant's refunds on hold except with raw SQL.
+One more case of the same kind, not quoted in full here: the FP-300 refunds judge marked "works from start to end, through the API" as FAIL, because at that time we read `refunds_enabled = NULL` as "off" and only raw SQL could change the switch. We had already noted this as an open item; the judge made it a blocker. Fixed as **R8**, commit `f169666`, test `apps/api/src/routes/adminRefundsEnabled.fix.test.ts`. Later we withdrew the "NULL = off" reading (bug R4): the handed-over code and migration 0052 say NULL means "no hold", so refunds are on by default and only `false` (a hold) refuses them with `403 refunds_on_hold`. R8 stays: without the switch, a finance admin (finance or super_admin role) could not put a merchant's refunds on hold except with raw SQL.
 
 ## How to check these claims
 

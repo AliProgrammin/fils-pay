@@ -80,7 +80,7 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 - Where: merchants.refunds_enabled (migration 0052), apps/api/src/routes/adminMerchants.ts
 - What is wrong: `refunds_enabled` is a per-merchant hold switch (NULL = no hold, false = on hold, migration 0052), but no API or console screen could change it.
 - Why it happens: the switch was added to the database, but the admin route and the console button were never built.
-- What it breaks: support cannot put a merchant's refunds on hold (a chargeback-rate review, a compliance hold), or release the hold, without editing the production database by hand. Found by our blind judge.
+- What it breaks: a finance admin (finance or super_admin role) cannot put a merchant's refunds on hold (a chargeback-rate review, a compliance hold), or release the hold, without editing the production database by hand. Found by our blind judge.
 - Fix: `PUT /v1/admin/merchants/:id/refunds-enabled` (`enabled: false` puts refunds on hold, `true` releases the hold) for finance and super_admin, with an audit row in the same transaction, a "Put refunds on hold" / "Release the hold" button on the admin merchant page, and `refundsEnabled` in the admin merchant data (`refunds_enabled !== false`, so NULL shows as refunds on). While on hold a refund answers 403 `refunds_on_hold`, as in the original code.
 - Test: apps/api/src/routes/adminRefundsEnabled.fix.test.ts
 - How found and reproduced: Our blind FP-300 judge marked "works from start to end, through the API" as FAIL, because only raw SQL could change the switch. Reproduced by `apps/api/src/routes/adminRefundsEnabled.fix.test.ts` (the route did not exist).

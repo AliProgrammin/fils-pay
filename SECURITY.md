@@ -138,7 +138,7 @@ Checked and correct (no bug): API keys and session tokens come from
 | Item | Evidence |
 |---|---|
 | Load shedding: fast `503` + `Retry-After` when the DB pool queue > 30 or event loop delay > 150 ms; nginx caps 400 in-flight API requests. | `plugins/loadShedding.test.ts`, `plugins/loadShedding.burst.test.ts`; 400-user test: 0 server errors (CAPACITY.md). |
-| Restart: `SIGKILL` of the API under 400 users (laptop) and 200 users (live server). Docker restarted it in 6 s (laptop) and 8 s (live). 0 unbalanced ledger groups, 0 double charges. | `scripts/load/chaos.sh`, CAPACITY.md "Crash and recovery". |
+| Restart: `SIGKILL` of the API under 400 users (laptop) and 200 users (live server). Docker restarted it in 6 s (laptop) and 8 s (live). On the live server 47 checkouts failed during the test and the client saw an error for each. 0 unbalanced ledger groups, 0 double charges. | `scripts/load/chaos.sh`, CAPACITY.md "Crash and recovery". |
 | L1, L2 (High, Medium): full-ledger scan and hot key row under load. | Load test (CAPACITY.md); `apiKeys/verify.fix.test.ts` still passes. |
 
 ### Data exposure
