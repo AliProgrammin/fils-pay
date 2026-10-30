@@ -16,7 +16,7 @@ untouched code we were handed (commit `8b58b0f`).
 | What | URL | Login |
 |---|---|---|
 | Checkout (customer pays a link) | https://64-227-145-174.sslip.io/pay/<token> (ready links below) | none: public page |
-| Merchant dashboard | https://64-227-145-174.sslip.io/dashboard/login | `finance@alpharetail.example` / `FilsPaySeed!2026` (one shop: email and password only) |
+| Merchant dashboard | https://64-227-145-174.sslip.io/dashboard/login | `finance@alpharetail.example` / `FilsPaySeed!2026` (one shop: email and password; if the page shows a Merchant ID field, leave it empty) |
 | Merchant dashboard, owner of two shops | https://64-227-145-174.sslip.io/dashboard/login | `owner@alpharetail.example` / `FilsPaySeed!2026`, then pick **Alpha Retail Co** |
 | Admin console | https://64-227-145-174.sslip.io/admin/ | `finance@filspay.test` / `FilsPayAdminSeed!2026` |
 | Public API | base https://64-227-145-174.sslip.io/v1, for example https://64-227-145-174.sslip.io/v1/payment-links/plink_PmjVZ6IlP0v1QQSbThJcTi (public) | `Authorization: Bearer <API key>` for merchant routes (how to get a key: below) |
