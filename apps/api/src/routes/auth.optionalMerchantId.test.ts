@@ -185,3 +185,41 @@ test("missing email or password is still 400 invalid_request, with or without me
     assert.equal(res.json().error, "invalid_request");
   }
 });
+
+test("a request that includes the merchantId key behaves as the original code: empty or null merchantId is 400", async () => {
+  const email = `present-key-${randomUUID()}@optional-mid.test`;
+  await createMerchantWithUser(email);
+
+  for (const merchantId of ["", null, 0, false]) {
+    const res = await postLogin({ merchantId, email, password: PASSWORD });
+    assert.equal(res.statusCode, 400, `merchantId=${JSON.stringify(merchantId)}: ${res.body}`);
+    assert.deepEqual(res.json(), {
+      error: "invalid_request",
+      message: "merchantId, email and password are required",
+    });
+    assert.equal(res.cookies.length, 0, "a refused login must not set a cookie");
+  }
+});
+
+test("409 merchant_id_required lists only the active shops whose user matched the password", async () => {
+  const email = `shops-list-${randomUUID()}@optional-mid.test`;
+  const a = await createMerchantWithUser(email);
+  const b = await createMerchantWithUser(email);
+  await createMerchantWithUser(email, { password: "a different password" });
+  await createMerchantWithUser(email, { status: "suspended" });
+
+  const res = await postLogin({ email, password: PASSWORD });
+  assert.equal(res.statusCode, 409, res.body);
+  const body = res.json();
+  assert.equal(body.error, "merchant_id_required");
+  assert.equal(body.message, "This email signs in to more than one shop. Give the merchant ID of the shop.");
+  assert.deepEqual(Object.keys(body).sort(), ["error", "message", "shops"]);
+
+  const names = await pool.query<{ id: string; display_name: string }>(
+    `SELECT id, display_name FROM merchants WHERE id = ANY($1)`,
+    [[a.merchantId, b.merchantId]],
+  );
+  const expected = names.rows.map((r) => ({ merchantId: r.id, displayName: r.display_name }));
+  const sortById = (x: { merchantId: string }, y: { merchantId: string }) => x.merchantId.localeCompare(y.merchantId);
+  assert.deepEqual([...body.shops].sort(sortById), expected.sort(sortById));
+});

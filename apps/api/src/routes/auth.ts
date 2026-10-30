@@ -24,7 +24,7 @@ const DUMMY_PASSWORD_HASH =
   "$argon2id$v=19$m=19456,p=1,t=2$/yKuaUqm4SW+pPt2oGNj4A$j5oxu/MdJJP86dClo0LJ0wsekKwkSbr1yA0uZSZgQcc";
 
 interface LoginBody {
-  merchantId?: string;
+  merchantId?: string | null;
   email?: string;
   password?: string;
 }
@@ -40,6 +40,7 @@ interface MerchantUserRow {
   email: string;
   role: "owner" | "finance" | "support";
   password_hash: string;
+  display_name: string;
 }
 
 /**
@@ -53,23 +54,28 @@ interface MerchantUserRow {
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   /** POST /v1/auth/login — step 1. */
   app.post<{ Body: LoginBody }>("/login", async (request, reply) => {
-    const { merchantId, email, password } = request.body ?? {};
-    if (!email || !password) {
+    const body = request.body ?? {};
+    const { merchantId, email, password } = body;
+    // The optional flow is only for a body without the merchantId key. A body
+    // that has the key (even "" or null) keeps the original rules: merchantId
+    // is then required, the same as before it became optional.
+    const hasMerchantIdKey = typeof body === "object" && Object.hasOwn(body, "merchantId");
+    if ((hasMerchantIdKey && !merchantId) || !email || !password) {
       throw new BadRequestError("invalid_request", "merchantId, email and password are required");
     }
 
     // With merchantId: at most one row. Without it: every active-merchant row
     // for this email (merchant_users is unique per (merchant_id, email)).
-    const userResult = merchantId
+    const userResult = hasMerchantIdKey
       ? await app.db.query<MerchantUserRow>(
-          `SELECT mu.id, mu.merchant_id, mu.email, mu.role, mu.password_hash
+          `SELECT mu.id, mu.merchant_id, mu.email, mu.role, mu.password_hash, m.display_name
              FROM merchant_users mu
              JOIN merchants m ON m.id = mu.merchant_id
             WHERE mu.merchant_id = $1 AND mu.email = $2 AND m.status = 'active'`,
           [merchantId, email],
         )
       : await app.db.query<MerchantUserRow>(
-          `SELECT mu.id, mu.merchant_id, mu.email, mu.role, mu.password_hash
+          `SELECT mu.id, mu.merchant_id, mu.email, mu.role, mu.password_hash, m.display_name
              FROM merchant_users mu
              JOIN merchants m ON m.id = mu.merchant_id
             WHERE mu.email = $1 AND m.status = 'active'
@@ -97,11 +103,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       throw new UnauthorizedError("invalid_credentials");
     }
     // Only reachable with a correct password: the email + password match
-    // users in several shops, so the client must say which one.
+    // users in several shops, so the client must say which one. `shops` lists
+    // only those shops, so the UI can offer a choice.
     if (matches.length > 1) {
       throw new ConflictError(
         "merchant_id_required",
         "This email signs in to more than one shop. Give the merchant ID of the shop.",
+        { shops: matches.map((m) => ({ merchantId: m.merchant_id, displayName: m.display_name })) },
       );
     }
 
