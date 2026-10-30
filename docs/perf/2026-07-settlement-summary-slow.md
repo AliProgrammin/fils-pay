@@ -61,3 +61,16 @@ Raising it to 128 MB brought the same query to 410 ms warm.
       gets slow again.
 - [x] Explain the summary vs batches timing difference to support (done in
       #fp-ops).
+
+## Correction (October 2026, bug E8)
+
+The "timing difference" explanation above is wrong. The summary ran
+`SUM(t.captured_fils)` once per capture event, so a transaction captured in
+2-3 parts was counted 2-3 times. Batches sum each event's own
+`amount_fils`, so the 38% gap never closes. The fan-out was a bug. It
+is not a normal cost of multi-capture merchants. Raising `shared_buffers` hid the cost of a
+full scan of `transaction_events`; it did not fix it.
+
+Fixed in `getSettlementSummary` (sums `te.amount_fils`) and migration
+`0086_transaction_events_captures_occurred.sql` (index on capture events by
+`occurred_at`). See `docs/bugs/wave-e.md#e8-settlement-summary-counts-a-multi-capture-transaction-once-per-capture`.

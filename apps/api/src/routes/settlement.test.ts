@@ -520,6 +520,39 @@ test("GET /v1/settlement/summary sums captured amounts for transactions with a s
   assert.equal(body.totalCapturedFils, 10_000 + 3_333);
 });
 
+// E8: a transaction captured in parts has one capture event per part. The
+// summary must count its money once, the same as the batch gross (the sum
+// of capture event amounts), not once per event.
+test("GET /v1/settlement/summary counts a multi-capture transaction once, equal to the sum of its capture events", async () => {
+  const { rawKey } = await createApprovedMerchantWithApiKey("summary-multi-capture", 250);
+  const multi = await authorize(rawKey, 10_000);
+  await capture(rawKey, multi.id, { amountFils: 4_000 });
+  await capture(rawKey, multi.id, { amountFils: 3_000 });
+  await capture(rawKey, multi.id, { amountFils: 3_000 });
+  const single = await authorize(rawKey, 2_500);
+  await capture(rawKey, single.id);
+
+  const events = await pool.query<{ n: string; total: string }>(
+    `SELECT COUNT(*) AS n, SUM(amount_fils) AS total FROM transaction_events
+      WHERE transaction_id = ANY($1) AND event_type IN ('captured', 'partially_captured')`,
+    [[multi.id, single.id]],
+  );
+  assert.equal(Number(events.rows[0]!.n), 4, "precondition: the multi-capture transaction has three capture events");
+
+  const businessDate = todayBahrainDateString();
+  const nextDay = addOneCalendarDay(businessDate);
+  const res = await app.inject({
+    method: "GET",
+    url: `/v1/settlement/summary?from=${businessDate}&to=${nextDay}`,
+    headers: authHeader(rawKey),
+  });
+  assert.equal(res.statusCode, 200, res.body);
+  const body = res.json() as { transactionCount: number; totalCapturedFils: number };
+  assert.equal(body.transactionCount, 2);
+  assert.equal(body.totalCapturedFils, 12_500);
+  assert.equal(body.totalCapturedFils, Number(events.rows[0]!.total));
+});
+
 test("GET /v1/settlement/summary is forbidden for a 'support' session role", async () => {
   const { merchantId } = await createApprovedMerchantWithApiKey("summary-role");
   const supportToken = await createSessionWithRole(merchantId, "support");

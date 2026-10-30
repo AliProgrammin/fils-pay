@@ -70,3 +70,13 @@
 - What it breaks: The render throws, React unmounts the page, and the user sees a blank screen exactly when there is a gap to investigate.
 - Fix: `toFils(amountFils, { allowNegative: true })`. `formatBhd` already prints the sign.
 - Test: new test "bhd renders a negative amount instead of throwing" in `apps/web/src/dashboard.test.ts`
+
+### E8 Settlement summary counts a multi-capture transaction once per capture
+- Severity: High
+- Ticket: E8 ("one of the reporting queries is suspiciously slow", `docs/perf/2026-07-settlement-summary-slow.md`)
+- Where: `apps/api/src/settlement/query.ts` (`getSettlementSummary`, `GET /v1/settlement/summary`)
+- What is wrong: The query joined `transactions` to `transaction_events` and ran `SUM(t.captured_fils)` on the joined rows. A transaction captured in 3 parts has 3 capture events, so its full captured total was added 3 times. Example: 10.000 BD captured as 4 + 3 + 3 BD was reported as 30.000 BD. This is the 38% gap between Delta Wholesale's summary and its batch gross in the perf note.
+- Why it happens: The total was taken from the transaction row, but the rows were one per event. The perf note asked an AI about the gap. It said "timing difference that resolves at month end". That is false: batches sum `te.amount_fils` once per event, so the gap never closes. The slowness was "fixed" by raising `shared_buffers`, not by fixing the query. The real cost was a full scan of `transaction_events`: the only `occurred_at` index (0023) is partial on unbatched events, so every closed (batched) month read the whole table.
+- What it breaks: Merchants who capture in parts see an inflated gross on the settlement page (about 38% for Delta Wholesale). Support told them it was a timing difference. The summary does not match the batches, so finance cannot tie it out.
+- Fix: Sum the capture event amounts (`te.amount_fils`), grouped per transaction first, then filter by merchant. This is the same rule the Go batch uses (`batch.go`: gross = sum of event amounts). Same route, same response fields. New migration `0086_transaction_events_captures_occurred.sql`: a partial index on capture events by `occurred_at`, with `transaction_id` and `amount_fils` included, so the window is read from the index alone. On a scaled copy (621k events, Delta Wholesale 120k transactions in 2-3 parts, 30-day window): before 43.9 ms median and 13,760 pages; after 34.0 ms median and 1,547 pages (index-only scan, about 9x less I/O). The old query returned 390,117,000 fils; the sum of capture events is 149,784,000 fils. The perf note now has a correction.
+- Test: new test "GET /v1/settlement/summary counts a multi-capture transaction once, equal to the sum of its capture events" in `apps/api/src/routes/settlement.test.ts`

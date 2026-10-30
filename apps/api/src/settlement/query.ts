@@ -391,7 +391,14 @@ interface SettlementSummaryRow {
   total_captured_fils: string | number | null;
 }
 
-/** Gross captured in window, joined through transaction_events for batch parity. */
+/**
+ * Gross captured in the window, summed the same way as a settlement batch:
+ * the amount of each capture event (te.amount_fils), once per event.
+ *
+ * Do not SUM(t.captured_fils) over a join to transaction_events: a
+ * transaction captured in N parts has N capture events, so its full
+ * captured total would be counted N times (E8).
+ */
 export async function getSettlementSummary(
   pool: Pool,
   input: { merchantId: string; from: string; to: string },
@@ -401,16 +408,17 @@ export async function getSettlementSummary(
 
   const result = await pool.query<SettlementSummaryRow>(
     `WITH captured AS (
-       SELECT t.id, t.captured_fils
-         FROM transactions t
-         JOIN transaction_events te ON te.transaction_id = t.id
-        WHERE t.merchant_id = $1
-          AND te.event_type IN ('captured', 'partially_captured')
+       SELECT te.transaction_id, SUM(te.amount_fils) AS captured_fils
+         FROM transaction_events te
+        WHERE te.event_type IN ('captured', 'partially_captured')
           AND te.occurred_at >= $2 AND te.occurred_at < $3
+        GROUP BY te.transaction_id
      )
-     SELECT COUNT(DISTINCT id) AS transaction_count,
-            COALESCE(SUM(captured_fils), 0) AS total_captured_fils
-       FROM captured`,
+     SELECT COUNT(*) AS transaction_count,
+            COALESCE(SUM(c.captured_fils), 0) AS total_captured_fils
+       FROM captured c
+       JOIN transactions t ON t.id = c.transaction_id
+      WHERE t.merchant_id = $1`,
     [input.merchantId, windowStart, windowEnd],
   );
 
