@@ -94,6 +94,16 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	// A zero or negative interval panics in time.NewTicker. A delay of a full
+	// day (1440) or more is never reached before the next midnight, so the
+	// daemon would never close a day.
+	if pollIntervalSeconds <= 0 {
+		return Config{}, fmt.Errorf("config: SETTLEMENT_DAEMON_POLL_INTERVAL_SECONDS must be greater than 0, got %d", pollIntervalSeconds)
+	}
+	if runDelay < 0 || runDelay > 1439 {
+		return Config{}, fmt.Errorf("config: SETTLEMENT_DAEMON_RUN_DELAY_MINUTES must be between 0 and 1439, got %d", runDelay)
+	}
+
 	internalPort, err := parseIntEnv("SETTLEMENT_INTERNAL_PORT", 8091)
 	if err != nil {
 		return Config{}, err
