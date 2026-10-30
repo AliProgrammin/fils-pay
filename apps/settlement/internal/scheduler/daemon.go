@@ -1,12 +1,13 @@
 // Package scheduler implements the `daemon` subcommand's sleep/wake loop:
 // sleeps until the next scheduled run time, then runs the full daily
 // batching pass for every active merchant for the business day that just
-// completed, then sleeps again. Runs forever until ctx is cancelled
-// (main.go wires SIGTERM to cancel it), letting an in-flight batch
-// transaction finish (or roll back cleanly) before exiting — no
-// transaction is ever left half-committed by a container restart, because
+// completed, then sleeps again. Runs until ctx is cancelled (main.go wires
+// SIGTERM and SIGINT to cancel it). A cancel does not cut off a run in
+// progress: the merchant batch in flight finishes and commits (bounded by
+// settlement.DrainTimeout), no later merchant batch is started, and Run then
+// returns. If the process is killed anyway, nothing is left half-committed:
 // every batch operation is one Postgres transaction that either fully
-// commits or fully rolls back.
+// commits or fully rolls back, and the run at the next start is idempotent.
 package scheduler
 
 import (
@@ -118,7 +119,11 @@ func runDay(ctx context.Context, db *pgxpool.Pool, businessDate time.Time) {
 	// tick rather than aborting: the batch itself is already paid and
 	// durable, and a missed notification is not worth holding the loop on.
 	// A CLI run overlapping this tick cannot double-enqueue settlement.paid: unique index (migration 0075) + ON CONFLICT DO NOTHING.
-	enqueued, err := settlement.EnqueuePayoutNotifications(ctx, db)
+	// It also runs after a shutdown signal, so the merchants paid just before
+	// it are notified now; DrainContext keeps that bounded.
+	work, cancel := settlement.DrainContext(ctx, settlement.DrainTimeout)
+	defer cancel()
+	enqueued, err := settlement.EnqueuePayoutNotifications(work, db)
 	if err != nil {
 		log.Printf("settlement daemon: EnqueuePayoutNotifications failed: %v", err)
 	} else if enqueued > 0 {

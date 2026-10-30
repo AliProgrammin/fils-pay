@@ -148,6 +148,11 @@ services:
     command: ["./settlement", "daemon"]
     env_file: .env.production
     restart: always
+    # On SIGTERM the daemon lets the merchant batch in flight commit and
+    # starts no new one. Its drain is bounded in code (settlement.DrainTimeout
+    # 30 s, internal API shutdown 40 s); this must stay longer than both, or
+    # Docker sends SIGKILL first (the default is 10 s).
+    stop_grace_period: 60s
     cpus: 0.03
     mem_limit: 64m
     logging: *logging

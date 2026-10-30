@@ -70,7 +70,9 @@ func main() {
 		// trigger a settlement re-run or a balance rebuild) runs alongside
 		// the scheduler loop for the lifetime of the daemon process. It
 		// shares the daemon's ctx, so the same SIGTERM/SIGINT that stops
-		// the scheduler also shuts the server down gracefully. Started
+		// the scheduler also shuts the server down gracefully. Both drain:
+		// work in flight finishes and commits, no new work starts, and
+		// the process exits only when both are done. Started
 		// before the blocking scheduler.Run call; a listen failure (e.g.
 		// the port is taken) is fatal — a half-started daemon whose admin
 		// endpoints silently do not exist is worse than a crash.
@@ -81,7 +83,9 @@ func main() {
 		if err := cfg.RequireInternalToken(); err != nil {
 			log.Fatalf("settlement: %v", err)
 		}
+		serveDone := make(chan struct{})
 		go func() {
+			defer close(serveDone)
 			if err := internalapi.Serve(ctx, pool, cfg); err != nil {
 				log.Fatalf("settlement daemon: internal api: %v", err)
 			}
@@ -89,6 +93,8 @@ func main() {
 
 		// FH: if internalapi fails to bind we log.Fatalf from the goroutine and skip the deferred pool.Close -- ok?
 		scheduler.Run(ctx, pool, cfg)
+		<-serveDone
+		log.Print("settlement daemon: drained, exiting")
 
 	case "run-batch":
 		fs := flag.NewFlagSet("run-batch", flag.ExitOnError)
@@ -132,7 +138,11 @@ func main() {
 		// idempotent, so running it from both entrypoints is safe and keeps
 		// "was this batch run by hand or by the daemon" from changing what a
 		// merchant sees.
-		enqueued, err := settlement.EnqueuePayoutNotifications(ctx, pool)
+		// Runs even after Ctrl-C/SIGTERM, so the merchants paid above are
+		// notified; DrainContext keeps it bounded.
+		work, cancel := settlement.DrainContext(ctx, settlement.DrainTimeout)
+		defer cancel()
+		enqueued, err := settlement.EnqueuePayoutNotifications(work, pool)
 		if err != nil {
 			log.Fatalf("settlement run-batch: enqueue payout notifications: %v", err)
 		}

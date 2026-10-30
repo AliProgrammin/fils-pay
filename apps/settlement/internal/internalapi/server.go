@@ -38,10 +38,11 @@ import (
 const businessDateLayout = "2006-01-02"
 
 // shutdownTimeout bounds how long a graceful shutdown waits for an
-// in-flight request. A full daily batch can legitimately run for a while;
-// this is deliberately generous so a SIGTERM does not sever a batch that
-// is already committing.
-const shutdownTimeout = 30 * time.Second
+// in-flight request. Handler database work runs on settlement.DrainContext,
+// so it is cancelled settlement.DrainTimeout after the signal; the extra
+// time lets the handler then write its response.
+// ops/docker-compose.prod.yml's stop_grace_period must stay longer.
+const shutdownTimeout = settlement.DrainTimeout + 10*time.Second
 
 // runBatchRequest is POST /internal/run-batch's body.
 type runBatchRequest struct {
@@ -136,9 +137,11 @@ func Serve(ctx context.Context, pool *pgxpool.Pool, cfg config.Config) error {
 	server := &http.Server{
 		Addr:    addr,
 		Handler: Handler(pool, cfg),
-		// Every handler's request context derives from the daemon's own
-		// ctx, so a shutdown signal also cancels the pgx work an in-flight
-		// batch is doing rather than leaving it orphaned.
+		// Every request context derives from the daemon's own ctx, so it
+		// is cancelled by a shutdown signal. Handlers treat that as "stop
+		// starting new work": their database work runs on
+		// settlement.DrainContext, so work in flight finishes and commits
+		// (up to settlement.DrainTimeout) instead of being rolled back.
 		BaseContext:       func(net.Listener) context.Context { return ctx },
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -239,6 +242,8 @@ func handleRunBatch(pool *pgxpool.Pool) http.Handler {
 			onlyMerchant = &merchantID
 		}
 
+		// RunDailyBatch drains on its own: on shutdown it finishes the
+		// merchant in flight and starts no new one.
 		report, err := settlement.RunDailyBatch(r.Context(), pool, businessDate, onlyMerchant)
 		if err != nil {
 			log.Printf("settlement internal api: run-batch(%s) failed: %v", body.Date, err)
@@ -270,7 +275,9 @@ func handleRunBatch(pool *pgxpool.Pool) http.Handler {
 // action. Takes no body; any body sent is ignored.
 func handleRebuildBalances(pool *pgxpool.Pool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		diffs, err := ledger.RebuildAllBalances(r.Context(), pool)
+		work, cancel := settlement.DrainContext(r.Context(), settlement.DrainTimeout)
+		defer cancel()
+		diffs, err := ledger.RebuildAllBalances(work, pool)
 		if err != nil {
 			log.Printf("settlement internal api: rebuild-balances failed: %v", err)
 			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "rebuild_balances_failed"})
@@ -322,7 +329,9 @@ func handleRecalculateMDR(pool *pgxpool.Pool) http.Handler {
 			return
 		}
 
-		result, err := settlement.RecalculateMDR(r.Context(), pool, merchantID, from, to)
+		work, cancel := settlement.DrainContext(r.Context(), settlement.DrainTimeout)
+		defer cancel()
+		result, err := settlement.RecalculateMDR(work, pool, merchantID, from, to)
 		if err != nil {
 			log.Printf("settlement internal api: recalculate-mdr(%s) failed: %v", body.MerchantID, err)
 			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "recalculate_mdr_failed"})

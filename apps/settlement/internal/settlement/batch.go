@@ -497,6 +497,31 @@ type MerchantBatchOutcome struct {
 	NetPayoutFils money.Fils
 }
 
+// DrainTimeout bounds how long settlement work already in flight may keep
+// running after a shutdown signal. ops/docker-compose.prod.yml's
+// stop_grace_period for the settlement service must stay longer than this.
+const DrainTimeout = 30 * time.Second
+
+// DrainContext returns a context for database work that is not cancelled
+// when stop is cancelled, only grace later. Work that has started can then
+// finish and commit after a SIGTERM, while the drain stays bounded. If grace
+// runs out, the work is cancelled and its open transaction rolls back.
+func DrainContext(stop context.Context, grace time.Duration) (context.Context, context.CancelFunc) {
+	work, cancel := context.WithCancel(context.WithoutCancel(stop))
+	go func() {
+		select {
+		case <-stop.Done():
+			select {
+			case <-time.After(grace):
+			case <-work.Done():
+			}
+			cancel()
+		case <-work.Done():
+		}
+	}()
+	return work, cancel
+}
+
 // RunDailyBatch closes and pays out every eligible merchant's batch for
 // one business date. Called by `run-batch` directly, and by `daemon` once
 // per scheduled wake-up for the business day that just completed.
@@ -507,7 +532,17 @@ type MerchantBatchOutcome struct {
 // parallelize away, and this removes any question of lock-ordering
 // between concurrent goroutines each trying to FOR UPDATE a
 // settlement_batches row.
+//
+// Cancelling ctx (SIGTERM) stops the pass between merchants: the merchant
+// in progress finishes and commits (database work uses DrainContext, so it
+// has up to DrainTimeout), and no later merchant is started. The pass then
+// returns an error that wraps ctx's error. The merchants left over are
+// picked up by the next run, which is idempotent.
 func RunDailyBatch(ctx context.Context, db *pgxpool.Pool, businessDate time.Time, onlyMerchant *uuid.UUID) (DailyBatchReport, error) {
+	stop := ctx
+	ctx, cancel := DrainContext(stop, DrainTimeout)
+	defer cancel()
+
 	var merchantIDs []uuid.UUID
 	if onlyMerchant != nil {
 		merchantIDs = []uuid.UUID{*onlyMerchant}
@@ -545,7 +580,14 @@ func RunDailyBatch(ctx context.Context, db *pgxpool.Pool, businessDate time.Time
 		log.Printf("settlement: RunDailyBatch(%s): %v", businessDate.Format("2006-01-02"), err)
 		failures = append(failures, err)
 	}
-	for _, merchantID := range merchantIDs {
+	var stopErr error
+	for i, merchantID := range merchantIDs {
+		if err := stop.Err(); err != nil {
+			stopErr = fmt.Errorf("settlement: RunDailyBatch(%s): stopped by shutdown, %d merchant(s) left for the next run: %w",
+				businessDate.Format("2006-01-02"), len(merchantIDs)-i, err)
+			log.Print(stopErr)
+			break
+		}
 		closeResult, err := CloseBatch(ctx, db, merchantID, businessDate)
 		if err != nil {
 			if errors.Is(err, ErrMerchantNotEligible) {
@@ -597,7 +639,7 @@ func RunDailyBatch(ctx context.Context, db *pgxpool.Pool, businessDate time.Time
 	}
 
 	if len(failures) > 0 {
-		return report, fmt.Errorf("settlement: RunDailyBatch: %d merchant(s) failed: %w", len(failures), errors.Join(failures...))
+		return report, errors.Join(stopErr, fmt.Errorf("settlement: RunDailyBatch: %d merchant(s) failed: %w", len(failures), errors.Join(failures...)))
 	}
-	return report, nil
+	return report, stopErr
 }

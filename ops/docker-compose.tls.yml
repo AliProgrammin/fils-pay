@@ -20,6 +20,13 @@ services:
       - caddy_config:/config
     cpus: 0.40
     mem_limit: 96m
+    # Caddy's admin API (on by default, bound to 127.0.0.1 inside the
+    # container) answers only while Caddy runs.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
     logging:
       driver: json-file
       options:
