@@ -46,3 +46,37 @@ test("running the residue posting twice posts one balanced ADR-0002 group", asyn
     await client.end();
   }
 });
+
+// W2: since C9, CloseBatch posts the residue per line at close. The sweep
+// must see a month that already has close-time residue and not post again.
+test("a month with close-time residue rows is detected; an empty month is not", async () => {
+  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  await client.connect();
+  try {
+    const m = await client.query<{ id: string }>(
+      `INSERT INTO merchants (display_name, mdr_bps) VALUES ($1, 250) RETURNING id`,
+      [`recon-c9-${randomUUID()}`],
+    );
+    const merchantId = m.rows[0]!.id;
+    const txn = await client.query<{ id: string }>(
+      `INSERT INTO transactions (merchant_id, status, amount_fils, captured_fils, occurred_at, acquirer_reference)
+       VALUES ($1, 'captured', 4755, 4755, '2031-07-10T09:00:00Z', $2) RETURNING id`,
+      [merchantId, `recon-c9-${randomUUID()}`],
+    );
+    const batch = await client.query<{ id: string }>(
+      `INSERT INTO settlement_batches (merchant_id, batch_date, status) VALUES ($1, '2031-07-10', 'closed') RETURNING id`,
+      [merchantId],
+    );
+    await client.query(
+      `INSERT INTO ledger_entries (entry_group_id, merchant_id, transaction_id, settlement_batch_id, account_id, direction, amount_fils, occurred_at, description)
+       VALUES ($1, $2, $3, $4, 'card_scheme_clearing', 'credit', 5, '2031-07-11T00:00:00Z', 'scheme rounding residue'),
+              ($1, $2, $3, $4, 'scheme_rounding_residue', 'debit', 5, '2031-07-11T00:00:00Z', 'scheme rounding residue')`,
+      [randomUUID(), merchantId, txn.rows[0]!.id, batch.rows[0]!.id],
+    );
+
+    assert.equal(await recon.periodHasCloseTimeResidue(client, 2031, 7), true);
+    assert.equal(await recon.periodHasCloseTimeResidue(client, 2031, 9), false);
+  } finally {
+    await client.end();
+  }
+});

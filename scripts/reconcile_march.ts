@@ -6,6 +6,10 @@
  * off for March before the books close on it. Run manually, once — see
  * scripts/out/reconcile-2026-03.log for the last real run's output.
  *
+ * Since C9, CloseBatch posts this residue per scheme line at close. The sweep
+ * refuses a month that already has close-time residue rows, so it can never
+ * post the same residue twice (W2). It is only for months closed before C9.
+ *
  * Usage: DATABASE_URL=postgres://... npx tsx scripts/reconcile_march.ts
  */
 import { createHash } from "node:crypto";
@@ -65,6 +69,26 @@ async function fetchResidueRows(client: Client, year: number, month: number): Pr
 }
 
 /**
+ * True when CloseBatch (C9) already posted residue for a transaction of this
+ * Bahrain month: a scheme_rounding_residue row tied to a settlement batch.
+ */
+export async function periodHasCloseTimeResidue(client: Client, year: number, month: number): Promise<boolean> {
+  const { start, end } = monthBounds(year, month);
+  const result = await client.query<{ found: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+         FROM ledger_entries le
+         JOIN transactions t ON t.id = le.transaction_id
+        WHERE le.account_id = 'scheme_rounding_residue'
+          AND le.settlement_batch_id IS NOT NULL
+          AND t.occurred_at >= $1 AND t.occurred_at < $2
+     ) AS found`,
+    [start.toISOString(), end.toISOString()],
+  );
+  return result.rows[0]?.found === true;
+}
+
+/**
  * One correction group per merchant. lineCount is the number of transactions
  * with a non-zero residue, not the number of scheme lines.
  */
@@ -121,6 +145,14 @@ async function main(): Promise<void> {
   const now = new Date();
 
   try {
+    if (await periodHasCloseTimeResidue(client, 2026, 3)) {
+      console.error(
+        "reconcile_march: refusing: March 2026 already has close-time scheme rounding residue (CloseBatch, C9). " +
+          "Sweeping it again would post the residue twice. Nothing posted.",
+      );
+      process.exitCode = 1;
+      return;
+    }
     const rows = await fetchResidueRows(client, 2026, 3);
     const merchantResidues = groupByMerchant(rows);
     const totalResidueFils = merchantResidues.reduce((sum, m) => sum + m.residueFils, 0);
