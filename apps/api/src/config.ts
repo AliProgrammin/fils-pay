@@ -86,8 +86,14 @@ export interface Config {
   checkoutBaseUrl: string;
   /** How long a payment link stays 'reserved' (claimed by an in-flight pay
    *  attempt) before it self-expires back to claimable, closing the gap
-   *  between claim and finalize without a sweep job. */
+   *  between claim and bind. Past the bind the recovery sweep takes over. */
   paymentLinkReservationTimeoutSeconds: number;
+  /** L5: a link reserved with a bound, still-authorized payment older than
+   *  this is voided and released by the recovery sweep. Far above a normal
+   *  payment, so a live request is never overtaken. */
+  paymentLinkRecoveryGraceSeconds: number;
+  /** How often the payment-link recovery sweep runs (also once at boot). */
+  paymentLinkRecoveryIntervalMs: number;
 
   /** Base64-encoded 32 raw bytes, the single application-level AES-256-GCM
    *  key `webhooks/secretCrypto.ts` uses to encrypt/decrypt
@@ -262,6 +268,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
     checkoutBaseUrl: env.CHECKOUT_BASE_URL ?? "http://localhost:5173",
     paymentLinkReservationTimeoutSeconds: parseIntEnv(env.PAYMENT_LINK_RESERVATION_TIMEOUT_SECONDS, 60),
+    paymentLinkRecoveryGraceSeconds: parseIntEnv(env.PAYMENT_LINK_RECOVERY_GRACE_SECONDS, 300),
+    paymentLinkRecoveryIntervalMs: parseIntEnv(env.PAYMENT_LINK_RECOVERY_INTERVAL_MS, 30_000),
 
     webhookSecretEncryptionKey: parseWebhookSecretEncryptionKey(
       env.WEBHOOK_SECRET_ENCRYPTION_KEY || (nodeEnv !== "production" ? DEV_FALLBACK_WEBHOOK_KEY_B64 : undefined),

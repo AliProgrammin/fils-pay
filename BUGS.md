@@ -2,7 +2,7 @@
 
 Every bug below has the smallest fix and a plain-English explanation (what is wrong, why it happens, what it breaks). Every behaviour bug has a test that failed on the old code and passes now; the few speed and capacity fixes are proven by the load test instead (CAPACITY.md).
 
-**103 bugs fixed**: 18 critical, 40 high, 32 medium, 13 low.
+**105 bugs fixed**: 18 critical, 41 high, 33 medium, 13 low.
 
 Ground truth we used: the case brief, `docs/ARCHITECTURE.md`, the ADRs and Yousif's handover. We did **not** follow the `CLAUDE.md`, `AGENTS.md` or `.cursorrules` we were handed (now kept in `ai-setup/handed-over/`): they contain false rules (cents instead of fils, UTC windows, "never change tests", "Math.random is fine") that protect the bugs.
 
@@ -12,8 +12,8 @@ When an existing test asserted the buggy behaviour, we changed it in the same co
 
 | | Before | After |
 |---|---|---|
-| Fresh database | migrations stop at 0054 | 85 migrations + seed pass |
-| TypeScript tests | 414 / 430 pass | 605 / 605 pass |
+| Fresh database | migrations stop at 0054 | 86 migrations + seed pass |
+| TypeScript tests | 414 / 430 pass | 708 / 708 pass |
 | Go tests | 54 / 54 pass | 84 / 84 pass |
 | Refunds (FP-300) | `POST /v1/refunds` returned `501`; the dashboard drawer posted to an unregistered path (`404`) | end to end: API, ledger, fees, payouts, webhook, timeline, reports, reconciliation |
 
@@ -77,54 +77,56 @@ How we found them: three independent audit rounds, then a separate agent that sa
 | 50 | H4 | High | Payment-link captures never get the negotiated discount in the ledger | H4 | Payments and API | [explain](docs/bugs/hunt-2.md#h4-payment-link-captures-never-get-the-negotiated-discount-in-the-ledger) |
 | 51 | L1 | High | The ledger balance check reads the whole ledger on every write | none | Capacity (load test) | [explain](docs/bugs/load.md#l1-the-ledger-balance-check-reads-the-whole-ledger-on-every-write) |
 | 52 | L3 | High | A payment cut off by a crash leaves the link stuck and the card held | INC 05-14 family | Capacity (load test) | [explain](docs/bugs/load.md#l3-a-payment-cut-off-by-a-crash-leaves-the-link-stuck-and-the-card-held) |
-| 53 | R4 | High | `refunds_enabled = NULL` is treated as enabled | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r4-refunds_enabled--null-is-treated-as-enabled) |
-| 54 | R5 | High | Fee reversal does not add up to the fee charged | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r5-fee-reversal-does-not-add-up-to-the-fee-charged) |
-| 55 | R8 | High | No way to turn refunds on, except raw SQL | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r8-no-way-to-turn-refunds-on-except-raw-sql) |
-| 56 | S2 | High | The Dockerfiles that compose needs are missing | none | Setup (could not start) | [explain](docs/bugs/setup.md#s2-the-dockerfiles-that-compose-needs-are-missing) |
-| 57 | U12 | High | Admin "run batch" accepts today or a future date | R12 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u12-admin-run-batch-accepts-today-or-a-future-date) |
-| 58 | V1 | High | The seed charges every capture the old merchant rate, not the rate in force at that time | venue whiteboard hint | Venue whiteboard clue | [explain](docs/bugs/venue-hint.md#v1-the-seed-charges-every-capture-the-old-merchant-rate-not-the-rate-in-force-at-that-time) |
-| 59 | A10 | Medium | KYC "PDF only" check trusts the filename | none | Auth and admin | [explain](docs/bugs/wave-a.md#a10-kyc-pdf-only-check-trusts-the-filename) |
-| 60 | A11 | Medium | Bulk KYC approve ignores status and writes no review rows | none | Auth and admin | [explain](docs/bugs/wave-a.md#a11-bulk-kyc-approve-ignores-status-and-writes-no-review-rows) |
-| 61 | A13 | Medium | A disabled admin keeps their "view as merchant" grant | none | Auth and admin | [explain](docs/bugs/wave-a.md#a13-a-disabled-admin-keeps-their-view-as-merchant-grant) |
-| 62 | B7 | Medium | Capture idempotency ignores which transaction is captured | none | Payments and links | [explain](docs/bugs/wave-b.md#b7-capture-idempotency-ignores-which-transaction-is-captured) |
-| 63 | B8 | Medium | CSV formula injection in the transactions export | none | Payments and links | [explain](docs/bugs/wave-b.md#b8-csv-formula-injection-in-the-transactions-export) |
-| 64 | C10 | Medium | `rebuild-balances --merchant=X` never writes, and the full rebuild races CloseBatch/PayoutBatch | HANDOVER | Settlement money (Go) | [explain](docs/bugs/wave-c.md#c10-rebuild-balances---merchantx-never-writes-and-the-full-rebuild-races-closebatchpayoutbatch) |
-| 65 | C11 | Medium | Lifetime payout estimate drifts (float32 into a REAL column) | ops monitoring | Settlement money (Go) | [explain](docs/bugs/wave-c.md#c11-lifetime-payout-estimate-drifts-float32-into-a-real-column) |
-| 66 | C9 | Medium | Scheme rounding residue is never journaled | ADR-0002 | Settlement money (Go) | [explain](docs/bugs/wave-c.md#c9-scheme-rounding-residue-is-never-journaled) |
-| 67 | D10 | Medium | Reporting consumer is stopped by poison events (null merchant_id, missing rollup row) | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d10-reporting-consumer-is-stopped-by-poison-events-null-merchant_id-missing-rollup-row) |
-| 68 | D11 | Medium | Replays mint a new Webhook-Delivery-Id; batch replay resends succeeded deliveries | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d11-replays-mint-a-new-webhook-delivery-id-batch-replay-resends-succeeded-deliveries) |
-| 69 | D12 | Medium | Dev fallback webhook encryption key is 34 bytes, so the API cannot boot in dev | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d12-dev-fallback-webhook-encryption-key-is-34-bytes-so-the-api-cannot-boot-in-dev) |
-| 70 | D14 | Medium | Deleting a webhook endpoint with history crashes with a 500 | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d14-deleting-a-webhook-endpoint-with-history-crashes-with-a-500) |
-| 71 | D16 | Medium | Reconciliation estimates pending fees at the wrong rate, with float rounding | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d16-reconciliation-estimates-pending-fees-at-the-wrong-rate-with-float-rounding) |
-| 72 | D17 | Medium | Reports show gross only and leave out refunds | FP-300 | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d17-reports-show-gross-only-and-leave-out-refunds) |
-| 73 | D9 | Medium | Flaky backoff test: "failing endpoint: backoff/exhaustion ..." | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d9-flaky-backoff-test-failing-endpoint-backoffexhaustion-) |
-| 74 | E4 | Medium | Ledger can be edited or wiped without error | E4 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e4-ledger-can-be-edited-or-wiped-without-error) |
-| 75 | E5 | Medium | "Adjust balance" changes only the cached balance, not the ledger | E5 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e5-adjust-balance-changes-only-the-cached-balance-not-the-ledger) |
-| 76 | E6 | Medium | Refund summary view joins the wrong column and double counts captures | E6 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e6-refund-summary-view-joins-the-wrong-column-and-double-counts-captures) |
-| 77 | G11 | Medium | A late capture or refund makes two days fail reconciliation | none | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g11-a-late-capture-or-refund-makes-two-days-fail-reconciliation) |
-| 78 | G4 | Medium | merchant_balances drifts after every rebuild | none | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g4-merchant_balances-drifts-after-every-rebuild) |
-| 79 | H3 | Medium | Bad input gives a 500, not a 400 | none | Payments and API | [explain](docs/bugs/hunt-2.md#h3-bad-input-gives-a-500-not-a-400) |
-| 80 | H5 | Medium | KYC image decompression bomb | none | Payments and API | [explain](docs/bugs/hunt-2.md#h5-kyc-image-decompression-bomb) |
-| 81 | H6 | Medium | KYC upload takes many files and leaves orphan files | none | Payments and API | [explain](docs/bugs/hunt-2.md#h6-kyc-upload-takes-many-files-and-leaves-orphan-files) |
-| 82 | L2 | Medium | Every API-key request writes the same database row | none | Capacity (load test) | [explain](docs/bugs/load.md#l2-every-api-key-request-writes-the-same-database-row) |
-| 83 | L4 | Medium | The bank simulator's memory grows without limit | none | Capacity (load test) | [explain](docs/bugs/load.md#l4-the-bank-simulators-memory-grows-without-limit) |
-| 84 | R6 | Medium | A partial capture that is fully refunded never shows `refunded` | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r6-a-partial-capture-that-is-fully-refunded-never-shows-refunded) |
-| 85 | S3 | Medium | The stack starts in the wrong order | none | Setup (could not start) | [explain](docs/bugs/setup.md#s3-the-stack-starts-in-the-wrong-order) |
-| 86 | U5 | Medium | Admin "Rebuild analytics" counts events twice | R5 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u5-admin-rebuild-analytics-counts-events-twice) |
-| 87 | U6 | Medium | Payout trend stays "closed" after the batch is paid | R6 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u6-payout-trend-stays-closed-after-the-batch-is-paid) |
-| 88 | U7 | Medium | Merchants are logged out 10 minutes after login | R7 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u7-merchants-are-logged-out-10-minutes-after-login) |
-| 89 | V2 | Medium | Capture picks the fee rate by the API server's clock, not the database clock | venue whiteboard hint | Venue whiteboard clue | [explain](docs/bugs/venue-hint.md#v2-capture-picks-the-fee-rate-by-the-api-servers-clock-not-the-database-clock) |
-| 90 | V3 | Medium | An admin credit reverses the fee at the old merchant rate, not the rate in force | found while checking the admin console | Venue whiteboard clue | [explain](docs/bugs/venue-hint.md#v3-an-admin-credit-reverses-the-fee-at-the-old-merchant-rate-not-the-rate-in-force) |
-| 91 | B9 | Low | Ops docs say the settlement daemon falls back to `dev-token` | none | Payments and links | [explain](docs/bugs/wave-b.md#b9-ops-docs-say-the-settlement-daemon-falls-back-to-dev-token) |
-| 92 | D13 | Low | Report export summary had no login check | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d13-report-export-summary-had-no-login-check) |
-| 93 | E7 | Low | Dashboard crashes on a negative amount | E7 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e7-dashboard-crashes-on-a-negative-amount) |
-| 94 | G10 | Low | Bad daemon timing values crash or stall the daemon | none | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g10-bad-daemon-timing-values-crash-or-stall-the-daemon) |
-| 95 | G9 | Low | Batch event lookups scan the whole transaction_events table | none | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g9-batch-event-lookups-scan-the-whole-transaction_events-table) |
-| 96 | H10 | Low | Three inputs still crashed the API with a 500 | none | Payments and API | [explain](docs/bugs/hunt-2.md#h10-three-inputs-still-crashed-the-api-with-a-500) |
-| 97 | H11 | Low | Dead v1 transaction routes with an unauthenticated capture endpoint | none | Payments and API | [explain](docs/bugs/hunt-2.md#h11-dead-v1-transaction-routes-with-an-unauthenticated-capture-endpoint) |
-| 98 | H7 | Low | api_keys.revoke_after is ignored | none | Payments and API | [explain](docs/bugs/hunt-2.md#h7-api_keysrevoke_after-is-ignored) |
-| 99 | H8 | Low | Dead BD parser with the wrong unit | none | Payments and API | [explain](docs/bugs/hunt-2.md#h8-dead-bd-parser-with-the-wrong-unit) |
-| 100 | H9 | Low | No index for releasing a hold | none | Payments and API | [explain](docs/bugs/hunt-2.md#h9-no-index-for-releasing-a-hold) |
-| 101 | U11 | Low | Admin Settlement page default date is two days ago after midnight | R11 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u11-admin-settlement-page-default-date-is-two-days-ago-after-midnight) |
-| 102 | U13 | Low | Admin list cursors give a 500 on a bad cursor | R13 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u13-admin-list-cursors-give-a-500-on-a-bad-cursor) |
-| 103 | U8 | Low | Transaction list date filter uses the UTC day | R8 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u8-transaction-list-date-filter-uses-the-utc-day) |
+| 53 | L5 | High | A payment link cut off by a crash stays reserved forever | INC 05-14 family | Capacity (load test) | [explain](docs/bugs/load.md#l5-a-payment-link-cut-off-by-a-crash-stays-reserved-forever) |
+| 54 | R4 | High | `refunds_enabled = NULL` is treated as enabled | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r4-refunds_enabled--null-is-treated-as-enabled) |
+| 55 | R5 | High | Fee reversal does not add up to the fee charged | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r5-fee-reversal-does-not-add-up-to-the-fee-charged) |
+| 56 | R8 | High | No way to turn refunds on, except raw SQL | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r8-no-way-to-turn-refunds-on-except-raw-sql) |
+| 57 | S2 | High | The Dockerfiles that compose needs are missing | none | Setup (could not start) | [explain](docs/bugs/setup.md#s2-the-dockerfiles-that-compose-needs-are-missing) |
+| 58 | U12 | High | Admin "run batch" accepts today or a future date | R12 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u12-admin-run-batch-accepts-today-or-a-future-date) |
+| 59 | V1 | High | The seed charges every capture the old merchant rate, not the rate in force at that time | venue whiteboard hint | Venue whiteboard clue | [explain](docs/bugs/venue-hint.md#v1-the-seed-charges-every-capture-the-old-merchant-rate-not-the-rate-in-force-at-that-time) |
+| 60 | A10 | Medium | KYC "PDF only" check trusts the filename | none | Auth and admin | [explain](docs/bugs/wave-a.md#a10-kyc-pdf-only-check-trusts-the-filename) |
+| 61 | A11 | Medium | Bulk KYC approve ignores status and writes no review rows | none | Auth and admin | [explain](docs/bugs/wave-a.md#a11-bulk-kyc-approve-ignores-status-and-writes-no-review-rows) |
+| 62 | A13 | Medium | A disabled admin keeps their "view as merchant" grant | none | Auth and admin | [explain](docs/bugs/wave-a.md#a13-a-disabled-admin-keeps-their-view-as-merchant-grant) |
+| 63 | B7 | Medium | Capture idempotency ignores which transaction is captured | none | Payments and links | [explain](docs/bugs/wave-b.md#b7-capture-idempotency-ignores-which-transaction-is-captured) |
+| 64 | B8 | Medium | CSV formula injection in the transactions export | none | Payments and links | [explain](docs/bugs/wave-b.md#b8-csv-formula-injection-in-the-transactions-export) |
+| 65 | C10 | Medium | `rebuild-balances --merchant=X` never writes, and the full rebuild races CloseBatch/PayoutBatch | HANDOVER | Settlement money (Go) | [explain](docs/bugs/wave-c.md#c10-rebuild-balances---merchantx-never-writes-and-the-full-rebuild-races-closebatchpayoutbatch) |
+| 66 | C11 | Medium | Lifetime payout estimate drifts (float32 into a REAL column) | ops monitoring | Settlement money (Go) | [explain](docs/bugs/wave-c.md#c11-lifetime-payout-estimate-drifts-float32-into-a-real-column) |
+| 67 | C9 | Medium | Scheme rounding residue is never journaled | ADR-0002 | Settlement money (Go) | [explain](docs/bugs/wave-c.md#c9-scheme-rounding-residue-is-never-journaled) |
+| 68 | D10 | Medium | Reporting consumer is stopped by poison events (null merchant_id, missing rollup row) | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d10-reporting-consumer-is-stopped-by-poison-events-null-merchant_id-missing-rollup-row) |
+| 69 | D11 | Medium | Replays mint a new Webhook-Delivery-Id; batch replay resends succeeded deliveries | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d11-replays-mint-a-new-webhook-delivery-id-batch-replay-resends-succeeded-deliveries) |
+| 70 | D12 | Medium | Dev fallback webhook encryption key is 34 bytes, so the API cannot boot in dev | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d12-dev-fallback-webhook-encryption-key-is-34-bytes-so-the-api-cannot-boot-in-dev) |
+| 71 | D14 | Medium | Deleting a webhook endpoint with history crashes with a 500 | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d14-deleting-a-webhook-endpoint-with-history-crashes-with-a-500) |
+| 72 | D16 | Medium | Reconciliation estimates pending fees at the wrong rate, with float rounding | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d16-reconciliation-estimates-pending-fees-at-the-wrong-rate-with-float-rounding) |
+| 73 | D17 | Medium | Reports show gross only and leave out refunds | FP-300 | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d17-reports-show-gross-only-and-leave-out-refunds) |
+| 74 | D9 | Medium | Flaky backoff test: "failing endpoint: backoff/exhaustion ..." | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d9-flaky-backoff-test-failing-endpoint-backoffexhaustion-) |
+| 75 | E4 | Medium | Ledger can be edited or wiped without error | E4 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e4-ledger-can-be-edited-or-wiped-without-error) |
+| 76 | E5 | Medium | "Adjust balance" changes only the cached balance, not the ledger | E5 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e5-adjust-balance-changes-only-the-cached-balance-not-the-ledger) |
+| 77 | E6 | Medium | Refund summary view joins the wrong column and double counts captures | E6 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e6-refund-summary-view-joins-the-wrong-column-and-double-counts-captures) |
+| 78 | G11 | Medium | A late capture or refund makes two days fail reconciliation | none | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g11-a-late-capture-or-refund-makes-two-days-fail-reconciliation) |
+| 79 | G4 | Medium | merchant_balances drifts after every rebuild | none | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g4-merchant_balances-drifts-after-every-rebuild) |
+| 80 | H3 | Medium | Bad input gives a 500, not a 400 | none | Payments and API | [explain](docs/bugs/hunt-2.md#h3-bad-input-gives-a-500-not-a-400) |
+| 81 | H5 | Medium | KYC image decompression bomb | none | Payments and API | [explain](docs/bugs/hunt-2.md#h5-kyc-image-decompression-bomb) |
+| 82 | H6 | Medium | KYC upload takes many files and leaves orphan files | none | Payments and API | [explain](docs/bugs/hunt-2.md#h6-kyc-upload-takes-many-files-and-leaves-orphan-files) |
+| 83 | H12 | Medium | An expired card is approved | none | Payments and API | [explain](docs/bugs/hunt-2.md#h12-an-expired-card-is-approved) |
+| 84 | L2 | Medium | Every API-key request writes the same database row | none | Capacity (load test) | [explain](docs/bugs/load.md#l2-every-api-key-request-writes-the-same-database-row) |
+| 85 | L4 | Medium | The bank simulator's memory grows without limit | none | Capacity (load test) | [explain](docs/bugs/load.md#l4-the-bank-simulators-memory-grows-without-limit) |
+| 86 | R6 | Medium | A partial capture that is fully refunded never shows `refunded` | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r6-a-partial-capture-that-is-fully-refunded-never-shows-refunded) |
+| 87 | S3 | Medium | The stack starts in the wrong order | none | Setup (could not start) | [explain](docs/bugs/setup.md#s3-the-stack-starts-in-the-wrong-order) |
+| 88 | U5 | Medium | Admin "Rebuild analytics" counts events twice | R5 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u5-admin-rebuild-analytics-counts-events-twice) |
+| 89 | U6 | Medium | Payout trend stays "closed" after the batch is paid | R6 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u6-payout-trend-stays-closed-after-the-batch-is-paid) |
+| 90 | U7 | Medium | Merchants are logged out 10 minutes after login | R7 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u7-merchants-are-logged-out-10-minutes-after-login) |
+| 91 | V2 | Medium | Capture picks the fee rate by the API server's clock, not the database clock | venue whiteboard hint | Venue whiteboard clue | [explain](docs/bugs/venue-hint.md#v2-capture-picks-the-fee-rate-by-the-api-servers-clock-not-the-database-clock) |
+| 92 | V3 | Medium | An admin credit reverses the fee at the old merchant rate, not the rate in force | found while checking the admin console | Venue whiteboard clue | [explain](docs/bugs/venue-hint.md#v3-an-admin-credit-reverses-the-fee-at-the-old-merchant-rate-not-the-rate-in-force) |
+| 93 | B9 | Low | Ops docs say the settlement daemon falls back to `dev-token` | none | Payments and links | [explain](docs/bugs/wave-b.md#b9-ops-docs-say-the-settlement-daemon-falls-back-to-dev-token) |
+| 94 | D13 | Low | Report export summary had no login check | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d13-report-export-summary-had-no-login-check) |
+| 95 | E7 | Low | Dashboard crashes on a negative amount | E7 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e7-dashboard-crashes-on-a-negative-amount) |
+| 96 | G10 | Low | Bad daemon timing values crash or stall the daemon | none | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g10-bad-daemon-timing-values-crash-or-stall-the-daemon) |
+| 97 | G9 | Low | Batch event lookups scan the whole transaction_events table | none | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g9-batch-event-lookups-scan-the-whole-transaction_events-table) |
+| 98 | H10 | Low | Three inputs still crashed the API with a 500 | none | Payments and API | [explain](docs/bugs/hunt-2.md#h10-three-inputs-still-crashed-the-api-with-a-500) |
+| 99 | H11 | Low | Dead v1 transaction routes with an unauthenticated capture endpoint | none | Payments and API | [explain](docs/bugs/hunt-2.md#h11-dead-v1-transaction-routes-with-an-unauthenticated-capture-endpoint) |
+| 100 | H7 | Low | api_keys.revoke_after is ignored | none | Payments and API | [explain](docs/bugs/hunt-2.md#h7-api_keysrevoke_after-is-ignored) |
+| 101 | H8 | Low | Dead BD parser with the wrong unit | none | Payments and API | [explain](docs/bugs/hunt-2.md#h8-dead-bd-parser-with-the-wrong-unit) |
+| 102 | H9 | Low | No index for releasing a hold | none | Payments and API | [explain](docs/bugs/hunt-2.md#h9-no-index-for-releasing-a-hold) |
+| 103 | U11 | Low | Admin Settlement page default date is two days ago after midnight | R11 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u11-admin-settlement-page-default-date-is-two-days-ago-after-midnight) |
+| 104 | U13 | Low | Admin list cursors give a 500 on a bad cursor | R13 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u13-admin-list-cursors-give-a-500-on-a-bad-cursor) |
+| 105 | U8 | Low | Transaction list date filter uses the UTC day | R8 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u8-transaction-list-date-filter-uses-the-utc-day) |

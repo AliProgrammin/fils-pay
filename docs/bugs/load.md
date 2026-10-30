@@ -67,3 +67,24 @@ Found while load testing the production stack with the hosting limits
 **Fix:** Each map keeps at most 50,000 entries and drops the oldest first.
 
 **Test:** No unit test. In the 120-user load run the API used 102 MB of its 512 MB (CAPACITY.md).
+
+### L5 A payment link cut off by a crash stays reserved forever
+
+- **Severity:** High
+- **Ticket:** INC 05-14 family (payment links); found by the crash test on the live server
+- **Where:** `apps/api/src/paymentLinks/pay.ts`; new `apps/api/src/paymentLinks/recovery.ts`, started in `apps/api/src/index.ts`; new `db/migrations/0094_payment_links_reserved_idx.sql`
+
+**What is wrong:** If the API stops after a payment link's authorization is bound to the link, and the customer does not retry with the same `Idempotency-Key`, the link stays "reserved" for ever. A comment in `pay.ts` said such a link "is freed by voiding that authorization", but no code did that.
+
+**Why it happens:** Once an authorization is bound, the 60 s reservation timeout no longer applies (so a slow capture is never overtaken, incident 05-14). L3 lets the same payer finish the payment, but nothing handles the case where nobody retries.
+
+**What it breaks:** In the live crash test (200 users, `kill -9` of the API), 40 links stayed stuck: 5 with a captured transaction (the customer paid, but the link never shows paid) and 35 with a card hold nobody releases (and no other customer can pay the link).
+
+**Fix:** A recovery sweep runs in the API process, once at boot and every 30 s (`PAYMENT_LINK_RECOVERY_INTERVAL_MS`):
+1. Bound transaction fully captured: mark the link paid with the same conditional update as the live finalize step (`finalizePaidLink`, now shared). A live request that finalizes second still answers 200 paid.
+2. Bound transaction still authorized and the reservation older than the grace period (`PAYMENT_LINK_RECOVERY_GRACE_SECONDS`, default 300 s, far above a normal payment): void it through the normal `voidTransaction` (hold released, `voided` event, `transaction.voided` webhook), then release the link to active.
+3. Bound transaction already voided: release the link.
+
+A live request is never overtaken: the void takes the transaction row lock (a running capture holds it, and then the void answers 409 and the next pass marks the link paid), and the release only matches while `reserved_at` is unchanged. Migration `0094` adds a partial index on reserved links, so the sweep does not scan every link. No API path, body or response changed.
+
+**Test:** `apps/api/src/paymentLinks/recovery.test.ts`: each stuck state (captured, old authorization, voided) is fixed by one pass; a fresh bound reservation is not touched; a second pass changes nothing (one `voided` event, one outbox event); a link reserved with no authorization frees itself after the 60 s timeout. 4 of the 6 tests failed on the old code (no sweep).

@@ -47,8 +47,9 @@ interface LinkStatusRow {
  * the timeout no longer applies: a slow capture must not be overtaken
  * (incident 2026-05-14). A payment cut off past the bind (crash, restart)
  * completes when the same payer retries with the same Idempotency-Key
- * (resumeBoundPayment); if nobody retries, the link is freed by voiding
- * that authorization.
+ * (resumeBoundPayment); if nobody retries, the recovery sweep
+ * (recovery.ts, L5) marks it paid if the capture ran, or voids the
+ * authorization and frees the link after a grace period.
  */
 export async function payPaymentLink(
   pool: Pool,
@@ -197,22 +198,10 @@ async function captureAndFinalize(
 
   // Step 4 — finalize. Keyed on our own bound transaction, not just
   // 'reserved', so it can only ever finalize the payment that was bound.
-  const finalizeResult = await pool.query<{
-    id: string;
-    paid_at: Date;
-  }>(
-    `UPDATE payment_links
-        SET status = 'paid', paid_at = now(), transaction_id = $2, reserved_at = NULL,
-            pending_transaction_id = NULL
-      WHERE id = $1 AND status = 'reserved' AND pending_transaction_id = $2
-      RETURNING id, paid_at`,
-    [link.id, txnId],
-  );
-
-  let finalized = finalizeResult.rows[0];
+  let finalized = await finalizePaidLink(pool, link.id, txnId);
   if (!finalized) {
-    // A concurrent same-key request (resumeBoundPayment) finalized this very
-    // payment first: same answer, not an error.
+    // A concurrent same-key request (resumeBoundPayment) or the recovery
+    // sweep finalized this very payment first: same answer, not an error.
     const paid = await pool.query<{ id: string; paid_at: Date }>(
       `SELECT id, paid_at FROM payment_links WHERE id = $1 AND status = 'paid' AND transaction_id = $2`,
       [link.id, txnId],
@@ -284,15 +273,37 @@ async function resumeBoundPayment(
 }
 
 /**
- * Used by both decline branches above. Guarded by this request's own claim
+ * Step 4: mark the link paid by its own bound, captured transaction. Keyed
+ * on pending_transaction_id, so it only ever finalizes the payment that was
+ * bound, and a second call (live request or recovery sweep) matches 0 rows.
+ */
+export async function finalizePaidLink(
+  pool: Pool,
+  linkId: string,
+  txnId: string,
+): Promise<{ id: string; paid_at: Date } | undefined> {
+  const result = await pool.query<{ id: string; paid_at: Date }>(
+    `UPDATE payment_links
+        SET status = 'paid', paid_at = now(), transaction_id = $2, reserved_at = NULL,
+            pending_transaction_id = NULL
+      WHERE id = $1 AND status = 'reserved' AND pending_transaction_id = $2
+      RETURNING id, paid_at`,
+    [linkId, txnId],
+  );
+  return result.rows[0];
+}
+
+/**
+ * Used by both decline branches above and by the recovery sweep. Guarded by this request's own claim
  * (`reserved_at`), so it never releases a reservation another payer holds.
  */
-async function releaseReservation(pool: Pool, linkId: string, reservation: string): Promise<void> {
-  await pool.query(
+export async function releaseReservation(pool: Pool, linkId: string, reservation: string): Promise<boolean> {
+  const result = await pool.query(
     `UPDATE payment_links SET status = 'active', reserved_at = NULL, pending_transaction_id = NULL
       WHERE id = $1 AND status = 'reserved' AND reserved_at = $2::timestamptz`,
     [linkId, reservation],
   );
+  return result.rowCount === 1;
 }
 
 /**

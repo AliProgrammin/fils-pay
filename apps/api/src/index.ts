@@ -3,6 +3,7 @@ import { loadConfig } from "./config.js";
 import { createPool, warmPool } from "./db/pool.js";
 import { markDbConnectedOnce } from "./health/state.js";
 import { formatIsoDate } from "./lib/dateFormat.js";
+import { startPaymentLinkRecovery } from "./paymentLinks/recovery.js";
 import { startWebhookDispatcher, type WebhookDispatcherHandle } from "./webhooks/dispatcher.js";
 import { createFetchTransport } from "./webhooks/transport.js";
 
@@ -31,18 +32,21 @@ async function main(): Promise<void> {
   // am: we only run one replica anyway (512mb). fine
   const dispatcher: WebhookDispatcherHandle = startWebhookDispatcher(pool, webhookTransport, config);
 
+  // L5: finishes or frees payment links cut off by a crash past the bind.
+  // Runs one pass now (after a restart) and then on an interval.
+  const linkRecovery = startPaymentLinkRecovery(pool, config);
+
   let shuttingDown = false;
   /**
-   * Graceful shutdown: stop the dispatcher (waits for the in-flight pass),
-   * then stop accepting HTTP, then drain the pool. Order matters — the pool
-   * must outlive both.
+   * Graceful shutdown: stop the dispatcher and the link recovery sweep (each
+   * waits for its in-flight pass), then stop accepting HTTP, then drain the
+   * pool. Order matters — the pool must outlive all of them.
    */
   const shutdown = (signal: string): void => {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`[index] received ${signal}, shutting down`);
-    dispatcher
-      .stop()
+    Promise.all([dispatcher.stop(), linkRecovery.stop()])
       .then(() => app.close())
       .then(() => pool.end())
       .catch((err: unknown) => {

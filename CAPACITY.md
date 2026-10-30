@@ -67,8 +67,8 @@ Where each test ran:
 |---|---|
 | Capacity estimate, 30 to 120 users ("Live server" above) | Live server |
 | Capacity steps on a laptop ("Results on a laptop" below) | Laptop, same Docker limits |
-| Overload, 400 users | Laptop, same Docker limits (not yet repeated on the live server) |
-| Crash and recovery (`SIGKILL` of the api) | Laptop, same Docker limits (not yet repeated on the live server) |
+| Overload, 400 users | Laptop, same Docker limits (live server: 200 users, in the crash test) |
+| Crash and recovery (`SIGKILL` of the api) | Laptop, same Docker limits, and live server (done) |
 
 Sizing that matters:
 
@@ -235,6 +235,31 @@ the Docker host, not with `docker stop`.
   `apps/api/src/routes/paymentLinks.resume.test.ts`). Before this fix, the
   same test left 55 links reserved with a live authorization, 6 of them
   already captured.
+
+### Crash test on the live server
+
+200-user overload from a laptop against https://64-227-145-174.sslip.io;
+`kill -9` of the api process at about 60 s.
+
+- Docker restarted the api. It was healthy again **8 s** after the kill
+  (restart count 1).
+- Database check after the test: 0 unbalanced ledger groups, ledger net
+  0 fils, 0 double charges, 0 transactions captured twice. Transactions,
+  captures and ledger agree.
+- 59 links were caught mid-payment at the kill:
+  - 19 reserved with no transaction: they free themselves after the 60 s
+    reservation timeout (checked by a test).
+  - 35 reserved with an authorization that nobody captured: a card hold
+    that nobody released, and nobody else could pay the link.
+  - 5 reserved with a captured transaction: the customer paid, but the
+    link never showed paid.
+- The last two groups stayed stuck unless the same customer retried with
+  the same `Idempotency-Key` (bug [L5](docs/bugs/load.md#l5-a-payment-link-cut-off-by-a-crash-stays-reserved-forever)).
+  Fix: a recovery sweep in the api process
+  (`apps/api/src/paymentLinks/recovery.ts`), once at boot and every 30 s,
+  marks a link paid when its payment was captured, and voids the
+  authorization and frees the link when it is older than 5 minutes. So
+  after a restart all 40 links are resolved within about 5 minutes.
 
 Postgres commits each payment in one transaction with the ledger rows, so a
 crash leaves either the whole payment or none of it. Its data is on the

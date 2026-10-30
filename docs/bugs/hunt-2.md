@@ -116,3 +116,13 @@
 - What it breaks: Nothing today. But it was one import away from an unauthenticated, unscoped capture of any merchant's transaction, with the wrong fee. The handover note invited the next developer to wire it up for "a partner".
 - Fix: Removed `apps/api/src/v1/` and the comment in `app.ts` that pointed at it. No live route, path, body or response changed.
 - Test: `npm run typecheck` passes; `git grep -n "transactionRoutesV1\|calculateMdrFeeV1"` finds nothing; the full API suite passes with the same routes as before (`apps/api/src/app.ts` unchanged except the comment).
+
+### H12 An expired card is approved
+- Severity: Medium
+- Ticket: none (found in the final card-handling review)
+- Where: apps/api/src/acquirer/simulator.ts (`isExpired`, used by `authorize`)
+- What is wrong: `POST /v1/transactions` and the public payment-link pay route approved a card whose expiry date was in the past.
+- Why it happens: the simulated acquirer chose the outcome from the magic test numbers and the failure-rate roll only. It never read `expiryMonth` or `expiryYear`.
+- What it breaks: payments on expired cards are approved and captured, which a real bank refuses. Merchants see a payment that would fail in production.
+- Fix: an expired card is declined as the bank would: 402 `card_declined` with `declineReason: "card_expired"`. A card is valid through the last day of its expiry month on the Asia/Bahrain calendar and the server clock; a 2-digit year means 20YY. Magic test numbers keep priority, and input with no valid month or year is not judged, so every card shape the original API accepted keeps its answer (other teams' tests rely on it). On a payment link, the decline releases the link, which stays payable.
+- Test: apps/api/src/routes/cardValidation.fix.test.ts (expired declined, 2-digit year, magic cards, old shapes still approved, link stays payable); apps/api/src/acquirer/simulator.test.ts ("an expired card is declined as card_expired regardless of the failure-rate roll")
