@@ -17,17 +17,20 @@ const LAST_USED_RESOLUTION_SECONDS = 60;
  *  endpoints. */
 // revoked_at: an instant revoke. revoke_after: a scheduled revoke (staged
 // rotation, migration 0056). No sweep job sets revoked_at for it, so the
-// time is checked here.
+// time is checked here. A suspended or closed merchant's keys stop working
+// (W3), the same rule login applies.
 export async function verifyApiKey(pool: Pool, rawKey: string): Promise<ApiKeyContext | null> {
   const keyHash = sha256Hex(rawKey);
   const result = await pool.query<{ id: string; merchant_id: string; last_used_stale: boolean }>(
-    `SELECT id, merchant_id,
-            (last_used_at IS NULL OR last_used_at < now() - interval '${LAST_USED_RESOLUTION_SECONDS} seconds')
+    `SELECT ak.id, ak.merchant_id,
+            (ak.last_used_at IS NULL OR ak.last_used_at < now() - interval '${LAST_USED_RESOLUTION_SECONDS} seconds')
               AS last_used_stale
-       FROM api_keys
-      WHERE key_hash = $1
-        AND revoked_at IS NULL
-        AND (revoke_after IS NULL OR revoke_after > now())`,
+       FROM api_keys ak
+       JOIN merchants m ON m.id = ak.merchant_id
+      WHERE ak.key_hash = $1
+        AND ak.revoked_at IS NULL
+        AND (ak.revoke_after IS NULL OR ak.revoke_after > now())
+        AND m.status = 'active'`,
     [keyHash],
   );
   const row = result.rows[0];
