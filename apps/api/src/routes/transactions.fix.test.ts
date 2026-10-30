@@ -124,3 +124,120 @@ test("H2: a support session cannot capture or void (403); owner and finance sess
   });
   assert.equal(keyCap.statusCode, 200, keyCap.body);
 });
+
+// H3: bad client input must be a 400, never a 500.
+const b64 = (s: string) => Buffer.from(s, "utf8").toString("base64url");
+
+test("H3: transactions list rejects a bad from/to/limit/cursor with 400", async () => {
+  const m = await createMerchant();
+  const bad = [
+    "from=garbage",
+    "to=garbage",
+    "limit=abc",
+    `cursor=${b64("x|y")}`,
+    `cursor=${b64(`2026-13-40 00:00:00+00|${randomUUID()}`)}`,
+    `cursor=${b64("2026-10-30 10:00:00.123456+00|not-a-uuid")}`,
+    "cursor=nonsense",
+  ];
+  for (const qs of bad) {
+    const res = await app.inject({ method: "GET", url: `/v1/transactions?${qs}`, headers: m.bearer });
+    assert.equal(res.statusCode, 400, `${qs}: ${res.body}`);
+    assert.equal(res.json().error, "invalid_request", qs);
+  }
+});
+
+test("H3: transactions list still pages with a real cursor and clamps numeric limits", async () => {
+  const m = await createMerchant();
+  for (let i = 0; i < 3; i++) await authorize(m.bearer, 100 + i);
+  const p1 = await app.inject({ method: "GET", url: "/v1/transactions?limit=2", headers: m.bearer });
+  assert.equal(p1.statusCode, 200, p1.body);
+  assert.equal(p1.json().transactions.length, 2);
+  const p2 = await app.inject({
+    method: "GET",
+    url: `/v1/transactions?limit=2&cursor=${p1.json().nextCursor}`,
+    headers: m.bearer,
+  });
+  assert.equal(p2.statusCode, 200, p2.body);
+  assert.equal(p2.json().transactions.length, 1);
+  const zero = await app.inject({ method: "GET", url: "/v1/transactions?limit=0", headers: m.bearer });
+  assert.equal(zero.statusCode, 200, zero.body);
+  assert.equal(zero.json().transactions.length, 1);
+  const ranged = await app.inject({
+    method: "GET",
+    url: `/v1/transactions?from=2020-01-01T00:00:00Z&to=${new Date(Date.now() + 60_000).toISOString()}`,
+    headers: m.bearer,
+  });
+  assert.equal(ranged.statusCode, 200, ranged.body);
+  assert.equal(ranged.json().transactions.length, 3);
+});
+
+test("H3: a non-UUID transaction id is a 400 on every /:id route", async () => {
+  const m = await createMerchant();
+  for (const [method, url] of [
+    ["GET", "/v1/transactions/abc"],
+    ["GET", "/v1/transactions/abc/events"],
+    ["POST", "/v1/transactions/abc/capture"],
+    ["POST", "/v1/transactions/abc/void"],
+  ] as const) {
+    const res = await app.inject({
+      method,
+      url,
+      headers: { ...m.bearer, "idempotency-key": randomUUID() },
+      ...(method === "POST" ? { payload: {} } : {}),
+    });
+    assert.equal(res.statusCode, 400, `${method} ${url}: ${res.body}`);
+    assert.equal(res.json().error, "invalid_request");
+  }
+});
+
+test("H3: authorize and capture reject a non-integer, string, zero or negative amountFils with 400", async () => {
+  const m = await createMerchant();
+  for (const amountFils of [1.5, "100", 0, -5]) {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/transactions",
+      headers: { ...m.bearer, "idempotency-key": randomUUID() },
+      payload: { amountFils, card: CARD },
+    });
+    assert.equal(res.statusCode, 400, `authorize ${amountFils}: ${res.body}`);
+    assert.equal(res.json().error, "invalid_amount");
+  }
+
+  const txn = await authorize(m.bearer, 1_000);
+  for (const amountFils of [1.5, "100", 0, -5]) {
+    const res = await app.inject({
+      method: "POST",
+      url: `/v1/transactions/${txn.id}/capture`,
+      headers: { ...m.bearer, "idempotency-key": randomUUID() },
+      payload: { amountFils },
+    });
+    assert.equal(res.statusCode, 400, `capture ${amountFils}: ${res.body}`);
+    assert.equal(res.json().error, "invalid_amount");
+  }
+});
+
+test("H3: payment-link list rejects a bad limit/cursor with 400 and still pages with a real cursor", async () => {
+  const m = await createMerchant();
+  const base = `/v1/merchants/${m.merchantId}/payment-links`;
+  for (const qs of ["limit=abc", `cursor=${b64("x|y")}`, "cursor=nonsense"]) {
+    const res = await app.inject({ method: "GET", url: `${base}?${qs}`, headers: m.bearer });
+    assert.equal(res.statusCode, 400, `${qs}: ${res.body}`);
+    assert.equal(res.json().error, "invalid_request", qs);
+  }
+
+  for (let i = 0; i < 3; i++) {
+    const c = await app.inject({
+      method: "POST",
+      url: base,
+      headers: { ...m.bearer, "idempotency-key": randomUUID() },
+      payload: { amountFils: 500 + i, expiresAt: new Date(Date.now() + 3_600_000).toISOString() },
+    });
+    assert.equal(c.statusCode, 201, c.body);
+  }
+  const p1 = await app.inject({ method: "GET", url: `${base}?limit=2`, headers: m.bearer });
+  assert.equal(p1.statusCode, 200, p1.body);
+  assert.equal(p1.json().paymentLinks.length, 2);
+  const p2 = await app.inject({ method: "GET", url: `${base}?limit=2&cursor=${p1.json().nextCursor}`, headers: m.bearer });
+  assert.equal(p2.statusCode, 200, p2.body);
+  assert.equal(p2.json().paymentLinks.length, 1);
+});

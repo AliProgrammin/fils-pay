@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { decodeKeysetCursor } from "../lib/pagination.js";
 import { serializePaymentLink, type PaymentLinkDto, type PaymentLinkRow } from "./serialize.js";
 
 export interface ListPaymentLinksFilters {
@@ -15,28 +16,6 @@ export interface ListPaymentLinksResult {
 
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
-
-interface DecodedCursor {
-  createdAt: string;
-  id: string;
-}
-
-/** Any malformed cursor decodes to null, which restarts from the first page instead of erroring. */
-function decodeCursor(cursor: string | null | undefined): DecodedCursor | null {
-  if (!cursor) return null;
-  let decoded: string;
-  try {
-    decoded = Buffer.from(cursor, "base64url").toString("utf8");
-  } catch {
-    return null;
-  }
-  const separatorIndex = decoded.indexOf("|");
-  if (separatorIndex === -1) return null;
-  const createdAt = decoded.slice(0, separatorIndex);
-  const id = decoded.slice(separatorIndex + 1);
-  if (!createdAt || !id) return null;
-  return { createdAt, id };
-}
 
 /**
  * Encodes the cursor from Postgres's own text rendering of `created_at`,
@@ -65,7 +44,7 @@ export async function listPaymentLinks(
   // am: limit=0 -> 1? fine
   const limit = Math.min(MAX_LIMIT, Math.max(1, filters.limit ?? DEFAULT_LIMIT));
   const statusArray = filters.status && filters.status.length > 0 ? filters.status : null;
-  const decodedCursor = decodeCursor(filters.cursor);
+  const decodedCursor = decodeKeysetCursor(filters.cursor);
 
   const result = await pool.query<PaymentLinkRow & { created_at_text: string }>(
     `SELECT *, created_at::text AS created_at_text FROM payment_links
@@ -74,7 +53,7 @@ export async function listPaymentLinks(
         AND ($3::timestamptz IS NULL OR (created_at, id) < ($3, $4))
       ORDER BY created_at DESC, id DESC
       LIMIT $5`,
-    [filters.merchantId, statusArray, decodedCursor?.createdAt ?? null, decodedCursor?.id ?? null, limit],
+    [filters.merchantId, statusArray, decodedCursor?.timestamp ?? null, decodedCursor?.id ?? null, limit],
   );
 
   const paymentLinks = result.rows.map((row) => serializePaymentLink(row, config.checkoutBaseUrl));

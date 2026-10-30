@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { decodeKeysetCursor } from "../lib/pagination.js";
 import { serializeTransaction, type TransactionDto, type TransactionRow } from "./serialize.js";
 
 // Tried caching this list behind Redis (ioredis), keyed on
@@ -44,28 +45,6 @@ export interface ListTransactionsResult {
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
 
-interface DecodedCursor {
-  occurredAt: string;
-  id: string;
-}
-
-/** Cursor = base64url("<occurred_at as printed by Postgres>|<id>"); see encodeCursor. */
-function decodeCursor(cursor: string | null | undefined): DecodedCursor | null {
-  if (!cursor) return null;
-  let decoded: string;
-  try {
-    decoded = Buffer.from(cursor, "base64url").toString("utf8");
-  } catch {
-    return null;
-  }
-  const separatorIndex = decoded.indexOf("|");
-  if (separatorIndex === -1) return null;
-  const occurredAt = decoded.slice(0, separatorIndex);
-  const id = decoded.slice(separatorIndex + 1);
-  if (!occurredAt || !id) return null;
-  return { occurredAt, id };
-}
-
 /**
  * Encodes the cursor from Postgres's own text rendering of `occurred_at`,
  * never `Date.toISOString()` (millisecond precision) — `timestamptz` has
@@ -100,7 +79,7 @@ function encodeCursor(occurredAtText: string, id: string): string {
 export async function listTransactions(pool: Pool, filters: ListTransactionsFilters): Promise<ListTransactionsResult> {
   const limit = Math.min(MAX_LIMIT, Math.max(1, filters.limit ?? DEFAULT_LIMIT));
   const statusArray = filters.status && filters.status.length > 0 ? filters.status : null;
-  const decodedCursor = decodeCursor(filters.cursor);
+  const decodedCursor = decodeKeysetCursor(filters.cursor);
 
   const result = await pool.query<TransactionRow & { occurred_at_text: string }>(
     `SELECT *, occurred_at::text AS occurred_at_text FROM transactions
@@ -120,7 +99,7 @@ export async function listTransactions(pool: Pool, filters: ListTransactionsFilt
       filters.from ?? null,
       filters.to ?? null,
       filters.search ?? null,
-      decodedCursor?.occurredAt ?? null,
+      decodedCursor?.timestamp ?? null,
       decodedCursor?.id ?? null,
       limit,
     ],

@@ -14,17 +14,19 @@ import { voidTransaction } from "../payments/void.js";
 import { streamTransactionsExportCsv } from "../transactions/exportCsv.js";
 import { getTransactionById, listTransactions } from "../transactions/query.js";
 import { listTransactionEvents } from "../transactions/events.js";
+import { UUID_RE } from "../admin/merchants.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
+import { parseLimitQuery } from "../lib/pagination.js";
 import type { SimulatedCardInput } from "../acquirer/types.js";
 
 interface AuthorizeBody {
-  amountFils?: number;
+  amountFils?: unknown;
   card?: SimulatedCardInput;
   reference?: string;
 }
 
 interface CaptureBody {
-  amountFils?: number;
+  amountFils?: unknown;
 }
 
 interface TransactionIdParams {
@@ -62,6 +64,32 @@ function getIdempotencyKey(request: FastifyRequest): string {
   return key;
 }
 
+/** Same rule as refunds: a positive integer number of fils, else 400 (toFils would throw a 500). */
+function parseAmountFils(value: unknown): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw new BadRequestError("invalid_amount", "amountFils must be a positive integer number of fils");
+  }
+  return value;
+}
+
+/** A non-UUID id would make Postgres throw (500); reject it up front. */
+function parseTransactionId(id: string): string {
+  if (!UUID_RE.test(id)) {
+    throw new BadRequestError("invalid_request", "id must be a transaction id");
+  }
+  return id;
+}
+
+/** Optional ISO-8601 instant query value; an unparseable one is a 400. */
+function parseInstantQuery(raw: string | undefined, name: string): Date | undefined {
+  if (!raw) return undefined;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    throw new BadRequestError("invalid_request", `${name} must be an ISO-8601 instant`);
+  }
+  return date;
+}
+
 /**
  * Registered with prefix '/v1/transactions'. Endpoint auth: authorize is
  * API-key-only (a server-to-server "charge a
@@ -82,7 +110,7 @@ export async function transactionRoutes(app: FastifyInstance): Promise<void> {
 
       const input: AuthorizeInput = {
         merchantId: request.apiKeyAuth!.merchantId,
-        amountFils: toFils(amountFils),
+        amountFils: toFils(parseAmountFils(amountFils)),
         card,
         reference,
         idempotencyKey,
@@ -100,13 +128,14 @@ export async function transactionRoutes(app: FastifyInstance): Promise<void> {
     "/:id/capture",
     { preHandler: [requireMerchantAuth, requireMerchantRole("owner", "finance")] },
     async (request, reply) => {
+      const transactionId = parseTransactionId(request.params.id);
       const idempotencyKey = getIdempotencyKey(request);
       const { amountFils } = request.body ?? {};
 
       const result = await captureTransaction(app.db, app.acquirer, {
-        transactionId: request.params.id,
+        transactionId,
         merchantId: request.merchantAuth!.merchantId,
-        amountFils: amountFils !== undefined ? toFils(amountFils) : undefined,
+        amountFils: amountFils !== undefined ? toFils(parseAmountFils(amountFils)) : undefined,
         idempotencyKey,
         actor: requireMerchantWriterActor(request.merchantAuth!),
       });
@@ -129,7 +158,7 @@ export async function transactionRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: [requireMerchantAuth, requireMerchantRole("owner", "finance")] },
     async (request, reply) => {
       const result = await voidTransaction(app.db, {
-        transactionId: request.params.id,
+        transactionId: parseTransactionId(request.params.id),
         merchantId: request.merchantAuth!.merchantId,
         actor: requireMerchantWriterActor(request.merchantAuth!),
       });
@@ -143,15 +172,14 @@ export async function transactionRoutes(app: FastifyInstance): Promise<void> {
     async (request) => {
       const q = request.query;
       const status = q.status === undefined ? undefined : Array.isArray(q.status) ? q.status : [q.status];
-      const limit = q.limit !== undefined ? Number.parseInt(q.limit, 10) : undefined;
 
       return listTransactions(app.db, {
         merchantId: request.merchantAuth!.merchantId,
         status,
-        from: q.from ? new Date(q.from) : undefined,
-        to: q.to ? new Date(q.to) : undefined,
+        from: parseInstantQuery(q.from, "from"),
+        to: parseInstantQuery(q.to, "to"),
         search: q.search,
-        limit,
+        limit: parseLimitQuery(q.limit),
         cursor: q.cursor ?? null,
       });
     },
@@ -189,7 +217,7 @@ export async function transactionRoutes(app: FastifyInstance): Promise<void> {
     async (request) => {
       const txn = await getTransactionById(app.db, {
         merchantId: request.merchantAuth!.merchantId,
-        transactionId: request.params.id,
+        transactionId: parseTransactionId(request.params.id),
       });
       if (!txn) {
         throw new NotFoundError("transaction_not_found");
@@ -206,7 +234,7 @@ export async function transactionRoutes(app: FastifyInstance): Promise<void> {
       // (404 if the parent transaction isn't found/owned).
       const txn = await getTransactionById(app.db, {
         merchantId: request.merchantAuth!.merchantId,
-        transactionId: request.params.id,
+        transactionId: parseTransactionId(request.params.id),
       });
       if (!txn) {
         throw new NotFoundError("transaction_not_found");
