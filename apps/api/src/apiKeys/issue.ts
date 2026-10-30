@@ -114,7 +114,9 @@ export async function listApiKeys(pool: Pool, merchantId: string): Promise<ApiKe
     last_used_at: Date | null;
     revoked_at: Date | null;
   }>(
-    `SELECT id, key_prefix, label, created_at, last_used_at, revoked_at
+    // A passed revoke_after is a revocation too (verifyApiKey rejects the key).
+    `SELECT id, key_prefix, label, created_at, last_used_at,
+            COALESCE(revoked_at, CASE WHEN revoke_after <= now() THEN revoke_after END) AS revoked_at
        FROM api_keys
       WHERE merchant_id = $1
       ORDER BY created_at DESC`,
