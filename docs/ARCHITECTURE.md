@@ -68,6 +68,10 @@ a `Webhook-Delivery-Id` and is signed with HMAC-SHA256.
   until the OTP is verified.
 - Merchant-scoped queries take the merchant from the authenticated context.
 - Outbound webhook signatures are HMAC-SHA256 compared in constant time.
+- Acquirer callback signatures are required by default
+  (`ACQUIRER_CALLBACK_REQUIRE_SIGNATURE=true`; it was `false`). The callback
+  route is public and moves transaction state, so an unsigned callback must
+  never be accepted unless an operator turns the check off on purpose (B2).
 - KYC uploads are validated by detected content type (magic bytes).
 
 Payment links are single-use. Expiry is checked against the server's clock
