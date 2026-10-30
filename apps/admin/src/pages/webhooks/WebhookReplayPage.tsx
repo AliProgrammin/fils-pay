@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { getMerchant, listMerchants } from "../../api/merchants.js";
 import { replayBatch } from "../../api/webhooks.js";
-import { errorMessage } from "../../errors.js";
+import { ApiError, errorMessage } from "../../errors.js";
+import { NotFoundPanel } from "../../components/NotFoundPanel.js";
 import { StatusChip } from "../../components/StatusChip.js";
 import { useAction } from "../../components/useAction.js";
 import { useToast } from "../../components/Toast.js";
@@ -13,7 +14,7 @@ import type {
   BatchReplayResult,
   WebhookDeliveryStatus,
 } from "../../types.js";
-import { SEARCH_MAX } from "../../inputRules.js";
+import { isUuid, SEARCH_MAX } from "../../inputRules.js";
 
 /** The only statuses the batch-replay endpoint accepts. */
 const REPLAYABLE_STATUSES: WebhookDeliveryStatus[] = ["exhausted", "failed"];
@@ -39,6 +40,7 @@ export function WebhookReplayPage() {
   const [candidates, setCandidates] = useState<AdminMerchantSummary[]>([]);
   const [searched, setSearched] = useState(false);
   const [detail, setDetail] = useState<AdminMerchantDetail | null>(null);
+  const [notFound, setNotFound] = useState(false);
 
   const [endpointId, setEndpointId] = useState("");
   const [range, setRange] = useState(defaultRange);
@@ -56,13 +58,20 @@ export function WebhookReplayPage() {
       return;
     }
     setError(null);
+    setNotFound(false);
+    // A malformed id can never match a merchant: no request needed.
+    if (!isUuid(merchantId)) {
+      setNotFound(true);
+      return;
+    }
     try {
       const loaded = await getMerchant(merchantId);
       setDetail(loaded);
       const firstActive = (loaded.webhookEndpoints ?? []).find((e) => e.status === "active");
       setEndpointId(firstActive?.id ?? "");
     } catch (err) {
-      setError(errorMessage(err));
+      if (err instanceof ApiError && err.statusCode === 404) setNotFound(true);
+      else setError(errorMessage(err));
     }
   }, [merchantId]);
 
@@ -177,6 +186,17 @@ export function WebhookReplayPage() {
     );
   }
 
+  if (notFound) {
+    return (
+      <NotFoundPanel
+        title="Merchant not found"
+        text="No merchant has this id. The link may be old or mistyped. Nothing was replayed."
+        backTo="/webhooks"
+        backLabel="Pick a different merchant"
+      />
+    );
+  }
+
   const endpoints = detail?.webhookEndpoints ?? [];
   const nowValue = toBahrainInputValue(new Date());
 
@@ -208,89 +228,91 @@ export function WebhookReplayPage() {
         <p className="admin-empty">This merchant has no webhook endpoints registered.</p>
       ) : null}
 
-      <div className="admin-panel">
-        <div className="admin-panel-head">
-          <h2>Replay deliveries</h2>
-          <span className="admin-danger-tag">Resends events</span>
-        </div>
-        <p className="admin-muted">
-          Replays keep the original <code>Webhook-Delivery-Id</code>, so the receiver can drop
-          duplicates. Times are Bahrain time.
-        </p>
-        <form className="admin-form" onSubmit={(e) => void handleReplay(e)}>
-          <label>
-            Endpoint
-            <select value={endpointId} onChange={(e) => setEndpointId(e.target.value)} required>
-              <option value="" disabled>
-                Select an endpoint
-              </option>
-              {endpoints.map((endpoint) => (
-                <option key={endpoint.id} value={endpoint.id}>
-                  {endpoint.url} ({endpoint.status}, since {formatDate(endpoint.createdAt)})
+      {detail && endpoints.length > 0 ? (
+        <div className="admin-panel">
+          <div className="admin-panel-head">
+            <h2>Replay deliveries</h2>
+            <span className="admin-danger-tag">Resends events</span>
+          </div>
+          <p className="admin-muted">
+            Replays keep the original <code>Webhook-Delivery-Id</code>, so the receiver can drop
+            duplicates. Times are Bahrain time.
+          </p>
+          <form className="admin-form" onSubmit={(e) => void handleReplay(e)}>
+            <label>
+              Endpoint
+              <select value={endpointId} onChange={(e) => setEndpointId(e.target.value)} required>
+                <option value="" disabled>
+                  Select an endpoint
                 </option>
-              ))}
-            </select>
-          </label>
-          <div className="admin-form admin-form-row admin-form-nested">
-            <label>
-              From (Bahrain time)
-              <input
-                type="datetime-local"
-                required
-                max={nowValue}
-                aria-invalid={replayRangeError ? true : undefined}
-                aria-describedby={replayRangeError ? "replay-range-error" : undefined}
-                value={range.from}
-                onChange={(e) => setRange({ ...range, from: e.target.value })}
-              />
+                {endpoints.map((endpoint) => (
+                  <option key={endpoint.id} value={endpoint.id}>
+                    {endpoint.url} ({endpoint.status}, since {formatDate(endpoint.createdAt)})
+                  </option>
+                ))}
+              </select>
             </label>
-            <label>
-              To (Bahrain time)
-              <input
-                type="datetime-local"
-                required
-                min={range.from || undefined}
-                max={nowValue}
-                aria-invalid={replayRangeError ? true : undefined}
-                aria-describedby={replayRangeError ? "replay-range-error" : undefined}
-                value={range.to}
-                onChange={(e) => setRange({ ...range, to: e.target.value })}
-              />
-            </label>
-            {replayRangeError ? (
-              <p className="admin-field-error" id="replay-range-error" role="alert">
-                {replayRangeError}
-              </p>
-            ) : null}
-          </div>
-          <fieldset className="admin-filters">
-            <legend>Delivery statuses to replay</legend>
-            {REPLAYABLE_STATUSES.map((status) => (
-              <label key={status}>
+            <div className="admin-form admin-form-row admin-form-nested">
+              <label>
+                From (Bahrain time)
                 <input
-                  type="checkbox"
-                  checked={statuses.includes(status)}
-                  onChange={() => toggleStatus(status)}
+                  type="datetime-local"
+                  required
+                  max={nowValue}
+                  aria-invalid={replayRangeError ? true : undefined}
+                  aria-describedby={replayRangeError ? "replay-range-error" : undefined}
+                  value={range.from}
+                  onChange={(e) => setRange({ ...range, from: e.target.value })}
                 />
-                {status === "exhausted" ? "exhausted (stopped retrying)" : status}
               </label>
-            ))}
-            <p className="admin-muted">
-              Only deliveries that did not reach the merchant can be replayed. &ldquo;Exhausted&rdquo;
-              means every retry failed and FilsPay stopped trying; this is the usual choice.
-            </p>
-          </fieldset>
-          <div>
-            <button
-              type="submit"
-              className="admin-btn-primary"
-              disabled={busy || !endpointId || replayRangeError !== null}
-            >
-              {busy ? "Replaying…" : "Replay batch"}
-            </button>
-          </div>
-        </form>
-      </div>
+              <label>
+                To (Bahrain time)
+                <input
+                  type="datetime-local"
+                  required
+                  min={range.from || undefined}
+                  max={nowValue}
+                  aria-invalid={replayRangeError ? true : undefined}
+                  aria-describedby={replayRangeError ? "replay-range-error" : undefined}
+                  value={range.to}
+                  onChange={(e) => setRange({ ...range, to: e.target.value })}
+                />
+              </label>
+              {replayRangeError ? (
+                <p className="admin-field-error" id="replay-range-error" role="alert">
+                  {replayRangeError}
+                </p>
+              ) : null}
+            </div>
+            <fieldset className="admin-filters">
+              <legend>Delivery statuses to replay</legend>
+              {REPLAYABLE_STATUSES.map((status) => (
+                <label key={status}>
+                  <input
+                    type="checkbox"
+                    checked={statuses.includes(status)}
+                    onChange={() => toggleStatus(status)}
+                  />
+                  {status === "exhausted" ? "exhausted (stopped retrying)" : status}
+                </label>
+              ))}
+              <p className="admin-muted">
+                Only deliveries that did not reach the merchant can be replayed. &ldquo;Exhausted&rdquo;
+                means every retry failed and FilsPay stopped trying; this is the usual choice.
+              </p>
+            </fieldset>
+            <div>
+              <button
+                type="submit"
+                className="admin-btn-primary"
+                disabled={busy || !endpointId || replayRangeError !== null}
+              >
+                {busy ? "Replaying…" : "Replay batch"}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
 
       {result ? (
         <div className="admin-notice" role="status">

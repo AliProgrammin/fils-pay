@@ -1,21 +1,15 @@
-import { isRouteErrorResponse, Link, useRouteError } from "react-router-dom";
+import { isRouteErrorResponse, useRouteError } from "react-router-dom";
+import { NotFoundPanel } from "../components/NotFoundPanel.js";
 
 /** Unknown admin path, shown inside the console shell. */
 export function NotFoundPage() {
   return (
-    <div className="admin-oops">
-      <div className="admin-panel">
-        <p className="admin-kicker">Case file not found</p>
-        <p className="admin-oops-code" aria-hidden="true">404</p>
-        <h1>No page at this address</h1>
-        <p className="admin-muted">
-          The link may be old or mistyped. Nothing was changed.
-        </p>
-        <p className="admin-actions">
-          <Link to="/merchants">Go to merchants</Link>
-        </p>
-      </div>
-    </div>
+    <NotFoundPanel
+      title="No page at this address"
+      text="The link may be old or mistyped. Nothing was changed."
+      backTo="/merchants"
+      backLabel="Go to merchants"
+    />
   );
 }
 

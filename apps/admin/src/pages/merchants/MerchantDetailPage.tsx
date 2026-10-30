@@ -6,11 +6,12 @@ import { issueCredit } from "../../api/credits.js";
 import { rotateApiKey } from "../../api/apiKeys.js";
 import { startImpersonation } from "../../api/impersonation.js";
 import { WEB_BASE_URL } from "../../api/client.js";
-import { errorMessage } from "../../errors.js";
+import { ApiError, errorMessage } from "../../errors.js";
 import { useAdminAuth } from "../../auth/AdminAuthContext.js";
 import { RequireRole } from "../../auth/RequireRole.js";
 import { StatusChip } from "../../components/StatusChip.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
+import { NotFoundPanel } from "../../components/NotFoundPanel.js";
 import {
   bahrainTodayIso,
   bhd,
@@ -30,6 +31,7 @@ import {
   CREDIT_MEMO_MAX,
   filterAmountInput,
   formatAmountText,
+  isUuid,
   KEY_LABEL_MAX,
   KYC_NOTES_MAX,
   lengthNote,
@@ -48,6 +50,7 @@ export function MerchantDetailPage() {
 
   const [detail, setDetail] = useState<AdminMerchantDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const notify = useToast();
 
@@ -106,10 +109,17 @@ export function MerchantDetailPage() {
   const load = useCallback(async () => {
     if (!id) return;
     setLoadError(null);
+    setNotFound(false);
+    // A malformed id can never match a merchant: no request needed.
+    if (!isUuid(id)) {
+      setNotFound(true);
+      return;
+    }
     try {
       setDetail(await getMerchant(id));
     } catch (err) {
-      setLoadError(errorMessage(err));
+      if (err instanceof ApiError && err.statusCode === 404) setNotFound(true);
+      else setLoadError(errorMessage(err));
     }
   }, [id]);
 
@@ -263,6 +273,17 @@ export function MerchantDetailPage() {
       const opened = window.open(WEB_BASE_URL, "_blank", "noopener");
       if (!opened) setImpersonationUrl(WEB_BASE_URL);
     });
+  }
+
+  if (notFound) {
+    return (
+      <NotFoundPanel
+        title="Merchant not found"
+        text="No merchant has this id. The link may be old or mistyped. Nothing was changed."
+        backTo="/merchants"
+        backLabel="Back to merchants"
+      />
+    );
   }
 
   if (loadError) {
@@ -884,9 +905,11 @@ export function MerchantDetailPage() {
             </table>
           </div>
         )}
-        <p>
-          <Link to={`/webhooks/${merchant.id}`}>Replay a batch of deliveries for this merchant</Link>
-        </p>
+        {webhookEndpoints.length > 0 ? (
+          <p>
+            <Link to={`/webhooks/${merchant.id}`}>Replay a batch of deliveries for this merchant</Link>
+          </p>
+        ) : null}
       </div>
 
       <div className="admin-panel">

@@ -334,7 +334,6 @@
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
-  align-self: center;
 }
 
 .dash-dl dd {
@@ -1235,6 +1234,17 @@
 
   .dash-dl dd {
     padding-top: 0.15rem;
+  }
+
+  /* Money lists keep two columns on phones, so each cell keeps its full
+     padding and row border. */
+  .dash-dl-money dt {
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid #e3dccb;
+  }
+
+  .dash-dl-money dd {
+    padding-top: 0.6rem;
   }
 
   .dash-filters input[type="date"],
