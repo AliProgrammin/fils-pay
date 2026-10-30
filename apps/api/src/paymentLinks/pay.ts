@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import { toFils } from "@filspay/money";
+import { toFils, type Fils } from "@filspay/money";
 import { authorizeTransaction } from "../payments/authorize.js";
 import { captureTransaction } from "../payments/capture.js";
 import { voidTransaction } from "../payments/void.js";
@@ -45,8 +45,10 @@ interface LinkStatusRow {
  * self-heals a link stuck 'reserved' by a crash between claim and
  * the bind step. Once an authorization is bound (pending_transaction_id),
  * the timeout no longer applies: a slow capture must not be overtaken
- * (incident 2026-05-14). A link stuck after a crash past the bind is freed
- * by voiding that authorization.
+ * (incident 2026-05-14). A payment cut off past the bind (crash, restart)
+ * completes when the same payer retries with the same Idempotency-Key
+ * (resumeBoundPayment); if nobody retries, the link is freed by voiding
+ * that authorization.
  */
 export async function payPaymentLink(
   pool: Pool,
@@ -83,6 +85,8 @@ export async function payPaymentLink(
 
   const claimedRow = claimResult.rows[0];
   if (!claimedRow) {
+    const resumed = await resumeBoundPayment(pool, acquirer, input);
+    if (resumed) return resumed;
     return classifyClaimFailure(pool, input.token, config.paymentLinkReservationTimeoutSeconds, expiryCheckTime);
   }
 
@@ -139,13 +143,37 @@ export async function payPaymentLink(
     return { statusCode: 409, body: { error: "payment_link_processing", stage: "reserve" } };
   }
 
+  return captureAndFinalize(pool, acquirer, link, txnId, input.idempotencyKey, false);
+}
+
+interface BoundLink {
+  id: string;
+  merchantId: string;
+  amountFils: Fils;
+  reservation: string;
+}
+
+/**
+ * Steps 3 and 4: capture the bound authorization and mark the link paid.
+ * Shared by a first attempt and by a same-key retry that resumes one
+ * (resumeBoundPayment). Both steps are idempotent: the capture key is
+ * derived from the link and the payer's Idempotency-Key.
+ */
+async function captureAndFinalize(
+  pool: Pool,
+  acquirer: AcquirerSimulator,
+  link: BoundLink,
+  txnId: string,
+  idempotencyKey: string,
+  resuming: boolean,
+): Promise<PayPaymentLinkResult> {
   // H4: captureTransaction posts the negotiated discount legs itself, so a
   // link capture is discounted exactly like a route capture.
   // Step 3 — capture (full amount, immediately). amountFils omitted =>
   // capture the full remaining amount — always correct here, since this
   // transaction was just authorized for exactly link.amountFils and
   // nothing else could have touched it yet.
-  const captureKey = `paylink:${link.id}:${input.idempotencyKey}:capture`;
+  const captureKey = `paylink:${link.id}:${idempotencyKey}:capture`;
   const captureResult = await captureTransaction(pool, acquirer, {
     transactionId: txnId,
     merchantId: link.merchantId,
@@ -154,7 +182,13 @@ export async function payPaymentLink(
   });
 
   if (captureResult.statusCode !== 200) {
-    await releaseReservation(pool, link.id, link.reservation);
+    // A resumed payment frees the link only on a final decline. After a
+    // retryable failure (502) it stays bound, so the same payer can retry
+    // again, and an original request that may still be running is never
+    // overtaken.
+    if (!resuming || captureResult.statusCode === 402) {
+      await releaseReservation(pool, link.id, link.reservation);
+    }
     return {
       statusCode: captureResult.statusCode,
       body: { stage: "capture", ...(captureResult.body as Record<string, unknown>) },
@@ -175,7 +209,16 @@ export async function payPaymentLink(
     [link.id, txnId],
   );
 
-  const finalized = finalizeResult.rows[0];
+  let finalized = finalizeResult.rows[0];
+  if (!finalized) {
+    // A concurrent same-key request (resumeBoundPayment) finalized this very
+    // payment first: same answer, not an error.
+    const paid = await pool.query<{ id: string; paid_at: Date }>(
+      `SELECT id, paid_at FROM payment_links WHERE id = $1 AND status = 'paid' AND transaction_id = $2`,
+      [link.id, txnId],
+    );
+    finalized = paid.rows[0];
+  }
   if (!finalized) {
     // Only reachable if the link was changed by hand mid-payment (the bind
     // above blocks re-claims). Never answer 200 "paid" for a link this
@@ -195,6 +238,49 @@ export async function payPaymentLink(
       paidAt: finalized.paid_at.toISOString(),
     },
   };
+}
+
+/**
+ * A retry with the SAME Idempotency-Key of a payment that stopped after its
+ * authorization was bound to the link: the api crashed or restarted, or the
+ * client gave up waiting. Only the payer who made that authorization can
+ * resume it: the authorize idempotency key embeds their Idempotency-Key and
+ * must point at the bound transaction. The payment then completes (the
+ * capture replays if it already ran) instead of leaving the link reserved
+ * with a live authorization. Returns null when this is not such a retry.
+ */
+async function resumeBoundPayment(
+  pool: Pool,
+  acquirer: AcquirerSimulator,
+  input: PayPaymentLinkInput,
+): Promise<PayPaymentLinkResult | null> {
+  const result = await pool.query<{
+    id: string;
+    merchant_id: string;
+    amount_fils: string | number;
+    reservation: string;
+    pending_transaction_id: string;
+  }>(
+    `SELECT pl.id, pl.merchant_id, pl.amount_fils, pl.reserved_at::text AS reservation, pl.pending_transaction_id
+       FROM payment_links pl
+       JOIN idempotency_keys k
+         ON k.merchant_id = pl.merchant_id
+        AND k.endpoint = 'transactions.authorize'
+        AND k.key = 'paylink:' || pl.id || ':' || $2 || ':authorize'
+        AND k.resource_id = pl.pending_transaction_id
+      WHERE pl.token = $1 AND pl.status = 'reserved'`,
+    [input.token, input.idempotencyKey],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return captureAndFinalize(
+    pool,
+    acquirer,
+    { id: row.id, merchantId: row.merchant_id, amountFils: toFils(Number(row.amount_fils)), reservation: row.reservation },
+    row.pending_transaction_id,
+    input.idempotencyKey,
+    true,
+  );
 }
 
 /**
