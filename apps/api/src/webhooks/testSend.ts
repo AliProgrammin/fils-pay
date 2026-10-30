@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 import type { Config } from "../config.js";
 import { decodeEncryptionKey, decryptSecret } from "./secretCrypto.js";
+import { canonicalJson } from "../payments/idempotency.js";
 import { signPayload } from "./sign.js";
 import { WEBHOOK_SIGNATURE_HEADER } from "./headers.js";
 import type { WebhookTransport } from "./transport.js";
@@ -54,7 +55,7 @@ export async function sendTestWebhookEvent(
 
   const key = decodeEncryptionKey(config.webhookSecretEncryptionKey);
   const secret = decryptSecret(row.secret_ciphertext, key);
-  const body = JSON.stringify(testPayload);
+  const body = canonicalJson(testPayload); // see dispatcher: sign and send these exact bytes
   const { signature } = signPayload(body, secret);
 
   const response = await transport({

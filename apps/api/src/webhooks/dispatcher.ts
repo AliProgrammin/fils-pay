@@ -3,6 +3,7 @@ import { Client, type Pool } from "pg";
 import type { Config } from "../config.js";
 import { withTransaction } from "../db/withTransaction.js";
 import { decodeEncryptionKey, decryptSecret } from "./secretCrypto.js";
+import { canonicalJson } from "../payments/idempotency.js";
 import { signPayload } from "./sign.js";
 import { buildEnvelope } from "./envelope.js";
 import { WEBHOOK_DELIVERY_ID_HEADER, WEBHOOK_SIGNATURE_HEADER } from "./headers.js";
@@ -145,8 +146,9 @@ async function attemptOneDelivery(
 ): Promise<void> {
   const key = decodeEncryptionKey(config.webhookSecretEncryptionKey);
   const secret = decryptSecret(row.secret_ciphertext, key);
-  // FP-240: serialise once; sign and send these exact bytes.
-  const body = JSON.stringify(row.payload);
+  // FP-240: serialise once; sign and send these exact bytes. Canonical JSON,
+  // so a receiver that re-canonicalises the parsed body also verifies.
+  const body = canonicalJson(row.payload);
   const { signature } = signPayload(body, secret);
 
   const result = await transport({

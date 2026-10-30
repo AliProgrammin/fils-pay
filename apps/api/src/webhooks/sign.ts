@@ -1,8 +1,10 @@
 import { createHmac } from "node:crypto";
+import { canonicalJson } from "../payments/idempotency.js";
 import { timingSafeEqualHex } from "../lib/crypto.js";
 
 /**
- * Webhook signing: an HMAC over the exact body bytes sent, a
+ * Webhook signing: an HMAC over the exact body bytes sent (which are
+ * canonicalJson(payload), so both kinds of receiver verify), a
  * timestamped Stripe-`t=...,v1=...`-style signature scheme, and a
  * constant-time comparison in verifySignature.
  *
@@ -22,21 +24,28 @@ export interface SignedPayload {
  * webhook_endpoints.secret_ciphertext (webhooks/secretCrypto.ts) before
  * calling this; sign.ts itself never touches encryption, only signing.
  *
- * Signs `${timestamp}.${rawBody}`, where rawBody is the exact string the
- * caller puts on the wire (FP-240: never re-serialise; a receiver verifies
- * the raw bytes it got). Not the body alone,
+ * Signs `${timestamp}.${body}`. A string is taken as the exact body the
+ * caller puts on the wire (FP-240: a receiver verifies the raw bytes it got).
+ * Any other value is signed as canonicalJson(payload), the original contract.
+ * Senders put canonicalJson(payload) on the wire, so a raw-body receiver and
+ * a parse-then-canonicalise receiver both verify. Not the body alone,
  * so a receiver can enforce its own freshness window using only what's in
  * the header — a captured genuine delivery can't be replayed by a third
  * party at an arbitrary later time with a signature that still looks fresh.
  */
 export function signPayload(
-  rawBody: string,
+  payload: unknown,
   secret: string,
   timestamp: number = Math.floor(Date.now() / 1000),
 ): SignedPayload {
-  const signedString = `${timestamp}.${rawBody}`;
+  const signedString = `${timestamp}.${bodyString(payload)}`;
   const signature = createHmac("sha256", secret).update(signedString).digest("hex");
   return { timestamp, signature: `t=${timestamp},v1=${signature}` };
+}
+
+/** The exact signed string: a string as-is (raw body), else canonicalJson. */
+function bodyString(payload: unknown): string {
+  return typeof payload === "string" ? payload : canonicalJson(payload);
 }
 
 interface ParsedSignatureHeader {
@@ -82,7 +91,7 @@ export interface VerifySignatureResult {
 // FH: tolerance is checked AFTER the compare — claude says that's a timing oracle on the timestamp
 // doesnt matter, t is inside the mac — am
 export function verifySignature(
-  rawBody: string,
+  payload: unknown,
   header: string,
   secret: string,
   options?: { toleranceSeconds?: number; now?: number },
@@ -91,7 +100,7 @@ export function verifySignature(
   if (!parsed) return { valid: false, reason: "malformed_header" };
 
   const expected = createHmac("sha256", secret)
-    .update(`${parsed.timestamp}.${rawBody}`)
+    .update(`${parsed.timestamp}.${bodyString(payload)}`)
     .digest("hex");
 
   if (!timingSafeEqualHex(expected, parsed.signature)) {
