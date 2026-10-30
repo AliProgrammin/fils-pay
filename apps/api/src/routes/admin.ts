@@ -67,6 +67,11 @@ interface GrantIdParams {
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Today's Asia/Bahrain business date as YYYY-MM-DD (en-CA formats that way). */
+function bahrainToday(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bahrain" }).format(new Date());
+}
+
 /**
  * Registered with prefix '/v1/admin'. Mounts the admin auth routes under
  * '/auth' and the merchant-scoped admin routes under '/merchants', and
@@ -117,6 +122,12 @@ export async function adminRoutes(app: FastifyInstance, options: AdminRoutesOpti
       const { date, merchantId } = request.body ?? {};
       if (!date || !ISO_DATE_RE.test(date)) {
         throw new BadRequestError("invalid_request", "date is required, formatted YYYY-MM-DD");
+      }
+      // A day can only be closed once it is over. Closing today (or a later
+      // day) early leaves every capture made after the close out of any batch.
+      // YYYY-MM-DD strings compare in date order.
+      if (date >= bahrainToday()) {
+        throw new BadRequestError("invalid_request", "date must be before today (Asia/Bahrain)");
       }
       if (merchantId !== undefined && !UUID_RE.test(merchantId)) {
         throw new BadRequestError("invalid_request", "merchantId, if given, must be a UUID");
