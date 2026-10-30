@@ -198,7 +198,7 @@ Card checks: the checkout page checks the number (Luhn and length), the CVV
   example a sandbox `ACQUIRER_CALLBACK_SIGNING_SECRET`. Its header comment
   now says it is tracked. Production uses `ops/.env.production`. We
   checked on 30 Oct: the live secret is different from the sandbox one.
-- **SSH (port 22) is open** on the server. We did not check its settings.
+- **SSH (port 22) is open** on the server. It accepts keys only: `PasswordAuthentication no`, `KbdInteractiveAuthentication no`, `PermitRootLogin no` (checked with `sshd -T` on 30 Oct).
 - **Impersonation start is open to every admin role**, by design (support
   needs it). It is safe only while the read-only rules (A8, A12) hold.
 
