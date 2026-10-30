@@ -110,30 +110,31 @@ what the scheme was paid; finance reconciles against it.
 
 ## Month-end residue (finance)
 
-Until residue posting is automated (see ARCHITECTURE, "The scheme
-boundary"), finance runs a month-end script modelled on
-`scripts/reconcile_march.ts`:
+Residue posting is now automatic: since fix C9, `CloseBatch` posts the
+scheme rounding residue for each scheme line when it closes the batch. Do
+**not** run a month-end sweep for months closed after C9; it would post the
+residue a second time.
 
-1. Copy the script, change the window constants at the top to the new
-   month (UTC calendar month, `YYYY-MM-01T00:00Z` to the first of the next
-   month).
-2. Run it once against production with finance on the call.
-3. Attach the log from `scripts/out/` to the month-end ticket.
-
-The script checks for an existing posting with the same description, so a
-second run is a no-op.
+`scripts/reconcile_march.ts` is kept only for March 2026 (closed before C9).
+It refuses to post (exit 1, nothing written) when the month already has
+close-time residue rows. Each merchant group has a fixed id, so a second run
+is a no-op.
 
 > **Huda** (#fp-finance): please don't run anything for April onwards until March (FP-187) is resolved
 
 ## Resetting a non-production environment
 
 ```bash
-npm run migrate && npm run seed
+npm run migrate && npm run seed                      # empty database
+SEED_ALLOW_RESET=1 npm run seed                      # reset a dev/test database
 ```
 
-The seed truncates and regenerates the fixture tables it owns and
-self-checks the result. It prints `REAL FAIL` lines if anything doesn't
-come out as expected — don't ignore them. It won't touch other tables, so
-it's safe against a shared staging database.
+The seed TRUNCATEs merchants, transactions and the ledger with CASCADE, so
+it wipes every table that references them too. It is **not** safe against a
+shared staging or production database. It refuses a database that already
+has merchants unless `SEED_ALLOW_RESET=1` is set: check `DATABASE_URL` before
+you set it. The production compose runs `npm run seed:once`, which skips a
+database that has merchants. The seed self-checks the result and prints
+`REAL FAIL` lines if anything doesn't come out as expected; don't ignore them.
 
 > **AM (Sept):** check DATABASE_URL before seeding. staging-2 got reset this way
