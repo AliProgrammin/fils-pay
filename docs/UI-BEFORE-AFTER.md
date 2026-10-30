@@ -170,9 +170,9 @@ Before: the login form asked for a 36-character merchant ID (UUID), the email an
 
 - No match: `401 invalid_credentials`, the same as a wrong password today. When no user exists, the API still checks one dummy hash, so the time is similar.
 - One match: the normal password + OTP login for that user.
-- More than one match (only possible with the correct password): `409 merchant_id_required`. The page then shows the Merchant ID field with a plain message. The seed user `owner@alpharetail.example` is in Alpha Retail and Beta Digital, so it shows this case (right image).
+- More than one match (only possible with the correct password): `409 merchant_id_required`, with `shops: [{ merchantId, displayName }]` for the shops whose user matched the password. The page then shows the Merchant ID field with a plain message. The seed user `owner@alpharetail.example` is in Alpha Retail and Beta Digital, so it shows this case (right image).
 
-A request with `merchantId` works exactly as before (`scripts/smoke_hosted.sh` and `scripts/demo_refund.sh` are unchanged and still pass their login steps). The "Sign in to a specific shop" link shows the field at any time. If the last good sign-in used a merchant ID, the page remembers it and shows the field filled in. Tests: `apps/api/src/routes/auth.optionalMerchantId.test.ts`.
+A request with the `merchantId` key works exactly as before (an empty or `null` value is `400 invalid_request`) (`scripts/smoke_hosted.sh` and `scripts/demo_refund.sh` are unchanged and still pass their login steps). The "Sign in to a specific shop" link shows the field at any time. If the last good sign-in used a merchant ID, the page remembers it and shows the field filled in. Tests: `apps/api/src/routes/auth.optionalMerchantId.test.ts`.
 
 ## New UX fixes made with this evidence
 

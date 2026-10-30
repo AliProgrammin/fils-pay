@@ -7,6 +7,7 @@ import {
 import { createPaymentLink } from "../paymentLinks/create.js";
 import { getPublicPaymentLink } from "../paymentLinks/read.js";
 import { payPaymentLink } from "../paymentLinks/pay.js";
+import { withPinnedClient } from "../db/withTransaction.js";
 import { cancelPaymentLink } from "../paymentLinks/cancel.js";
 import { listPaymentLinks } from "../paymentLinks/query.js";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../lib/errors.js";
@@ -155,11 +156,16 @@ export async function paymentLinkPublicRoutes(app: FastifyInstance): Promise<voi
       throw new BadRequestError("invalid_request", "card with a string pan is required");
     }
 
-    const result = await payPaymentLink(
-      app.db,
-      app.acquirer,
-      { paymentLinkReservationTimeoutSeconds: app.config.paymentLinkReservationTimeoutSeconds },
-      { token: request.params.token, card, idempotencyKey },
+    // One connection for the whole claim -> authorize -> bind -> capture ->
+    // finalize flow: under overload the pay is refused before the claim,
+    // never cut off between steps by the pool connection timeout.
+    const result = await withPinnedClient(app.db, (db) =>
+      payPaymentLink(
+        db,
+        app.acquirer,
+        { paymentLinkReservationTimeoutSeconds: app.config.paymentLinkReservationTimeoutSeconds },
+        { token: request.params.token, card, idempotencyKey },
+      ),
     );
     reply.code(result.statusCode).send(result.body);
   });

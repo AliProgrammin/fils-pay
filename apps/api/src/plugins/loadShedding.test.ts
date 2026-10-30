@@ -19,7 +19,7 @@ async function appWithPoolWaiting(waiting: { count: number }) {
   return app;
 }
 
-test("a pool queue that stays long gets 503 + Retry-After; a short spike does not", async (t) => {
+test("a pool queue longer than the limit gets 503 + Retry-After at once", async (t) => {
   const waiting = { count: 0 };
   const app = await appWithPoolWaiting(waiting);
   t.after(() => app.close());
@@ -27,9 +27,7 @@ test("a pool queue that stays long gets 503 + Retry-After; a short spike does no
   assert.equal((await app.inject("/v1/thing")).statusCode, 200);
 
   waiting.count = 50;
-  // A spike shorter than the grace period is served.
-  assert.equal((await app.inject("/v1/thing")).statusCode, 200);
-  await sleep(600);
+  // No grace period: a burst must be refused before it waits for a connection.
   const shed = await app.inject("/v1/thing");
   assert.equal(shed.statusCode, 503);
   assert.equal(shed.headers["retry-after"], "1");

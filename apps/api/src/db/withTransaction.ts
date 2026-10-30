@@ -38,3 +38,31 @@ export async function withTransaction<T>(
     client.release();
   }
 }
+
+/**
+ * Runs a multi-step flow (several transactions and single queries) on ONE
+ * pool connection, taken before the first step. `fn` gets a Pool stand-in
+ * whose query() and connect() both use that connection (connect() hands it
+ * out with a no-op release). So the flow waits for the pool only once, before
+ * it has done anything: under overload it is refused cleanly at the start,
+ * never cut off between steps by the pool connection timeout.
+ */
+export async function withPinnedClient<T>(pool: Pool, fn: (pinned: Pool) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  const lent = new Proxy(client, {
+    get(target, prop) {
+      if (prop === "release") return () => {};
+      const value: unknown = Reflect.get(target, prop, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const pinned = {
+    query: client.query.bind(client),
+    connect: async () => lent,
+  } as unknown as Pool;
+  try {
+    return await fn(pinned);
+  } finally {
+    client.release();
+  }
+}

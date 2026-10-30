@@ -178,9 +178,15 @@ Two fixes found by this test are in the code:
 The API refuses new work with a fast `503` and `Retry-After: 1`
 (`apps/api/src/plugins/loadShedding.ts`) when:
 
-- more than 30 requests wait for a database connection for longer than
-  0.5 s (`LOAD_SHED_MAX_POOL_WAITING`), or
+- more than 30 requests wait for a database connection
+  (`LOAD_SHED_MAX_POOL_WAITING`; checked at once, before the request's
+  first query), or
 - the mean event loop delay is over 150 ms (`LOAD_SHED_MAX_EVENT_LOOP_DELAY_MS`).
+
+A request that was let in but gets no connection within 1 s
+(`PG_POOL_CONNECTION_TIMEOUT_MS`) gets the same `503 server_busy`, never a
+500. A payment-link payment takes its one connection before its first step,
+so it is refused before it starts or runs to the end.
 
 A request that has started always finishes, so a payment is never cut in
 half by load shedding. `/healthz` and `/readyz` are never refused. The body

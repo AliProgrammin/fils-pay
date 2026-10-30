@@ -1,6 +1,8 @@
 import type { FastifyError, FastifyReply, FastifyRequest } from "fastify";
 import { AppError } from "../lib/errors.js";
 import { formatIsoDate } from "../lib/dateFormat.js";
+import { isPoolConnectTimeout } from "../db/pool.js";
+import { sendServerBusy } from "./loadShedding.js";
 
 /**
  * Uniform error -> HTTP response mapping. Every route across the API
@@ -36,6 +38,14 @@ export function errorHandler(
   // field. That is bad input, not a server fault.
   if ((err as { code?: unknown }).code === "22021") {
     reply.code(400).send({ error: "invalid_request", message: "text input contains an invalid character" });
+    return;
+  }
+
+  // No pool connection within the (short) connection timeout: overload, not
+  // a fault. The request did no work yet: every money operation takes its
+  // connection before its first step (withTransaction, withPinnedClient).
+  if (isPoolConnectTimeout(err)) {
+    sendServerBusy(reply);
     return;
   }
 

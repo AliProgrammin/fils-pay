@@ -49,12 +49,28 @@ export function createPool(config: Config): Pool {
 }
 
 /**
+ * True for the errors pg throws when no connection is free (or none can be
+ * opened) within connectionTimeoutMillis. pg gives these no error code; the
+ * messages are fixed strings in pg-pool and pg.
+ */
+export function isPoolConnectTimeout(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : "";
+  return (
+    message === "timeout exceeded when trying to connect" ||
+    message === "Connection terminated due to connection timeout"
+  );
+}
+
+/**
  * Opens `pool`'s `min` connections up front (index.ts, at boot). Opening a
  * Postgres connection costs a process fork and a SCRAM handshake; doing
  * dozens of them at once inside the first burst of traffic made that burst
  * queue for the pool.
  */
 export async function warmPool(pool: Pool, min: number): Promise<void> {
-  const clients = await Promise.all(Array.from({ length: min }, () => pool.connect()));
+  // One at a time: each open must fit in the short connection timeout, and
+  // dozens of parallel handshakes on a small CPU may not.
+  const clients = [];
+  for (let i = 0; i < min; i++) clients.push(await pool.connect());
   for (const client of clients) client.release();
 }

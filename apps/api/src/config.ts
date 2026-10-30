@@ -214,7 +214,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     pgPoolMax: parseIntEnv(env.PG_POOL_MAX, 5),
     pgPoolMin: parseIntEnv(env.PG_POOL_MIN, 0),
     pgPoolIdleTimeoutMs: parseIntEnv(env.PG_POOL_IDLE_TIMEOUT_MS, 30_000),
-    pgPoolConnectionTimeoutMs: parseIntEnv(env.PG_POOL_CONNECTION_TIMEOUT_MS, 5_000),
+    // Short: a request that cannot get a connection soon gets a fast 503
+    // server_busy (errorHandler), not a multi-second wait and a 500.
+    pgPoolConnectionTimeoutMs: parseIntEnv(env.PG_POOL_CONNECTION_TIMEOUT_MS, 1_000),
 
     loadShedMaxPoolWaiting: parseIntEnv(env.LOAD_SHED_MAX_POOL_WAITING, 50),
     loadShedMaxEventLoopDelayMs: parseIntEnv(env.LOAD_SHED_MAX_EVENT_LOOP_DELAY_MS, 200),
