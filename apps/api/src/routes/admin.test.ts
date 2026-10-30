@@ -776,6 +776,20 @@ test("GET /v1/admin/merchants lists across merchants, filters by status, and sea
   assert.notEqual(page2Body.merchants[0]!.id, page1Body.merchants[0]!.id);
 });
 
+test("GET /v1/admin/merchants rejects a malformed cursor with 400, not 500", async () => {
+  const admin = await signedInAdmin("support", "list-badcursor");
+  const b64 = (s: string) => Buffer.from(s, "utf8").toString("base64url");
+  for (const cursor of [b64("x|y"), b64(`2026-13-40 00:00:00+00|${randomUUID()}`), b64("2026-10-30 10:00:00+00|nope"), "nonsense"]) {
+    const res = await app.inject({
+      method: "GET",
+      url: `/v1/admin/merchants?cursor=${encodeURIComponent(cursor)}`,
+      headers: { cookie: admin.cookie },
+    });
+    assert.equal(res.statusCode, 400, `${cursor} -> ${res.body}`);
+    assert.equal(res.json().error, "invalid_request");
+  }
+});
+
 test("GET /v1/admin/merchants/:id composes the detail view and never leaks a secret", async () => {
   const admin = await signedInAdmin("super_admin", "detail");
   const { merchantId, ownerUserId } = await createMerchant("detail");

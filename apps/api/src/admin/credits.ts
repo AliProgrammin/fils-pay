@@ -4,6 +4,7 @@ import { addFils, toFils, ZERO_FILS, type Fils } from "@filspay/money";
 import { insertAdminAuditLog } from "../adminAudit/log.js";
 import { withTransaction } from "../db/withTransaction.js";
 import { ConflictError, NotFoundError } from "../lib/errors.js";
+import { decodeKeysetCursor } from "../lib/pagination.js";
 import { assertDistinctApprover } from "./creditApproval.js";
 import { calculateCreditFeeReversal, creditRequiresSecondApprover } from "./creditThreshold.js";
 import { parseCreditRequestInput, type CreditReasonCode } from "./creditRequestValidation.js";
@@ -402,28 +403,6 @@ export async function rejectCreditRequest(
   });
 }
 
-interface DecodedCursor {
-  createdAt: string;
-  id: string;
-}
-
-/** Returns null for any malformed cursor instead of throwing, so a bad cursor restarts at page one. */
-function decodeCursor(cursor: string | null | undefined): DecodedCursor | null {
-  if (!cursor) return null;
-  let decoded: string;
-  try {
-    decoded = Buffer.from(cursor, "base64url").toString("utf8");
-  } catch {
-    return null;
-  }
-  const separatorIndex = decoded.indexOf("|");
-  if (separatorIndex === -1) return null;
-  const createdAt = decoded.slice(0, separatorIndex);
-  const id = decoded.slice(separatorIndex + 1);
-  if (!createdAt || !id) return null;
-  return { createdAt, id };
-}
-
 /** Encoded from Postgres's own text rendering of `created_at`, never from
  *  `Date.toISOString()` — see `CREDIT_REQUEST_SELECT`. */
 function encodeCursor(createdAtText: string, id: string): string {
@@ -436,7 +415,7 @@ export async function listCreditRequests(
   input: { status?: string; merchantId?: string; limit?: number; cursor?: string | null },
 ): Promise<{ items: CreditRequestRecord[]; nextCursor: string | null }> {
   const limit = Math.min(MAX_LIMIT, Math.max(1, input.limit ?? DEFAULT_LIMIT));
-  const decodedCursor = decodeCursor(input.cursor);
+  const decodedCursor = decodeKeysetCursor(input.cursor);
 
   const result = await pool.query<CreditRequestRow>(
     `${CREDIT_REQUEST_SELECT}
@@ -448,7 +427,7 @@ export async function listCreditRequests(
     [
       input.status ?? null,
       input.merchantId ?? null,
-      decodedCursor?.createdAt ?? null,
+      decodedCursor?.timestamp ?? null,
       decodedCursor?.id ?? null,
       limit,
     ],

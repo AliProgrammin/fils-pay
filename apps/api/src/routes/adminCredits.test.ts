@@ -386,6 +386,20 @@ test("GET /v1/admin/credits filters by merchant and round-trips its keyset curso
   assert.deepEqual([...seen].sort(), [...created].sort());
 });
 
+test("GET /v1/admin/credits rejects a malformed cursor with 400, not 500", async () => {
+  const finance = await signedInAdmin("finance", "list-badcursor");
+  const b64 = (s: string) => Buffer.from(s, "utf8").toString("base64url");
+  for (const cursor of [b64("x|y"), b64(`2026-13-40 00:00:00+00|${randomUUID()}`), b64("2026-10-30 10:00:00+00|nope"), "nonsense"]) {
+    const res = await app.inject({
+      method: "GET",
+      url: `/v1/admin/credits?cursor=${encodeURIComponent(cursor)}`,
+      headers: { cookie: finance.cookie },
+    });
+    assert.equal(res.statusCode, 400, `${cursor} -> ${res.body}`);
+    assert.equal(res.json().error, "invalid_request");
+  }
+});
+
 test("GET /v1/admin/credits filters by status", async () => {
   const maker = await signedInAdmin("finance", "list-status-maker");
   const checker = await signedInAdmin("finance", "list-status-checker");
