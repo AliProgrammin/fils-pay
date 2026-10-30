@@ -5,7 +5,8 @@ import { formatIsoDate } from "../lib/dateFormat.js";
 /**
  * Uniform error -> HTTP response mapping. Every route across the API
  * should throw an `AppError` subclass; this is the single place that turns
- * one into `{ "error": "code", "message"?: "string" }`.
+ * one into `{ "error": "code", "message"?: "string" }`, plus any extra
+ * fields in `AppError.details` (e.g. `existingImportId` on a duplicate import).
  */
 // am: 500s log the full err incl. pg detail, might contain card ref? fine its server-side
 export function errorHandler(
@@ -14,7 +15,7 @@ export function errorHandler(
   reply: FastifyReply,
 ): void {
   if (err instanceof AppError) {
-    reply.code(err.statusCode).send({ error: err.code, message: err.message });
+    reply.code(err.statusCode).send({ ...err.details, error: err.code, message: err.message });
     return;
   }
 

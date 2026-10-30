@@ -66,7 +66,10 @@ reconciliation match what finance agreed with them.
 `merchantId,amount,reason` header. Amounts are in BD as finance's sheets
 already have them (`4.75`, `120.00`). Rows are applied as soon as you
 submit; each import's rows are kept with the original text for reference.
-Don't submit the same file twice; there's no duplicate detection yet.
+The same content can be applied only once. A second upload of it (even
+with another file name, line endings or `4.75` written as `4.750`) is
+rejected with "This CSV was already applied as import ..." and posts
+nothing.
 
 ## Settlement ops
 

@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import type { Pool } from "pg";
 import { addFils, toFils, ZERO_FILS, type Fils } from "@filspay/money";
 import { insertAdminAuditLog } from "../adminAudit/log.js";
 import { withTransaction } from "../db/withTransaction.js";
-import { BadRequestError } from "../lib/errors.js";
+import { BadRequestError, ConflictError } from "../lib/errors.js";
 import { parseAdjustmentAmountFils } from "./adjustmentCsvParsing.js";
 import { postLedgerAdjustment } from "./ledgerAdjustments.js";
 
@@ -37,11 +38,29 @@ async function postAdjustmentToLedgerAndCache(
 }
 
 /**
+ * SHA-256 (hex) of the import's normalised rows: one line per row,
+ * "merchantId,amountFils,reason" (merchant id lower case, amount as parsed
+ * fils), lines sorted in byte order, joined with "\n". Line endings,
+ * spacing, header case, row order and "4.75" vs "4.750" do not change it.
+ * Migration 0087 backfills past imports with the same formula in SQL.
+ */
+function contentSha256(rows: { merchantId: string; amountFils: Fils; reason?: string }[]): string {
+  const lines = rows
+    .map((row) => `${row.merchantId.toLowerCase()},${row.amountFils},${row.reason ?? ""}`)
+    .sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
+  return createHash("sha256").update(lines.join("\n")).digest("hex");
+}
+
+/**
  * Applies one uploaded CSV in a single transaction: every row's amount is
  * parsed, posted to the ledger, and recorded in adjustment_import_rows with
  * its original text preserved alongside the integer that was posted. The
  * audit row is the last statement in the same transaction, so an import
  * that lands without a record of who ran it is not reachable.
+ *
+ * The same content can be applied only once (unique content_sha256, 0087).
+ * A second apply throws 409 adjustment_import_duplicate with the earlier
+ * import's id and posts nothing.
  */
 export async function applyAdjustmentImport(
   pool: Pool,
@@ -51,20 +70,38 @@ export async function applyAdjustmentImport(
     throw new BadRequestError("empty_import", "the CSV must contain at least one row");
   }
 
+  const parsed = input.rows.map((row) => ({ ...row, amountFils: parseAdjustmentAmountFils(row.amount) }));
+  const sha256 = contentSha256(parsed);
+
   return withTransaction(pool, async (client) => {
+    // ON CONFLICT DO NOTHING waits for a parallel upload of the same sheet
+    // to commit or roll back, so two concurrent applies cannot both post.
     const importRow = await client.query<{ id: string }>(
-      `INSERT INTO adjustment_imports (uploaded_by_admin_user_id, original_filename, row_count)
-       VALUES ($1, $2, $3) RETURNING id`,
-      [input.adminUserId, input.originalFilename, input.rows.length],
+      `INSERT INTO adjustment_imports (uploaded_by_admin_user_id, original_filename, row_count, content_sha256)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (content_sha256) WHERE content_sha256 IS NOT NULL DO NOTHING
+       RETURNING id`,
+      [input.adminUserId, input.originalFilename, input.rows.length, sha256],
     );
+    if (importRow.rows.length === 0) {
+      const existing = await client.query<{ id: string; original_filename: string; applied_at: string }>(
+        `SELECT id, original_filename, applied_at::text AS applied_at
+           FROM adjustment_imports WHERE content_sha256 = $1`,
+        [sha256],
+      );
+      const prior = existing.rows[0]!;
+      throw new ConflictError(
+        "adjustment_import_duplicate",
+        `This CSV was already applied as import ${prior.id} ("${prior.original_filename}", ${prior.applied_at}). Nothing was posted.`,
+        { existingImportId: prior.id },
+      );
+    }
     const importId = importRow.rows[0]!.id;
 
     let total = ZERO_FILS;
-    // FH: claude says nothing here stops the same CSV being applied twice. intended? (asked in #fp-backend 14/8, no answer)
-    // re-upload is blocked by the unique original_filename i think — am
-    for (let i = 0; i < input.rows.length; i++) {
-      const row = input.rows[i]!;
-      const amountFils = parseAdjustmentAmountFils(row.amount);
+    for (let i = 0; i < parsed.length; i++) {
+      const row = parsed[i]!;
+      const amountFils = row.amountFils;
       const entryGroupId = await postAdjustmentToLedgerAndCache(client, row.merchantId, amountFils);
 
       await client.query(

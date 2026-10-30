@@ -276,3 +276,65 @@ test("reading the import history requires a session", async () => {
   const res = await app.inject({ method: "GET", url: PATH });
   assert.equal(res.statusCode, 401, res.body);
 });
+
+// E9: applying the same sheet twice must not post it twice. The second
+// upload (same content, even with other line endings, spacing, file name or
+// "4.75" written as "4.750") is a 409 that names the earlier import and
+// posts nothing.
+test("uploading the same CSV content twice is a 409 adjustment_import_duplicate and posts nothing", async () => {
+  const admin = await signedInAdmin("finance");
+  const merchantId = await createMerchant();
+  const csv = `merchantId,amount,reason\n${merchantId},4.75,statement correction\n${merchantId},1.25,rounding\n`;
+
+  const first = await app.inject({
+    method: "POST",
+    url: PATH,
+    headers: { cookie: admin.cookie },
+    payload: { csvContent: csv, originalFilename: "march-corrections.csv" },
+  });
+  assert.equal(first.statusCode, 201, first.body);
+  const firstImportId = (first.json() as { importId: string }).importId;
+
+  const countState = async () => {
+    const r = await pool.query<{ legs: string; imports: string; balance: string | null }>(
+      `SELECT (SELECT COUNT(*) FROM ledger_entries WHERE merchant_id = $1)::text AS legs,
+              (SELECT COUNT(*) FROM adjustment_import_rows WHERE merchant_id = $1)::text AS imports,
+              (SELECT cached_payable_fils::text FROM merchant_balances WHERE merchant_id = $1) AS balance`,
+      [merchantId],
+    );
+    return r.rows[0]!;
+  };
+  const before = await countState();
+
+  const resubmissions = [
+    { csvContent: csv, originalFilename: "march-corrections.csv" },
+    {
+      csvContent: `MerchantId, Amount, Reason\r\n${merchantId.toUpperCase()}, 4.750 ,statement correction\r\n${merchantId},1.250,rounding\r\n\r\n`,
+      originalFilename: "march-corrections (1).csv",
+    },
+  ];
+  for (const payload of resubmissions) {
+    const res = await app.inject({ method: "POST", url: PATH, headers: { cookie: admin.cookie }, payload });
+    assert.equal(res.statusCode, 409, res.body);
+    const body = res.json() as { error: string; message: string; existingImportId: string };
+    assert.equal(body.error, "adjustment_import_duplicate");
+    assert.equal(body.existingImportId, firstImportId);
+    assert.match(body.message, new RegExp(firstImportId));
+  }
+
+  assert.deepEqual(await countState(), before, "a rejected duplicate must post no ledger legs, rows or balance change");
+});
+
+test("a CSV with different content is not a duplicate", async () => {
+  const admin = await signedInAdmin("finance");
+  const merchantId = await createMerchant();
+  for (const amount of ["2.00", "2.50"]) {
+    const res = await app.inject({
+      method: "POST",
+      url: PATH,
+      headers: { cookie: admin.cookie },
+      payload: { csvContent: `merchantId,amount,reason\n${merchantId},${amount},x\n` },
+    });
+    assert.equal(res.statusCode, 201, res.body);
+  }
+});
