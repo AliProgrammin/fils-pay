@@ -21,12 +21,15 @@ so the login page shows the one-time code (`OTP_DEV_EXPOSE=true`). Test card:
 
 ## What to read
 
+Start with [SUBMISSION.md](SUBMISSION.md): results, the findings summary, capacity, hosting, UI evidence and the AI transcript excerpts on one page.
+
+
 | File | What it shows |
 |---|---|
 | [BUGS.md](BUGS.md) | Every bug we fixed: severity, ticket, area, and a link to the full write-up (what is wrong, why it happens, what it breaks, the fix, the test). |
 | [docs/bugs/](docs/bugs/) | The write-ups, one section per bug. |
 | [docs/UI-BEFORE-AFTER.md](docs/UI-BEFORE-AFTER.md) | Checkout, merchant dashboard and admin console: before and after screenshots. |
-| [CAPACITY.md](CAPACITY.md) | Load test, our capacity estimate, and overload and restart behaviour. |
+| [CAPACITY.md](CAPACITY.md) | Load test on the live server: about 70 concurrent checkout users; overload and restart behaviour. |
 | [HOSTING.md](HOSTING.md) | How the stack runs on one 1 vCPU / 2 GB server, and how to deploy it. |
 | [ai-setup/](ai-setup/) | How we used AI and how we checked what it told us, with three annotated transcript excerpts. |
 
