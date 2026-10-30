@@ -50,7 +50,7 @@ Before: the customer sees a raw ISO time (`2026-10-30T08:56:59.503Z`), with no a
 |---|---|
 | ![](ui/checkout-public-link-api-before.png) | ![](ui/checkout-public-link-api-after.png) |
 
-The checkout page reads `GET /v1/payment-links/:token` with no login. Before, the response gave the merchant's live API key prefix and the full key hash (`merchantPublicKey`, `merchantIntegrationId`) to anyone who has the link. After, these two fields are gone. The page looks the same.
+The checkout page reads `GET /v1/payment-links/:token` with no login. Before, the response gave the merchant's live API key prefix and the full key hash (`merchantPublicKey`, `merchantIntegrationId`) to anyone who has the link. After, both fields stay (same response shape) but hold nothing secret: `merchantPublicKey` is only the mode prefix (`fp_test_` / `fp_live_`) and `merchantIntegrationId` is the key's row id. The page looks the same.
 
 ## Merchant dashboard
 

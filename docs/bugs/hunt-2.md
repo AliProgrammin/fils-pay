@@ -7,9 +7,9 @@
 - What is wrong: `GET /v1/payment-links/:token` needs no login. It returned `merchantPublicKey` (the newest live API key's `key_prefix`) and `merchantIntegrationId` (that key's `key_hash`).
 - Why it happens: The query had a `LEFT JOIN LATERAL` on `api_keys`. The comment on the DTO says it shows nothing but the display name, but the code added both key fields.
 - What it breaks: Anyone with a payment link (a link is made to be shared) sees part of the merchant's live key and its full SHA-256 hash. The prefix narrows the search for the raw key. The hash is the exact value `verifyApiKey` matches on, so it must never leave the server. No client used these fields.
-- Fix: Remove the join and both fields. The other fields and the response shape stay the same.
-- Test: apps/api/src/routes/paymentLinks.test.ts, "payment link lifecycle" (now checks that neither field and no `fp_` text is in the public read).
-- How found and reproduced: Hunt round 2 (an independent code audit), by reading `paymentLinks/read.ts`. Reproduced by the "payment link lifecycle" test, which now checks that no key field and no `fp_` text is in the public read; the old response had both.
+- Fix: Keep both fields (the original response shape), but with no key material. `merchantPublicKey` is only the shared mode prefix (`fp_test_` or `fp_live_`, the same for every merchant), and `merchantIntegrationId` is the `api_keys` row id (a UUID, not secret), or `null` when the merchant has no active key. The per-key prefix and the hash never leave the server.
+- Test: apps/api/src/routes/paymentLinks.test.ts, "create -> public read (active) -> ..." (checks `merchantPublicKey` starts with `fp_` and is `fp_test_`, `merchantIntegrationId` is the key's row id, and the body has no per-key prefix, no key hash and no raw key).
+- How found and reproduced: Hunt round 2 (an independent code audit), by reading `paymentLinks/read.ts`. Reproduced by the same test: the old response held the per-key prefix and the full key hash.
 - Effect on existing data: No stored row is wrong. Key prefixes and hashes already shown to link viewers cannot be called back. To be safe, merchants with shared links should rotate their live keys; we did not force a rotation.
 
 ### H2 Support role can capture and void

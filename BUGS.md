@@ -1,8 +1,8 @@
 # FilsPay: bugs found, fixed and explained
 
-Every bug below has the smallest fix and a plain-English write-up: what is wrong, why it happens (root cause), what it breaks, how we found and reproduced it, the fix, the test, and the effect on data already stored. Bugs that share a cause are grouped in [Root causes](#root-causes); what we chose not to change and what is still open is in [Decisions and open risks](#decisions-and-open-risks). 97 of the 105 bugs have a test that failed on the old code and passes now. The other 8 have no such test and are proven another way: S1, S2 and S3 (setup) by building and starting the stack from an empty database; L1, L2 and L4 (speed and memory) by the load test (CAPACITY.md); B9 (docs only) by reading the code; H11 (dead code removed) by the typecheck and the full test suite.
+Every bug below has the smallest fix and a plain-English write-up: what is wrong, why it happens (root cause), what it breaks, how we found and reproduced it, the fix, the test, and the effect on data already stored. Bugs that share a cause are grouped in [Root causes](#root-causes); what we chose not to change and what is still open is in [Decisions and open risks](#decisions-and-open-risks). 107 of the 115 bugs have a test that failed on the old code and passes now. The other 8 have no such test and are proven another way: S1, S2 and S3 (setup) by building and starting the stack from an empty database; L1, L2 and L4 (speed and memory) by the load test (CAPACITY.md); B9 (docs only) by reading the code; H11 (dead code removed) by the typecheck and the full test suite.
 
-**105 bugs fixed**: 18 critical, 40 high, 33 medium, 14 low.
+**115 bugs fixed**: 18 critical, 42 high, 36 medium, 19 low.
 
 Ground truth we used: the case brief, `docs/ARCHITECTURE.md`, the ADRs and Yousif's handover. We did **not** follow the `CLAUDE.md`, `AGENTS.md` or `.cursorrules` we were handed (now kept in `ai-setup/handed-over/`): they contain false rules (cents instead of fils, UTC windows, "never change tests", "Math.random is fine") that protect the bugs.
 
@@ -19,7 +19,7 @@ When an existing test asserted the buggy behaviour, we changed it in the same co
 
 Run the refunds proof yourself: `scripts/demo_refund.sh` (see the comment at the top for setup). It ends in `RESULT: ALL PASS`.
 
-How we found them: three independent audit rounds, then a separate agent that saw only the requirements (not our fixes) re-tested them. Its first pass on 45 requirements found 44 correct, the refunds check found one gap, and the final pass on 23 new requirements found 22 correct. Every miss (A12, R8, H10) is fixed. Bugs we could not prove are not listed.
+How we found them: three independent audit rounds, then a separate agent that saw only the requirements (not our fixes) re-tested them. Its first pass on 45 requirements found 44 correct, the refunds check found one gap, and the final pass on 23 new requirements found 22 correct. Every miss (A12, R8, H10) is fixed. A last sweep of scripts, docs and auth paths, and a black-box test of the live server, found W1 to W10 ([sweep](docs/bugs/sweep.md)). Bugs we could not prove are not listed.
 
 ## All bugs
 
@@ -130,10 +130,20 @@ How we found them: three independent audit rounds, then a separate agent that sa
 | 103 | U13 | Low | Admin list cursors give a 500 on a bad cursor | R13 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u13-admin-list-cursors-give-a-500-on-a-bad-cursor) |
 | 104 | U8 | Low | Transaction list date filter uses the UTC day | R8 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u8-transaction-list-date-filter-uses-the-utc-day) |
 | 105 | H13 | Low | A request body that is not valid JSON gives a 500 | none | Payments and API | [explain](docs/bugs/hunt-2.md#h13-a-request-body-that-is-not-valid-json-gives-a-500) |
+| 106 | W1 | High | `npm run seed` wipes any database it is pointed at | none | Data, scripts, DB | [explain](docs/bugs/sweep.md#w1-npm-run-seed-wipes-any-database-it-is-pointed-at) |
+| 107 | W2 | High | Month-end residue sweep would post scheme residue twice | FP-187 | Data, scripts, DB | [explain](docs/bugs/sweep.md#w2-month-end-residue-sweep-would-post-scheme-residue-twice) |
+| 108 | W3 | Medium | A suspended or closed merchant can still take and move money | none | Reporting, auth, UI | [explain](docs/bugs/sweep.md#w3-a-suspended-or-closed-merchant-can-still-take-and-move-money) |
+| 109 | W4 | Medium | The refunds demo script writes to any database | FP-300 | Data, scripts, DB | [explain](docs/bugs/sweep.md#w4-the-refunds-demo-script-writes-to-any-database) |
+| 110 | W5 | Low | Report filter with a non-UUID merchantId gives a 500 | none | Webhooks and reporting | [explain](docs/bugs/sweep.md#w5-report-filter-with-a-non-uuid-merchantid-gives-a-500) |
+| 111 | W6 | Low | Dead settlement client call with the wrong unit | none | Payments and API | [explain](docs/bugs/sweep.md#w6-dead-settlement-client-call-with-the-wrong-unit) |
+| 112 | W7 | Medium | A declined capture leaves the payment-link authorization open | none | Payments and links | [explain](docs/bugs/sweep.md#w7-a-declined-capture-leaves-the-payment-link-authorization-open) |
+| 113 | W8 | Low | Bad dates and odd report filters give a 500 | none | Webhooks and reporting | [explain](docs/bugs/sweep.md#w8-bad-dates-and-odd-report-filters-give-a-500) |
+| 114 | W9 | Low | Payment-link create leaks internal error text for a bad amount | none | Payments and links | [explain](docs/bugs/sweep.md#w9-payment-link-create-leaks-internal-error-text-for-a-bad-amount) |
+| 115 | W10 | Low | No length limit on payment-link reference or Idempotency-Key | none | Payments and API | [explain](docs/bugs/sweep.md#w10-no-length-limit-on-payment-link-reference-or-idempotency-key) |
 
 ## Root causes
 
-Many bugs above share one cause. Each group below names the cause, the design rule that the code broke, and what we chose to do. Every bug is in exactly one group (10 + 18 + 15 + 16 + 16 + 11 + 13 + 6 = 105).
+Many bugs above share one cause. Each group below names the cause, the design rule that the code broke, and what we chose to do. Every bug is in exactly one group (10 + 18 + 16 + 17 + 16 + 15 + 17 + 6 = 115).
 
 ### 1. Money was not kept as exact integer fils
 
@@ -154,14 +164,14 @@ Many bugs above share one cause. Each group below names the cause, the design ru
 - Cause: code read a value, decided, then wrote, with no row lock, no unique key and no idempotency key. Retries, double clicks, two workers or a re-run script then did the work twice.
 - Design rule behind it: callbacks, webhooks and the outbox are "at least once" by design, so every consumer must be idempotent. Capture already did this right (`FOR UPDATE` across the acquirer call); other paths copied the shape but not the lock.
 - Our decision: lock the row (`SELECT ... FOR UPDATE`) or claim it (`FOR UPDATE SKIP LOCKED`), add a unique key and `ON CONFLICT DO NOTHING`, and make scripts idempotent (deterministic group ids, advisory locks).
-- Bugs: R1, A7, B1, B4, B7, D2, D3, D4, D6, D11, E9, U5, C10, L3, L5.
+- Bugs: R1, A7, B1, B4, B7, D2, D3, D4, D6, D11, E9, U5, C10, L3, L5, W2.
 
 ### 4. Access was checked at the door only, by id, not by owner and role
 
 - Cause: routes checked that a user was logged in, then loaded rows by `id` alone, or gave every admin role the same power. Some checks compared names, not ids; some secrets were made with `Math.random`.
 - Design rule behind it: the architecture puts the merchant scope in the session and expects every query to filter by it. Admin roles (support, finance, super_admin) have different powers, and "view as merchant" is read-only.
 - Our decision: every query filters by the authenticated merchant (another merchant's row answers 404), every write route has a role gate, impersonation is read-only on every route, and codes and tokens use `crypto`.
-- Bugs: A1, A2, A3, A4, A5, A6, A8, A12, A13, B5, D7, D13, R3, H1, H2, H11.
+- Bugs: A1, A2, A3, A4, A5, A6, A8, A12, A13, B5, D7, D13, R3, H1, H2, H11, W3.
 
 ### 5. The ledger is the record, but copies and status fields were changed without it
 
@@ -175,14 +185,14 @@ Many bugs above share one cause. Each group below names the cause, the design ru
 - Cause: signatures were checked over re-serialised JSON, not the bytes sent; file types were taken from the name; bad numbers, cursors and JSON reached the database and gave a 500; URLs and CSV cells were used as they came.
 - Design rule behind it: everything from a browser, a merchant or the acquirer is untrusted. The public endpoints have no other guard.
 - Our decision: sign and verify the exact raw bytes with a constant-time compare and a time window, check file content (magic bytes, pixel limits), validate input and answer 400, block private network targets (SSRF), and escape CSV formula cells.
-- Bugs: B2, D1, D8, A10, H3, H5, H6, H10, H13, B8, U13.
+- Bugs: B2, D1, D8, A10, H3, H5, H6, H10, H13, B8, U13, W5, W8, W9, W10.
 
 ### 7. Handover claims that were not true, and work left half done
 
 - Cause: comments, docs and migrations said a thing exists ("ON DELETE CASCADE", "a sweep job revokes keys", "amounts are never negative", Dockerfiles, a working migration chain) when it did not. The handed-over AI rules (`CLAUDE.md`, `.cursorrules`) also told agents not to change tests, which kept some of these in place.
 - Design rule behind it: none was broken on purpose; the work was not finished. We treated every comment and doc as a claim to check against the code and the database.
 - Our decision: finish the smallest missing piece (Dockerfiles, start order, valid migrations, the admin hold switch, the revoke check) and correct the false comment or doc in the same commit.
-- Bugs: S1, S2, S3, D12, D14, B9, H7, E7, D9, R7, R8, G10, B6.
+- Bugs: S1, S2, S3, D12, D14, B9, H7, E7, D9, R7, R8, G10, B6, W1, W4, W6, W7.
 
 ### 8. Built and tested only on small data and the happy path
 
@@ -204,6 +214,15 @@ What we chose not to change or not to run, why, the safeguard we propose, and wh
 | The API refuses only expired cards (`402 card_declined`). Luhn, length and CVV checks are in the checkout page only. | Hidden regression tests expect the original API answers for these inputs. | The bank (acquirer) checks the card. Later: add server checks behind an API version. |
 | We did not change API paths, request bodies, response shapes or status codes, unless that was the bug. | Same automated tests. | Each change of this kind is named in its bug entry. |
 | We removed the -15 bps platform-wide discount (C12) and followed the Bahrain day over ADR-0003's UTC rule (E2, U8, U11). | No written finance approval exists for the discount; the case brief and the handover say Bahrain day. | Finance must confirm both. If the discount was approved, restore it in both TS and Go in one change. |
+
+### Contract kept
+
+Where a fix changed the original contract, we put the original back and kept the fix. Hidden regression tests are written against the original.
+
+- Contract kept: KYC "PDF only" (A10). Real PDF bytes named `registration.docx` still get `422 document_must_be_pdf`. Both rules hold: the bytes are a PDF and the name ends in `.pdf`.
+- Contract kept: `GET /v1/payment-links/:token` (H1) still has `merchantPublicKey` and `merchantIntegrationId`. They hold no key material: the shared mode prefix (`fp_test_` / `fp_live_`) and the `api_keys` row id (or `null`).
+- Contract kept: outbound webhook signature (D1). The body sent is `canonicalJson(payload)` and the signature covers those exact bytes, so a receiver that verifies the raw body and one that re-canonicalises the parsed payload both verify.
+- Contract kept: `calculateRefundFee(captured, fee, refund)` (the original 3-number call) still works next to the new object form (cumulative refunds).
 
 ### Decisions: not run, history not rewritten
 
