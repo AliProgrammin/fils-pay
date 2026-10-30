@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(npm test)",
+      "Bash(npm test *)",
+      "Bash(npm run test *)",
+      "Bash(npm run typecheck)",
+      "Bash(npm run typecheck *)",
+      "Bash(npm run migrate)",
+      "Bash(npm run seed)",
+      "Bash(npx tsx --test *)",
+      "Bash(go test *)",
+      "Bash(go build *)",
+      "Bash(go vet *)",
+      "Bash(scripts/demo_refund.sh)",
+      "Bash(scripts/smoke_hosted.sh)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git log *)",
+      "Bash(git diff *)",
+      "Bash(git show *)",
+      "Bash(git blame *)",
+      "Bash(git branch)",
+      "Bash(git worktree list)",
+      "Bash(git rev-parse *)",
+      "Bash(git ls-files *)"
+    ],
+    "deny": [
+      "Read(./ops/.env.production)",
+      "Edit(./ops/.env.production)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Bash(cat ops/.env.production*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f*)",
+      "Bash(rm -rf *$*)",
+      "Bash(rm -rf *`*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-rm-var.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
