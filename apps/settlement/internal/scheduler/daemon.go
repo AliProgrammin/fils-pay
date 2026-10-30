@@ -96,10 +96,17 @@ func runIfDue(ctx context.Context, db *pgxpool.Pool, runDelayMinutes int) {
 		return
 	}
 
+	runDay(ctx, db, businessDate)
+	logNextRunEstimate(now)
+}
+
+// runDay runs one business day's batch, then always runs the notification
+// step. RunDailyBatch keeps going past a merchant that fails, so a partial
+// failure still leaves other merchants paid; they must still be notified.
+func runDay(ctx context.Context, db *pgxpool.Pool, businessDate time.Time) {
 	report, err := settlement.RunDailyBatch(ctx, db, businessDate, nil)
 	if err != nil {
 		log.Printf("settlement daemon: RunDailyBatch(%s) failed: %v", businessDate.Format("2006-01-02"), err)
-		return
 	}
 	log.Printf("settlement daemon: RunDailyBatch(%s) processed %d merchant(s)", businessDate.Format("2006-01-02"), len(report.MerchantResults))
 
@@ -117,6 +124,4 @@ func runIfDue(ctx context.Context, db *pgxpool.Pool, runDelayMinutes int) {
 	} else if enqueued > 0 {
 		log.Printf("settlement daemon: enqueued %d settlement.paid event(s)", enqueued)
 	}
-
-	logNextRunEstimate(now)
 }

@@ -115,10 +115,9 @@ func main() {
 			onlyMerchant = &id
 		}
 
-		report, err := settlement.RunDailyBatch(ctx, pool, businessDate, onlyMerchant)
-		if err != nil {
-			log.Fatalf("settlement run-batch: %v", err)
-		}
+		// RunDailyBatch keeps going past a failing merchant. Print what was
+		// processed and notify the paid merchants first, then exit non-zero.
+		report, batchErr := settlement.RunDailyBatch(ctx, pool, businessDate, onlyMerchant)
 		fmt.Printf("run-batch: business date %s, %d merchant(s) processed\n", *dateFlag, len(report.MerchantResults))
 		for _, r := range report.MerchantResults {
 			fmt.Printf("  merchant=%s batch=%s alreadyClosed=%v alreadyPaid=%v gross=%d fee=%d netPayout=%d\n",
@@ -135,6 +134,9 @@ func main() {
 			log.Fatalf("settlement run-batch: enqueue payout notifications: %v", err)
 		}
 		fmt.Printf("run-batch: enqueued %d settlement.paid event(s)\n", enqueued)
+		if batchErr != nil {
+			log.Fatalf("settlement run-batch: %v", batchErr)
+		}
 
 	// CLI and admin button both rebuild from ledger_entries (FP-203).
 	case "rebuild-balances":
