@@ -241,3 +241,35 @@ test("H3: payment-link list rejects a bad limit/cursor with 400 and still pages 
   assert.equal(p2.statusCode, 200, p2.body);
   assert.equal(p2.json().paymentLinks.length, 1);
 });
+
+// Found by the blind verifier after H3: three inputs still crashed with a 500.
+test("H10: a payment link with amountFils 0 is a 400, not a 500", async () => {
+  const m = await createMerchant();
+  const res = await app.inject({
+    method: "POST",
+    url: `/v1/merchants/${m.merchantId}/payment-links`,
+    headers: { ...m.bearer, "idempotency-key": randomUUID() },
+    payload: { amountFils: 0, expiresAt: new Date(Date.now() + 3_600_000).toISOString() },
+  });
+  assert.equal(res.statusCode, 400, res.body);
+  assert.equal(res.json().error, "invalid_amount");
+});
+
+test("H10: a card number that is not a string is a 400, not a 500", async () => {
+  const m = await createMerchant();
+  const res = await app.inject({
+    method: "POST",
+    url: "/v1/transactions",
+    headers: { ...m.bearer, "idempotency-key": randomUUID() },
+    payload: { amountFils: 1000, card: { ...CARD, pan: 4242424242424242 } },
+  });
+  assert.equal(res.statusCode, 400, res.body);
+  assert.equal(res.json().error, "invalid_request");
+});
+
+test("H10: a NUL byte in a text input is a 400, not a 500", async () => {
+  const m = await createMerchant();
+  const res = await app.inject({ method: "GET", url: "/v1/transactions?search=a%00b", headers: m.bearer });
+  assert.equal(res.statusCode, 400, res.body);
+  assert.equal(res.json().error, "invalid_request");
+});

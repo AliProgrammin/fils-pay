@@ -88,3 +88,13 @@ H4 is in hunt-2-h4.md.
   - Before: `Seq Scan on holds ... Rows Removed by Filter: 192464`, Execution Time 6.074 ms
   - After: `Index Scan using idx_holds_active_transaction on holds`, Execution Time 0.128 ms
 - Test: apps/api/src/payments/holdsIndex.fix.test.ts, "H9: the hold-release UPDATE is planned as an index scan on the active-holds index"
+
+### H10 Three inputs still crashed the API with a 500
+- Severity: Low
+- Ticket: none (found by our blind verifier after H3)
+- Where: apps/api/src/paymentLinks/create.ts, routes/transactions.ts, routes/paymentLinks.ts, plugins/errorHandler.ts
+- What is wrong: a payment link for 0 fils, a card number sent as a number (`"pan": 4242...`), and a NUL byte in any text field each gave `500 internal_error`.
+- Why it happens: `toFils(0)` is valid, so the 0 reached the database CHECK; the card simulator calls `pan.endsWith(...)` on a number; Postgres refuses NUL bytes in text (error 22021) and that error was not mapped.
+- What it breaks: clients get a server error for their own mistake; on the pay path the link also stays reserved until the timeout.
+- Fix: reject amounts of 0 or less with 400 `invalid_amount`; require a string `pan`; map Postgres 22021 to 400 `invalid_request` in the one error handler.
+- Test: apps/api/src/routes/transactions.fix.test.ts, the three "H10" tests

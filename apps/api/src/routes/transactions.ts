@@ -103,7 +103,7 @@ export async function transactionRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const idempotencyKey = getIdempotencyKey(request);
       const { amountFils, card, reference } = request.body ?? {};
-      if (amountFils === undefined || !card) {
+      if (amountFils === undefined || !card || typeof card.pan !== "string") {
         throw new BadRequestError("invalid_request", "amountFils and card are required");
       }
 

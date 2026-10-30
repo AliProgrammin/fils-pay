@@ -151,8 +151,8 @@ export async function paymentLinkPublicRoutes(app: FastifyInstance): Promise<voi
   app.post<{ Params: TokenParams; Body: PayPaymentLinkBody }>("/:token/pay", async (request, reply) => {
     const idempotencyKey = getIdempotencyKey(request);
     const { card } = request.body ?? {};
-    if (!card) {
-      throw new BadRequestError("invalid_request", "card is required");
+    if (!card || typeof card.pan !== "string") {
+      throw new BadRequestError("invalid_request", "card with a string pan is required");
     }
 
     const result = await payPaymentLink(

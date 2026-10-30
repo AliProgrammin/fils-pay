@@ -32,6 +32,13 @@ export function errorHandler(
     return;
   }
 
+  // Postgres 22021: the client sent a NUL byte or invalid UTF-8 in a text
+  // field. That is bad input, not a server fault.
+  if ((err as { code?: unknown }).code === "22021") {
+    reply.code(400).send({ error: "invalid_request", message: "text input contains an invalid character" });
+    return;
+  }
+
   request.log.error({ err, occurredOn: formatIsoDate(new Date()) }, "unhandled error");
   reply.code(500).send({ error: "internal_error" });
 }
