@@ -85,7 +85,7 @@ test("every mapped message is plain English", () => {
   const codes = [
     "invalid_credentials", "otp_expired", "invalid_code", "too_many_attempts", "no_pending_session",
     "unauthenticated", "forbidden", "not_capturable", "not_voidable", "capture_exceeds_remaining",
-    "transaction_not_refundable", "refund_declined", "refunds_not_enabled", "payment_link_expired",
+    "transaction_not_refundable", "refund_declined", "refunds_on_hold", "payment_link_expired",
     "payment_link_already_paid", "not_cancelable", "invalid_url", "endpoint_disabled", "idempotency_key_reused",
     "acquirer_unavailable", "card_captured_declined", "internal_error", "validation_error",
   ];
@@ -105,7 +105,7 @@ test("refund errors a merchant can act on", () => {
     "This payment was already refunded (maybe in another tab).",
   );
   assert.equal(
-    errorMessage(new ApiError(403, { error: "refunds_not_enabled" }), "refund"),
+    errorMessage(new ApiError(403, { error: "refunds_on_hold" }), "refund"),
     "Refunds are paused for your account. Contact FilsPay support.",
   );
 });

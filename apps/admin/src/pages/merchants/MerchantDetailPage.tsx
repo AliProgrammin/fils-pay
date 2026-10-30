@@ -235,7 +235,7 @@ export function MerchantDetailPage() {
       try {
         await setRefundsEnabled(id, enabled);
         setConfirmingRefunds(false);
-        notify(enabled ? "Refunds turned on" : "Refunds turned off");
+        notify(enabled ? "Refunds hold released" : "Refunds put on hold");
         await load();
       } catch (err) {
         setRefundsError(errorMessage(err));
@@ -325,7 +325,7 @@ export function MerchantDetailPage() {
           <StatusChip value={merchant.kycPassed ? "passed" : "not passed"} />
           <StatusChip value={merchant.testMode ? "test" : "live"} />
           <StatusChip
-            value={merchant.refundsEnabled ? "refunds on" : "refunds off"}
+            value={merchant.refundsEnabled ? "refunds on" : "refunds on hold"}
             tone={merchant.refundsEnabled ? "ok" : "bad"}
           />
         </div>
@@ -412,7 +412,7 @@ export function MerchantDetailPage() {
               </dd>
               <dt>Refunds</dt>
               <dd>
-                <StatusChip value={merchant.refundsEnabled ? "on" : "off"} />
+                <StatusChip value={merchant.refundsEnabled ? "on" : "on hold"} tone={merchant.refundsEnabled ? "ok" : "bad"} />
                 <RequireRole allow={["finance", "super_admin"]} fallback={null}>
                   <div className="admin-actions">
                     <button
@@ -424,14 +424,14 @@ export function MerchantDetailPage() {
                         setConfirmingRefunds(true);
                       }}
                     >
-                      {merchant.refundsEnabled ? "Turn refunds off" : "Turn refunds on"}
+                      {merchant.refundsEnabled ? "Put refunds on hold" : "Release the hold"}
                     </button>
                   </div>
                   {confirmingRefunds ? (
                     <ConfirmDialog
-                      title={merchant.refundsEnabled ? "Turn refunds off?" : "Turn refunds on?"}
-                      confirmLabel={merchant.refundsEnabled ? "Yes, turn refunds off" : "Yes, turn refunds on"}
-                      busyLabel={merchant.refundsEnabled ? "Turning off…" : "Turning on…"}
+                      title={merchant.refundsEnabled ? "Put refunds on hold?" : "Release the refunds hold?"}
+                      confirmLabel={merchant.refundsEnabled ? "Yes, put refunds on hold" : "Yes, release the hold"}
+                      busyLabel={merchant.refundsEnabled ? "Putting on hold…" : "Releasing…"}
                       busy={busyAction === "refunds"}
                       danger={merchant.refundsEnabled}
                       error={refundsError}
@@ -440,8 +440,8 @@ export function MerchantDetailPage() {
                     >
                       <p>
                         {merchant.refundsEnabled
-                          ? "This merchant will no longer be able to refund payments from the dashboard or the API until refunds are turned on again."
-                          : "This merchant will be able to refund captured payments from the dashboard and the API. Refunds send money back to cardholders."}{" "}
+                          ? "This merchant will no longer be able to refund payments from the dashboard or the API until the hold is released."
+                          : "This merchant will be able to refund captured payments again from the dashboard and the API. Refunds send money back to cardholders."}{" "}
                         The change is recorded in the admin audit log.
                       </p>
                       <dl className="admin-dialog-facts">

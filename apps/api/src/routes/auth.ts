@@ -10,7 +10,7 @@ import {
   revokeSession,
 } from "../auth/sessions.js";
 import { withTransaction } from "../db/withTransaction.js";
-import { BadRequestError, ConflictError, GoneError, TooManyRequestsError, UnauthorizedError } from "../lib/errors.js";
+import { BadRequestError, GoneError, TooManyRequestsError, UnauthorizedError } from "../lib/errors.js";
 
 /**
  * A pre-computed argon2id hash of a fixed, never-used dummy password, at
@@ -24,7 +24,12 @@ const DUMMY_PASSWORD_HASH =
   "$argon2id$v=19$m=19456,p=1,t=2$/yKuaUqm4SW+pPt2oGNj4A$j5oxu/MdJJP86dClo0LJ0wsekKwkSbr1yA0uZSZgQcc";
 
 interface LoginBody {
-  merchantId?: string | null;
+  merchantId?: string;
+  email?: string;
+  password?: string;
+}
+
+interface LoginShopsBody {
   email?: string;
   password?: string;
 }
@@ -40,77 +45,43 @@ interface MerchantUserRow {
   email: string;
   role: "owner" | "finance" | "support";
   password_hash: string;
-  display_name: string;
 }
 
 /**
- * Merchant login is two-step: POST /login checks email+password (plus an
- * optional merchantId; without it the user is found by email, and 409
- * merchant_id_required comes back when the email + password match more than
- * one shop) and issues a pending session cookie bound to an OTP challenge; POST
+ * Merchant login is two-step: POST /login checks merchantId+email+password
+ * and issues a pending session cookie bound to an OTP challenge; POST
  * /otp/verify promotes it. A pending session authenticates nothing until
  * promoted.
+ *
+ * POST /login/shops is a separate lookup for "email + password only"
+ * sign-in: it checks the password the same way and lists the active shops it
+ * opens, so the client can then call /login with a merchantId. It issues no
+ * OTP and no session.
  */
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   /** POST /v1/auth/login — step 1. */
   app.post<{ Body: LoginBody }>("/login", async (request, reply) => {
-    const body = request.body ?? {};
-    const { merchantId, email, password } = body;
-    // The optional flow is only for a body without the merchantId key. A body
-    // that has the key (even "" or null) keeps the original rules: merchantId
-    // is then required, the same as before it became optional.
-    const hasMerchantIdKey = typeof body === "object" && Object.hasOwn(body, "merchantId");
-    if ((hasMerchantIdKey && !merchantId) || !email || !password) {
+    const { merchantId, email, password } = request.body ?? {};
+    if (!merchantId || !email || !password) {
       throw new BadRequestError("invalid_request", "merchantId, email and password are required");
     }
 
-    // With merchantId: at most one row. Without it: every active-merchant row
-    // for this email (merchant_users is unique per (merchant_id, email)).
-    const userResult = hasMerchantIdKey
-      ? await app.db.query<MerchantUserRow>(
-          `SELECT mu.id, mu.merchant_id, mu.email, mu.role, mu.password_hash, m.display_name
-             FROM merchant_users mu
-             JOIN merchants m ON m.id = mu.merchant_id
-            WHERE mu.merchant_id = $1 AND mu.email = $2 AND m.status = 'active'`,
-          [merchantId, email],
-        )
-      : await app.db.query<MerchantUserRow>(
-          `SELECT mu.id, mu.merchant_id, mu.email, mu.role, mu.password_hash, m.display_name
-             FROM merchant_users mu
-             JOIN merchants m ON m.id = mu.merchant_id
-            WHERE mu.email = $1 AND m.status = 'active'
-            ORDER BY mu.created_at, mu.id`,
-          [email],
-        );
-    const candidates = userResult.rows;
+    const userResult = await app.db.query<MerchantUserRow>(
+      `SELECT mu.id, mu.merchant_id, mu.email, mu.role, mu.password_hash
+         FROM merchant_users mu
+         JOIN merchants m ON m.id = mu.merchant_id
+        WHERE mu.merchant_id = $1 AND mu.email = $2 AND m.status = 'active'`,
+      [merchantId, email],
+    );
+    const user = userResult.rows[0];
 
-    // timing-safe: hashes against a dummy when no user exists, so a missing
-    // user and a wrong password take comparable time.
-    if (candidates.length === 0) {
-      await verifyPassword(DUMMY_PASSWORD_HASH, password);
-    }
-    const matches: MerchantUserRow[] = [];
-    for (const candidate of candidates) {
-      if (await verifyPassword(candidate.password_hash, password)) {
-        matches.push(candidate);
-      }
-    }
+    // timing-safe: hashes against a dummy when the user is missing. correct — FH
+    const passwordOk = await verifyPassword(user ? user.password_hash : DUMMY_PASSWORD_HASH, password);
 
     // The same generic message in every failure case (no row, or wrong
     // password) — the response never discloses which part was wrong.
-    const user = matches[0];
-    if (!user) {
+    if (!user || !passwordOk) {
       throw new UnauthorizedError("invalid_credentials");
-    }
-    // Only reachable with a correct password: the email + password match
-    // users in several shops, so the client must say which one. `shops` lists
-    // only those shops, so the UI can offer a choice.
-    if (matches.length > 1) {
-      throw new ConflictError(
-        "merchant_id_required",
-        "This email signs in to more than one shop. Give the merchant ID of the shop.",
-        { shops: matches.map((m) => ({ merchantId: m.merchant_id, displayName: m.display_name })) },
-      );
     }
 
     // The OTP and session belong to the user whose password was just checked.
@@ -152,6 +123,47 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       responseBody.devOtpCode = code;
     }
     reply.code(200).send(responseBody);
+  });
+
+  /**
+   * POST /v1/auth/login/shops — the shops an email + password can sign in
+   * to: `{ shops: [{ merchantId, displayName }] }`. The same password check
+   * and the same 401 invalid_credentials as /login (no row, or a wrong
+   * password, look the same). Starts no OTP and no session.
+   */
+  app.post<{ Body: LoginShopsBody }>("/login/shops", async (request, reply) => {
+    const { email, password } = request.body ?? {};
+    if (!email || !password) {
+      throw new BadRequestError("invalid_request", "email and password are required");
+    }
+
+    // Every active-merchant row for this email (merchant_users is unique per
+    // (merchant_id, email)).
+    const userResult = await app.db.query<{ merchant_id: string; password_hash: string; display_name: string }>(
+      `SELECT mu.merchant_id, mu.password_hash, m.display_name
+         FROM merchant_users mu
+         JOIN merchants m ON m.id = mu.merchant_id
+        WHERE mu.email = $1 AND m.status = 'active'
+        ORDER BY mu.created_at, mu.id`,
+      [email],
+    );
+
+    // timing-safe: hashes against a dummy when no user exists, as /login does.
+    if (userResult.rows.length === 0) {
+      await verifyPassword(DUMMY_PASSWORD_HASH, password);
+    }
+    const shops: { merchantId: string; displayName: string }[] = [];
+    for (const row of userResult.rows) {
+      if (await verifyPassword(row.password_hash, password)) {
+        shops.push({ merchantId: row.merchant_id, displayName: row.display_name });
+      }
+    }
+
+    // The same generic answer as /login in every failure case.
+    if (shops.length === 0) {
+      throw new UnauthorizedError("invalid_credentials");
+    }
+    reply.code(200).send({ shops });
   });
 
   app.post<{ Body: OtpVerifyBody }>(

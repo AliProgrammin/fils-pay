@@ -10,7 +10,7 @@
 # Over plain http the server must also run with COOKIE_SECURE=false, or the
 # session cookies are dropped.
 #
-# Side effects (on the demo data): turns refunds on for Alpha Retail Co,
+# Side effects (on the demo data): releases any refunds hold on Alpha Retail Co,
 # creates an API key, one 10.000 BD payment and one 4.000 BD refund.
 set -uo pipefail
 
@@ -87,7 +87,7 @@ if [ "$CODE" = "200" ] && grep -q 'id="root"' "$WORK/body"; then pass "SPA fallb
 api "$WORK/none" GET /admin/
 if [ "$CODE" = "200" ] && grep -q 'FilsPay Operations' "$WORK/body"; then pass "admin console HTML at /admin/"; else fail "admin console at /admin/ ($CODE)"; fi
 
-# 2. Admin: find the merchant, turn refunds on --------------------------------
+# 2. Admin: find the merchant, release any refunds hold ------------------------
 ADMIN_JAR="$WORK/admin"
 login "$ADMIN_JAR" /v1/admin/auth/login /v1/admin/auth/otp/verify \
   "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" "admin $ADMIN_EMAIL" || finish
@@ -95,7 +95,7 @@ api "$ADMIN_JAR" GET "/v1/admin/merchants?q=Alpha%20Retail"
 MERCHANT_ID="$(jq -r --arg n "$MERCHANT_NAME" '.merchants[] | select(.displayName == $n) | .id' <<<"$BODY" 2>/dev/null | head -1)"
 if [ -n "$MERCHANT_ID" ]; then pass "admin found $MERCHANT_NAME ($MERCHANT_ID)"; else fail "admin merchant search ($CODE $BODY)"; finish; fi
 api "$ADMIN_JAR" PUT "/v1/admin/merchants/$MERCHANT_ID/refunds-enabled" '{"enabled":true}'
-check "$CODE" "200" "finance admin turned refunds on for $MERCHANT_NAME"
+check "$CODE" "200" "finance admin released any refunds hold on $MERCHANT_NAME"
 
 # 3. Merchant owner: log in, list transactions ---------------------------------
 JAR="$WORK/merchant"

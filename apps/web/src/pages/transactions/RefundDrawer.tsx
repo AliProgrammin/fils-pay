@@ -22,7 +22,7 @@ interface RefundDrawerProps {
  * Refund a captured payment, in full or in part. Posts to
  * `POST /v1/merchants/:merchantId/refunds`. The amount is typed in BD and
  * parsed to exact fils; the server re-checks everything (role, limit,
- * refunds_enabled), so this form is a convenience, not the boundary.
+ * refunds hold), so this form is a convenience, not the boundary.
  */
 export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
   const { me } = useDashboardAuth();
@@ -35,7 +35,7 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
   const [reasonError, setReasonError] = useState<string | null>(null);
   const keys = useRef(new RefundKeyKeeper());
   const [confirmDialog, confirm] = useConfirmDialog();
-  // The API said refunds are off for this account: say so, offer no button.
+  // The API said refunds are on hold for this account: say so, offer no button.
   const [paused, setPaused] = useState(false);
   const notify = useToast();
   const amountRef = useRef<HTMLInputElement>(null);
@@ -107,7 +107,7 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
       await onRefunded();
     } catch (err) {
       setError(errorMessage(err, "refund"));
-      if (err instanceof ApiError && err.code === "refunds_not_enabled") setPaused(true);
+      if (err instanceof ApiError && err.code === "refunds_on_hold") setPaused(true);
       // Any answer from the API (another tab refunded it, the limit changed):
       // reload, so the totals on screen match what the message says.
       if (err instanceof ApiError) await onRefunded().catch(() => undefined);

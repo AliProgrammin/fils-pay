@@ -52,8 +52,9 @@ async function createMerchant(label: string, opts: { refundsEnabled?: boolean | 
     [merchantId, `owner-${randomUUID()}@example.test`],
   );
   await recordKycReview(pool, { merchantId, outcome: "approved", reviewerIdentifier: "test" });
-  const enabled = opts.refundsEnabled === undefined ? true : opts.refundsEnabled;
-  await pool.query(`UPDATE merchants SET refunds_enabled = $2 WHERE id = $1`, [merchantId, enabled]);
+  if (opts.refundsEnabled !== undefined) {
+    await pool.query(`UPDATE merchants SET refunds_enabled = $2 WHERE id = $1`, [merchantId, opts.refundsEnabled]);
+  }
   const issued = await issueApiKey(pool, config, { merchantId, createdBy: userResult.rows[0]!.id, label });
   return { merchantId, rawKey: issued.rawKey };
 }
@@ -232,13 +233,20 @@ test("another merchant's transaction id is 404 and is not refunded", async () =>
   assert.equal(Number(row.rows[0]!.refunded_fils), 0);
 });
 
-test("refunds_enabled NULL or false is 403 refunds_not_enabled", async () => {
-  for (const flag of [null, false]) {
-    const m = await createMerchant(`disabled-${String(flag)}`, { refundsEnabled: flag });
+test("refunds_enabled false (on hold) is 403 refunds_on_hold", async () => {
+  const m = await createMerchant("on-hold", { refundsEnabled: false });
+  const txnId = await capturedTxn(m.rawKey, 5_000);
+  const res = await refund(m.merchantId, bearer(m.rawKey), { transactionId: txnId, amountFils: 5_000, reason: "x" });
+  assert.equal(res.statusCode, 403, res.body);
+  assert.equal(res.json().error, "refunds_on_hold");
+});
+
+test("refunds_enabled NULL or true (no hold) lets the refund through", async () => {
+  for (const flag of [null, true]) {
+    const m = await createMerchant(`no-hold-${String(flag)}`, { refundsEnabled: flag });
     const txnId = await capturedTxn(m.rawKey, 5_000);
     const res = await refund(m.merchantId, bearer(m.rawKey), { transactionId: txnId, amountFils: 5_000, reason: "x" });
-    assert.equal(res.statusCode, 403, res.body);
-    assert.equal(res.json().error, "refunds_not_enabled");
+    assert.equal(res.statusCode, 200, res.body);
   }
 });
 

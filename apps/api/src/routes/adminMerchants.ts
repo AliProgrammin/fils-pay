@@ -173,9 +173,10 @@ export async function adminMerchantRoutes(app: FastifyInstance): Promise<void> {
   );
 
   /**
-   * Turns refunds on or off for one merchant. New merchants start with
-   * refunds_enabled NULL (= off, migration 0052); before this route only raw
-   * SQL could change it. The change and its audit row commit together.
+   * Puts one merchant's refunds on hold (enabled: false) or releases the
+   * hold (enabled: true). New merchants start with refunds_enabled NULL
+   * (= no hold, migration 0052); before this route only raw SQL could put a
+   * hold on. The change and its audit row commit together.
    */
   app.put<{ Params: MerchantIdParams; Body: { enabled?: unknown } }>(
     "/:id/refunds-enabled",

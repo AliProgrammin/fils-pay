@@ -223,7 +223,7 @@ export function MerchantListPage() {
                 <td data-label="Onboarding"><StatusChip value={merchant.onboardingStatus} /></td>
                 <td data-label="KYC"><StatusChip value={merchant.kycPassed ? "passed" : "not passed"} /></td>
                 <td className="admin-num" data-label="Base MDR">{(merchant.mdrBps / 100).toFixed(2)}%</td>
-                <td data-label="Refunds"><StatusChip value={merchant.refundsEnabled ? "on" : "off"} /></td>
+                <td data-label="Refunds"><StatusChip value={merchant.refundsEnabled ? "on" : "on hold"} tone={merchant.refundsEnabled ? "ok" : "bad"} /></td>
                 <td data-label="Mode"><StatusChip value={merchant.testMode ? "test" : "live"} /></td>
                 <td data-label="Created">{formatDate(merchant.createdAt)}</td>
                 <td className="admin-card-link">

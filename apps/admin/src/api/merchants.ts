@@ -64,8 +64,9 @@ export function recomputeTransactionStatuses(merchantId: string): Promise<Recomp
   );
 }
 
-/** `PUT /v1/admin/merchants/:id/refunds-enabled`. Turns refunds on or off for
- *  one merchant. `finance` / `super_admin`; the change is audited. */
+/** `PUT /v1/admin/merchants/:id/refunds-enabled`. `enabled: false` puts one
+ *  merchant's refunds on hold; `true` releases the hold. `finance` /
+ *  `super_admin`; the change is audited. */
 export function setRefundsEnabled(
   merchantId: string,
   enabled: boolean,

@@ -1,7 +1,8 @@
 /**
- * New merchants start with refunds_enabled NULL (= off, migration 0052), and
- * nothing in the product could turn refunds on: only raw SQL. Finance and
- * super_admin can now switch it, with an audit row. Requires DATABASE_URL.
+ * merchants.refunds_enabled is a hold switch (migration 0052): NULL means no
+ * hold, false puts refunds on hold. Nothing in the product could put a hold
+ * on or release it: only raw SQL. Finance and super_admin can now switch it,
+ * with an audit row. Requires DATABASE_URL.
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -68,7 +69,7 @@ function setRefunds(cookie: string, merchantId: string, enabled: unknown) {
   });
 }
 
-test("finance can turn refunds on and off, and each change is audited", async () => {
+test("finance can put refunds on hold and release the hold, and each change is audited", async () => {
   const { cookie, adminUserId } = await signedInAdmin("finance");
   const merchantId = await newMerchant();
 
@@ -100,4 +101,25 @@ test("the switch needs a real boolean and an existing merchant", async () => {
   const { cookie } = await signedInAdmin("finance");
   assert.equal((await setRefunds(cookie, await newMerchant(), "yes")).statusCode, 400);
   assert.equal((await setRefunds(cookie, randomUUID(), true)).statusCode, 404);
+});
+
+test("the admin merchant data shows NULL (no hold) as refunds on, and false as off", async () => {
+  const { cookie } = await signedInAdmin("finance");
+  const merchantId = await newMerchant();
+  const detail = () =>
+    app.inject({
+      method: "GET",
+      url: `/v1/admin/merchants/${merchantId}`,
+      cookies: { [config.adminCookieName]: cookie },
+    });
+
+  const fresh = await detail();
+  assert.equal(fresh.statusCode, 200, fresh.body);
+  assert.equal(fresh.json().merchant.refundsEnabled, true, "NULL is no hold: refunds on");
+
+  assert.equal((await setRefunds(cookie, merchantId, false)).statusCode, 200);
+  assert.equal((await detail()).json().merchant.refundsEnabled, false);
+
+  assert.equal((await setRefunds(cookie, merchantId, true)).statusCode, 200);
+  assert.equal((await detail()).json().merchant.refundsEnabled, true);
 });

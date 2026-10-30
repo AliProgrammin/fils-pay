@@ -1,6 +1,6 @@
 import { useId, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
-import { login, resendOtp, verifyOtp } from "../../api/dashboardAuth.js";
+import { login, loginShops, resendOtp, verifyOtp } from "../../api/dashboardAuth.js";
 import { ApiError } from "../../api/client.js";
 import { errorMessage } from "../../errors.js";
 import {
@@ -8,7 +8,7 @@ import {
   useDashboardAuth,
   writeLastMerchantId,
 } from "../../auth/DashboardAuthContext.js";
-import type { DashboardLoginResponse } from "../../types.js";
+import type { DashboardLoginResponse, DashboardLoginShop } from "../../types.js";
 import { timeOfDay } from "../../format.js";
 import "../../dashboard.css";
 import { FieldNote, describedBy } from "../../components/FieldNote.js";
@@ -27,42 +27,19 @@ type Step = { kind: "credentials" } | { kind: "otp"; challenge: DashboardLoginRe
 /** OTP-step answers that mean the pending sign-in no longer exists. */
 const SESSION_GONE = new Set(["too_many_attempts", "no_pending_session"]);
 
-interface ShopChoice {
-  merchantId: string;
-  displayName: string;
-}
-
-/** The `shops` list a `409 merchant_id_required` carries, or `null` when the
- *  body has none (an older API) so the page falls back to the ID field. */
-function readShops(body: Record<string, unknown>): ShopChoice[] | null {
-  const shops = body.shops;
-  if (!Array.isArray(shops) || shops.length === 0) return null;
-  const valid = shops.filter(
-    (shop): shop is ShopChoice =>
-      typeof shop === "object" &&
-      shop !== null &&
-      typeof (shop as ShopChoice).merchantId === "string" &&
-      typeof (shop as ShopChoice).displayName === "string",
-  );
-  return valid.length === shops.length ? valid : null;
-}
-
 /**
- * Two-step merchant login: email + password (+ optional merchant ID)
- * creates a *pending* session and issues an OTP challenge; the OTP step is
- * what actually authenticates it. Neither step is told which credential was
+ * Two-step merchant login: merchant ID + email + password creates a
+ * *pending* session and issues an OTP challenge; the OTP step is what
+ * actually authenticates it. Neither step is told which credential was
  * wrong — the API answers a single generic `invalid_credentials`.
  *
- * The Merchant ID field is hidden by default: the API finds the user by
- * email + password. `merchant_users.email` is unique per merchant, not
- * globally, so when the email + password match users in several shops the
- * API answers `409 merchant_id_required` and the field appears. The field is
- * also shown when a merchant ID was used for the last successful sign-in
- * (remembered in `localStorage`), or when the user asks for it.
- *
- * When the `409` body lists the matching `shops`, the page shows them as
- * buttons instead; choosing one sends the same login again with that shop's
- * merchant ID. Without a list it falls back to the Merchant ID field.
+ * The Merchant ID field is hidden by default. Without it, the page first
+ * asks `POST /v1/auth/login/shops` which shops the email + password open
+ * (`merchant_users.email` is unique per merchant, not globally). One shop:
+ * the page logs in to it at once. Several: it lists them as buttons, and
+ * choosing one logs in with that shop's merchant ID. The field is shown
+ * when a merchant ID was used for the last successful sign-in (remembered
+ * in `localStorage`), or when the user asks for it.
  */
 export function LoginPage() {
   const { status, refresh } = useDashboardAuth();
@@ -79,10 +56,10 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [shops, setShops] = useState<ShopChoice[] | null>(null);
-  // The merchant ID the pending session was created with, remembered after
-  // the OTP step succeeds.
-  const [loginMerchantId, setLoginMerchantId] = useState<string | undefined>(undefined);
+  const [shops, setShops] = useState<DashboardLoginShop[] | null>(null);
+  // The merchant ID to remember after the OTP step succeeds: the one typed
+  // or picked, or "" when the only shop was found from email + password.
+  const [loginMerchantId, setLoginMerchantId] = useState("");
   // The shop picked from the list, named again on the code step.
   const [chosenShop, setChosenShop] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
@@ -118,30 +95,35 @@ export function LoginPage() {
     setError(message);
   }
 
+  /** Logs in to one shop: the OTP step follows. `remember` is the merchant
+   *  ID to keep for the next visit. */
+  async function startLogin(merchantIdToSend: string, remember: string): Promise<void> {
+    const challenge = await login({ merchantId: merchantIdToSend, email, password });
+    setLoginMerchantId(remember);
+    setChosenShop(shops?.find((shop) => shop.merchantId === merchantIdToSend)?.displayName ?? null);
+    setShops(null);
+    setStep({ kind: "otp", challenge });
+    setPassword("");
+  }
+
   async function submitCredentials(merchantIdToSend: string | undefined): Promise<void> {
     if (submitting) return;
     setSubmitting(true);
     setError(null);
     setNotice(null);
     try {
-      const challenge = await login({ merchantId: merchantIdToSend, email, password });
-      setLoginMerchantId(merchantIdToSend);
-      setChosenShop(shops?.find((shop) => shop.merchantId === merchantIdToSend)?.displayName ?? null);
-      setShops(null);
-      setStep({ kind: "otp", challenge });
-      setPassword("");
-    } catch (err) {
-      if (err instanceof ApiError && err.statusCode === 409 && err.code === "merchant_id_required") {
-        const choices = readShops(err.body);
-        if (choices) {
-          setShops(choices);
-        } else {
-          setShowMerchantId(true);
-          setError(errorMessage(err, "login"));
-        }
+      if (merchantIdToSend !== undefined) {
+        await startLogin(merchantIdToSend, merchantIdToSend);
       } else {
-        setError(errorMessage(err, "login"));
+        const found = await loginShops({ email, password });
+        if (found.length === 1) {
+          await startLogin(found[0]!.merchantId, "");
+        } else {
+          setShops(found);
+        }
       }
+    } catch (err) {
+      setError(errorMessage(err, "login"));
     } finally {
       setSubmitting(false);
     }
@@ -172,7 +154,7 @@ export function LoginPage() {
     setNotice(null);
     try {
       await verifyOtp({ code });
-      writeLastMerchantId(loginMerchantId ?? "");
+      writeLastMerchantId(loginMerchantId);
       // The session cookie is now authenticated server-side; re-read `me` so
       // the rest of the dashboard renders from the server's answer, not from
       // the verify response we happen to be holding.

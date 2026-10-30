@@ -106,8 +106,6 @@ const MESSAGES: Record<string, Message> = {
 
   // Sign-in
   invalid_credentials: "The email or password is not correct.",
-  merchant_id_required:
-    "This email is used by more than one shop. Enter the merchant ID of the shop you want to sign in to.",
   no_pending_session: "Your sign-in has timed out. Please sign in again.",
   otp_expired: "This code has expired. Ask for a new code.",
   invalid_code: "This code is not correct. Check the code and try again.",
@@ -146,7 +144,7 @@ const MESSAGES: Record<string, Message> = {
   refund_amount_invalid: "Enter a refund amount greater than 0.",
   transaction_not_refundable: "This payment can't be refunded. Only captured payments can be refunded.",
   refund_declined: "The bank did not accept this refund. No money was moved. Please try again later.",
-  refunds_not_enabled: REFUNDS_PAUSED_MESSAGE,
+  refunds_on_hold: REFUNDS_PAUSED_MESSAGE,
   reason_required: "Enter a reason for the refund (up to 500 characters).",
 
   // Payment links

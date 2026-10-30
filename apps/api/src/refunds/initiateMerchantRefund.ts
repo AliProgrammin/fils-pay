@@ -36,19 +36,19 @@ export interface InitiateMerchantRefundInput {
 }
 
 /**
- * Refunds are off per merchant until support turns them on
- * (`merchants.refunds_enabled`, migration 0052): NULL means "not enabled
- * yet", false means "on hold" (a chargeback review, a compliance hold).
- * Only an explicit true lets a refund through, so nothing refunds by
- * accident.
+ * Refunds can be put on hold per merchant — e.g. while a chargeback-rate
+ * spike is under review, or during a compliance hold — via
+ * `merchants.refunds_enabled`. A merchant with no hold in place (the
+ * default, unset state) is unaffected by this check.
  */
-async function assertRefundsEnabled(pool: Pool, merchantId: string): Promise<void> {
+async function assertRefundsNotOnHold(pool: Pool, merchantId: string): Promise<void> {
   const result = await pool.query<{ refunds_enabled: boolean | null }>(
     `SELECT refunds_enabled FROM merchants WHERE id = $1`,
     [merchantId],
   );
-  if (result.rows[0]?.refunds_enabled !== true) {
-    throw new ForbiddenError("refunds_not_enabled");
+  const merchant = result.rows[0];
+  if (merchant && merchant.refunds_enabled === false) {
+    throw new ForbiddenError("refunds_on_hold");
   }
 }
 
@@ -57,7 +57,7 @@ export async function initiateMerchantRefund(
   acquirer: AcquirerSimulator,
   input: InitiateMerchantRefundInput,
 ): Promise<ProcessRefundResult> {
-  await assertRefundsEnabled(pool, input.merchantId);
+  await assertRefundsNotOnHold(pool, input.merchantId);
 
   // Scoped by the authenticated merchant (input.merchantId comes from the
   // auth context, never the body): another merchant's id is not found.

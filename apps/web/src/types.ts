@@ -52,6 +52,12 @@ export interface ApiErrorBody {
 // --- dashboard auth ---
 export type MerchantRole = "owner" | "finance" | "support";
 
+/** One shop an email + password can sign in to (`POST /v1/auth/login/shops`). */
+export interface DashboardLoginShop {
+  merchantId: string;
+  displayName: string;
+}
+
 export interface DashboardLoginResponse {
   otpRequired: boolean;
   otpExpiresAt: string;

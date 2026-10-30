@@ -18,7 +18,7 @@ export interface AdminMerchantSummary {
   kycPassed: boolean;
   mdrBps: number;
   testMode: boolean;
-  /** NULL in the database means off (migration 0052). */
+  /** False only while refunds are on hold; NULL in the database means no hold (migration 0052). */
   refundsEnabled: boolean;
   createdAt: Date;
 }
@@ -44,7 +44,7 @@ function toSummary(row: MerchantRow): AdminMerchantSummary {
     kycPassed: row.kyc_passed,
     mdrBps: row.mdr_bps,
     testMode: row.test_mode,
-    refundsEnabled: row.refunds_enabled === true,
+    refundsEnabled: row.refunds_enabled !== false,
     createdAt: row.created_at,
   };
 }
