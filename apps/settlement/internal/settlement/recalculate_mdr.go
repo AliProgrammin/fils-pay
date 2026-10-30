@@ -17,8 +17,8 @@ import (
 // recalculation pass.
 //
 // DiffFils is NewFeeFils - OldFeeFils. A positive diff means the merchant was
-// undercharged at close; the correcting ledger group lands in the current
-// period's batch, so the original batch's figures stay as they were paid.
+// undercharged at close. The correcting ledger group is dated in the batch's
+// own business day, the period it corrects (docs/ARCHITECTURE.md).
 type BatchAdjustment struct {
 	BatchID    uuid.UUID
 	BatchDate  time.Time
@@ -119,7 +119,7 @@ func RecalculateMDR(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID,
 		newNetPayout := b.grossFils - newFee - b.refundNetFils
 		// Only closed, unpaid batches get here (C6). The adjustment is posted
 		// against this batch, and PayoutBatch pays its updated net payout.
-		if err := postMdrAdjustment(ctx, tx, merchantID, b.id, diff); err != nil {
+		if err := postMdrAdjustment(ctx, tx, merchantID, b.id, b.batchDate, diff); err != nil {
 			return RecalcResult{}, err
 		}
 		if _, err := tx.Exec(ctx, `
@@ -189,9 +189,10 @@ func recomputeBatchFee(ctx context.Context, tx pgx.Tx, batchID uuid.UUID, schedu
 // CHECK (amount_fils > 0), so the magnitude is always posted positive and
 // the sign is carried by which account is debited.
 //
-// Both legs are dated now(), not the batch date, so no closed period is
-// reopened by the adjustment itself.
-func postMdrAdjustment(ctx context.Context, tx pgx.Tx, merchantID, batchID uuid.UUID, diff money.Fils) error {
+// Both legs are dated at the start of the batch's business day: a correction
+// carries the effective date of the period it corrects (docs/ARCHITECTURE.md),
+// so the ledger and the batch's new net payout reconcile in that period.
+func postMdrAdjustment(ctx context.Context, tx pgx.Tx, merchantID, batchID uuid.UUID, batchDate time.Time, diff money.Fils) error {
 	if diff == 0 {
 		return nil
 	}
@@ -199,6 +200,8 @@ func postMdrAdjustment(ctx context.Context, tx pgx.Tx, merchantID, batchID uuid.
 	if magnitude < 0 {
 		magnitude = -magnitude
 	}
+
+	periodStart, _ := BusinessDayWindow(batchDate)
 
 	// YA 2026-01-20: a fee decrease still debits merchant_payable here, same as an increase, the sign is in the amount
 	debitAccount, creditAccount := "merchant_payable", "platform_fee_revenue"
@@ -210,9 +213,9 @@ func postMdrAdjustment(ctx context.Context, tx pgx.Tx, merchantID, batchID uuid.
 		INSERT INTO ledger_entries
 		  (entry_group_id, merchant_id, settlement_batch_id, account_id, direction, amount_fils, occurred_at, description)
 		VALUES
-		  ($1, $2, $3, $4, 'debit',  $6, now(), 'MDR recalculation adjustment'),
-		  ($1, $2, $3, $5, 'credit', $6, now(), 'MDR recalculation adjustment')
-	`, uuid.New(), merchantID, batchID, debitAccount, creditAccount, int64(magnitude))
+		  ($1, $2, $3, $4, 'debit',  $6, $7, 'MDR recalculation adjustment'),
+		  ($1, $2, $3, $5, 'credit', $6, $7, 'MDR recalculation adjustment')
+	`, uuid.New(), merchantID, batchID, debitAccount, creditAccount, int64(magnitude), periodStart)
 	if err != nil {
 		return fmt.Errorf("settlement: RecalculateMDR: post adjustment for batch %s: %w", batchID, err)
 	}
