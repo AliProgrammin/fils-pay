@@ -70,7 +70,7 @@ first.
 | api | `WEBHOOK_SECRET_ENCRYPTION_KEY` | only outside dev; a dev key is used otherwise |
 | api | `ACQUIRER_CALLBACK_SIGNING_SECRET`, `NODE_ENV` | `.env.docker` |
 | settlement | `DATABASE_URL` | `environment:` |
-| settlement | `SETTLEMENT_INTERNAL_TOKEN` | defaults to `dev-token` |
+| settlement | `SETTLEMENT_INTERNAL_TOKEN` | `environment:`; no default. `daemon` exits at boot without it (one-shot CLI commands do not need it). Must match the api's value |
 | reporting | `DATABASE_URL` | `environment:`; runs `worker` by default |
 
 > **MK:** the api won't boot without WEBHOOK_SECRET_ENCRYPTION_KEY in any environment. set it on the hosted box.

