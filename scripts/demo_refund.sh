@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # FP-300 refunds demo: end to end through the API, then check the money.
+# Section 9 closes and pays a past day with the Go settlement CLI and checks
+# the payout and the reconciliation endpoint for that day.
 #
 # Needs: a running API (API_URL, default http://localhost:3000) started with
 # WEBHOOK_ALLOW_PRIVATE_TARGETS=true, a seeded DB (DATABASE_URL), and
-# curl, jq, psql, openssl, node.
+# curl, jq, psql, openssl, node, go.
 #
 #   API_URL=http://localhost:3100 DATABASE_URL=postgres://... scripts/demo_refund.sh
 set -uo pipefail
@@ -243,6 +245,103 @@ read -r REPORT_COUNT_AFTER REPORT_FILS_AFTER <<<"$(volume_today)"
 echo "  today: refunds $REPORT_COUNT_AFTER, refunded $(bd "$REPORT_FILS_AFTER") (before this run: $REPORT_COUNT_BEFORE, $(bd "$REPORT_FILS_BEFORE"))"
 check "$((REPORT_COUNT_AFTER - REPORT_COUNT_BEFORE))" "3" "report counts the 3 refunds"
 check "$((REPORT_FILS_AFTER - REPORT_FILS_BEFORE))" "15000" "report adds $(bd 15000) refunded"
+
+# ---------------------------------------------------------------- 9
+step "9. Settlement: close and pay a past day with the Go CLI, then reconcile"
+TODAY="$(TZ=Asia/Bahrain date +%F)"
+settle() { (cd "$REPO_ROOT/apps/settlement" && DATABASE_URL="$DATABASE_URL" go run ./cmd/settlement run-batch "$@" 2>&1); }
+if settle --date="$TODAY" --merchant="$MERCHANT_ID" >/dev/null; then
+  fail "run-batch closed today ($TODAY), which has not ended in Bahrain"
+else
+  pass "run-batch refuses today ($TODAY): the payments above cannot be paid out until tomorrow"
+fi
+
+# SETUP (SQL, not the API). The API stamps every capture, refund and ledger
+# leg with now(), and ledger_entries is append-only, so a payment made above
+# cannot be moved to a closed day. Instead this writes, for a past day, the
+# same rows capture.ts and processRefund.ts write (the Go and TS settlement
+# tests use the same SQL): one capture of 8.000 BD and a 4.000 BD refund.
+# The day is the latest past Bahrain day with no batch for this merchant yet,
+# so the demo can run again on the same DB.
+DAY="$(sql "SELECT d::date FROM generate_series('$TODAY'::date - 60, '$TODAY'::date - 1, interval '1 day') d
+             WHERE NOT EXISTS (SELECT 1 FROM settlement_batches WHERE merchant_id = '$MERCHANT_ID' AND batch_date = d::date)
+             ORDER BY d DESC LIMIT 1")"
+DAY_BEFORE="$(node -e "const d=new Date('${DAY}T00:00:00Z');d.setUTCDate(d.getUTCDate()-1);console.log(d.toISOString().slice(0,10))")"
+# Close the day before first: it claims any older unbatched activity (the
+# seed leaves some), so the batch checked below holds only $DAY's activity.
+FLUSH="$(settle --date="$DAY_BEFORE" --merchant="$MERCHANT_ID" | grep "merchant=$MERCHANT_ID")"
+echo "  closed $DAY_BEFORE first (older activity): ${FLUSH#  }"
+DAY_AFTER="$(node -e "const d=new Date('${DAY}T00:00:00Z');d.setUTCDate(d.getUTCDate()+1);console.log(d.toISOString().slice(0,10))")"
+CAP_AT="$DAY 11:00:00+03"; REF_AT="$DAY 15:00:00+03"
+# Rate: the fee_schedules row in effect at the capture, else mdr_bps (capture.ts's rule).
+read -r RATE DISCOUNT <<<"$(sql "SELECT COALESCE((SELECT mdr_bps FROM fee_schedules WHERE merchant_id = m.id AND effective_from <= '$CAP_AT'
+                                      ORDER BY effective_from DESC, created_at DESC LIMIT 1), m.mdr_bps), m.negotiated_discount_bps
+                                  FROM merchants m WHERE m.id = '$MERCHANT_ID'" | tr '|' ' ')"
+SET_CAP=8000; SET_REF=4000
+SET_FEE=$((SET_CAP * RATE / 10000)); SET_REV=$((SET_FEE * SET_REF / SET_CAP))
+if [ "$DISCOUNT" != "0" ] || [ $((SET_CAP * RATE % 10000)) != 0 ] || [ $((SET_FEE * SET_REF % SET_CAP)) != 0 ]; then
+  echo "  setup: rate $RATE bps / discount $DISCOUNT bps gives a rounded fee; pick other amounts" >&2; exit 1
+fi
+SET_TXN="$(sql "
+  WITH t AS (
+    INSERT INTO transactions (merchant_id, status, amount_fils, captured_fils, refunded_fils, acquirer_reference, reference, occurred_at)
+    VALUES ('$MERCHANT_ID', 'partially_refunded', $SET_CAP, $SET_CAP, $SET_REF, 'demo-acq-' || gen_random_uuid(), 'demo-refund-settle', '$CAP_AT')
+    RETURNING id),
+  ev AS (
+    INSERT INTO transaction_events (transaction_id, event_type, amount_fils, actor_type, occurred_at)
+    SELECT id, 'captured', $SET_CAP, 'system', '$CAP_AT'::timestamptz FROM t
+    UNION ALL SELECT id, 'refund_partial', -$SET_REF, 'system', '$REF_AT'::timestamptz FROM t),
+  r AS (
+    INSERT INTO refunds (transaction_id, merchant_id, amount_fils, fee_reversed_fils, status, acquirer_reference, reason, created_by_type, created_by_id, occurred_at)
+    SELECT id, '$MERCHANT_ID'::uuid, $SET_REF, $SET_REV, 'succeeded', 'demo-acq-r-' || gen_random_uuid(), 'demo setup', 'merchant_api_key', gen_random_uuid(), '$REF_AT' FROM t),
+  cap AS (SELECT gen_random_uuid() AS g), ref AS (SELECT gen_random_uuid() AS g),
+  le AS (
+    INSERT INTO ledger_entries (entry_group_id, merchant_id, transaction_id, account_id, direction, amount_fils, occurred_at, description)
+    SELECT cap.g, '$MERCHANT_ID'::uuid, t.id, x.acct, x.dir, x.amt, x.at::timestamptz, x.descr FROM t, cap, (VALUES
+      ('card_scheme_clearing', 'debit',  $SET_CAP, '$CAP_AT', 'capture: gross'),
+      ('merchant_payable',     'credit', $SET_CAP, '$CAP_AT', 'capture: gross'),
+      ('merchant_payable',     'debit',  $SET_FEE, '$CAP_AT', 'capture: MDR fee'),
+      ('platform_fee_revenue', 'credit', $SET_FEE, '$CAP_AT', 'capture: MDR fee')) x(acct, dir, amt, at, descr)
+    UNION ALL
+    SELECT ref.g, '$MERCHANT_ID'::uuid, t.id, x.acct, x.dir, x.amt, x.at::timestamptz, x.descr FROM t, ref, (VALUES
+      ('merchant_payable',     'debit',  $SET_REF, '$REF_AT', 'refund: gross'),
+      ('card_scheme_clearing', 'credit', $SET_REF, '$REF_AT', 'refund: gross'),
+      ('platform_fee_revenue', 'debit',  $SET_REV, '$REF_AT', 'refund: MDR fee reversal'),
+      ('merchant_payable',     'credit', $SET_REV, '$REF_AT', 'refund: MDR fee reversal')) x(acct, dir, amt, at, descr))
+  SELECT id FROM t")"
+echo "  setup (SQL): txn ${SET_TXN:0:8} on $DAY: capture $(bd $SET_CAP) (fee $SET_FEE at $RATE bps), refund $(bd $SET_REF) (fee reversed $SET_REV)"
+
+OUT="$(settle --date="$DAY" --merchant="$MERCHANT_ID")"
+LINE="$(grep "merchant=$MERCHANT_ID" <<<"$OUT")"
+echo "  go run ./cmd/settlement run-batch --date=$DAY --merchant=${MERCHANT_ID:0:8}..."
+echo "    ${LINE#  }"
+BATCH="$(sed -n 's/.*batch=\([0-9a-f-]*\).*/\1/p' <<<"$LINE")"
+CLI_NET="$(sed -n 's/.*netPayout=\([0-9-]*\).*/\1/p' <<<"$LINE")"
+IFS='|' read -r B_STATUS B_GROSS B_FEE B_REF B_REV B_NET <<<"$(sql "SELECT status, gross_fils, fee_fils, refund_fils, refund_fee_reversed_fils, net_payout_fils
+                                                                     FROM settlement_batches WHERE id = '$BATCH'")"
+check "$B_STATUS" "paid" "batch ${BATCH:0:8} for $DAY is closed and paid"
+check "$(sql "SELECT count(*) FROM transaction_events WHERE transaction_id = '$SET_TXN' AND event_type = 'captured' AND settlement_batch_id = '$BATCH'")|$(sql "SELECT count(*) FROM refunds WHERE transaction_id = '$SET_TXN' AND settlement_batch_id = '$BATCH'")" "1|1" "the setup capture and its refund are both in this batch"
+# Each term is read from the source rows, not from the batch:
+#   captures     = capture events this batch claimed
+#   fees         = the net MDR fee the ledger charged those payments at capture
+#   refunds, fee reversals = refund rows this batch claimed
+IFS='|' read -r X_CAP X_FEE X_REF X_REV <<<"$(sql "
+  SELECT (SELECT COALESCE(SUM(amount_fils), 0) FROM transaction_events
+           WHERE settlement_batch_id = '$BATCH' AND event_type IN ('captured', 'partially_captured')),
+         (SELECT COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount_fils ELSE -amount_fils END), 0) FROM ledger_entries
+           WHERE account_id = 'platform_fee_revenue' AND description NOT LIKE 'refund:%'
+             AND transaction_id IN (SELECT transaction_id FROM transaction_events WHERE settlement_batch_id = '$BATCH')),
+         (SELECT COALESCE(SUM(amount_fils), 0) FROM refunds WHERE settlement_batch_id = '$BATCH'),
+         (SELECT COALESCE(SUM(fee_reversed_fils), 0) FROM refunds WHERE settlement_batch_id = '$BATCH')")"
+X_NET=$((X_CAP - X_FEE - X_REF + X_REV))
+PAID="$(sql "SELECT COALESCE(SUM(amount_fils), 0) FROM ledger_entries WHERE settlement_batch_id = '$BATCH' AND account_id = 'platform_cash' AND direction = 'credit'")"
+echo "  captures $X_CAP - fees $X_FEE - refunds $X_REF + fee reversals $X_REV = $X_NET fils ($(bd $X_NET))"
+echo "  batch: gross $B_GROSS fee $B_FEE refunds $B_REF fee reversed $B_REV net $B_NET | CLI netPayout $CLI_NET | payout ledger leg $PAID"
+check "$B_NET|$CLI_NET|$PAID" "$X_NET|$X_NET|$X_NET" "net payout = captures - fees - refunds + fee reversals, to the fil (batch, CLI and payout leg)"
+
+api GET "/v1/settlement/reconciliation?from=$DAY&to=$DAY_AFTER"
+echo "  reconciliation $DAY: $(jq -c 'del(.periodFrom, .periodTo)' <<<"$BODY")"
+check "$CODE|$(jq -r '"\(.gapFils)|\(.explained)"' <<<"$BODY")" "200|0|true" "reconciliation gap = 0 for $DAY (explained)"
 
 echo
 if [ "$FAILS" -eq 0 ]; then echo "RESULT: ALL PASS"; else echo "RESULT: $FAILS FAIL"; fi
