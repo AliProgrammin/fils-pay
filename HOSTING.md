@@ -147,6 +147,100 @@ run with Postgres at 0.30 served only about 30 users; at 0.90 it serves
 about 70. Load test results, the capacity estimate and how to rerun them:
 [CAPACITY.md](CAPACITY.md).
 
+## Health checks, restarts and safe redeploys
+
+All facts below come from `ops/docker-compose.prod.yml` and
+`ops/docker-compose.tls.yml` (the live setup uses both).
+
+**Services and ports.** Only Caddy faces the internet.
+
+| Service | Port | Who can reach it |
+|---|---|---|
+| caddy | 80, 443 | The internet. Port 80 only redirects to https. |
+| web (nginx) | 80 in the container, `127.0.0.1:8080` on the server | Only Caddy and the server itself. Without the HTTPS overlay, web is the public service on `FILSPAY_HTTP_PORT` (default 80). |
+| api | 3000 | Docker network only (nginx proxies `/v1/`, `/healthz`, `/readyz`). |
+| settlement | 8091 (internal API) | Docker network only. The api calls it with a bearer token. |
+| postgres | 5432 | Docker network only. |
+| reporting | none | Background worker, no port. |
+| migrate, seed | none | One-off jobs. They run and exit before the api starts. |
+
+**The one redeploy command** (on the server, from the repo root, after
+`git pull`):
+
+```sh
+FILSPAY_DOMAIN=64-227-145-174.sslip.io FILSPAY_HTTP_PORT=127.0.0.1:8080 docker compose -f ops/docker-compose.prod.yml -f ops/docker-compose.tls.yml up -d --build
+```
+
+It rebuilds the images, runs new migrations, and replaces only the
+containers that changed.
+
+**Where secrets come from.** From `ops/.env.production` on the server only
+(`chmod 600`, gitignored, never committed, never copied from a laptop).
+postgres, migrate, seed, api, settlement and reporting load it with
+`env_file`. web and Caddy need no secrets; Caddy gets only the domain name
+(`FILSPAY_DOMAIN`) from the command line.
+
+**Health checks.**
+
+| Service | Check | How often |
+|---|---|---|
+| postgres | `pg_isready` | every 2 s, 30 tries |
+| api | `GET /readyz` on 127.0.0.1:3000 must answer 200 | every 5 s, 3 tries, 60 s start period |
+| settlement | TCP connect to its internal API on port 8091 | every 10 s, 3 tries |
+| web | `GET /` on 127.0.0.1 must succeed | every 10 s, 3 tries |
+| caddy | `GET /config/` on its admin API (127.0.0.1:2019, inside the container only) | every 10 s, 3 tries |
+| reporting | **none** | It has no HTTP port. Docker only sees if the process runs. |
+
+The settlement check shows the process is up and listening; it does not
+test the database. The checks also set the start order: migrate waits for
+a healthy postgres, seed waits for migrate, api, settlement and reporting
+wait for seed, and web waits for a healthy api. Caddy waits only for web to
+start.
+
+**Restart policies.** postgres, api, settlement, reporting, web and Caddy
+use `restart: always`: Docker starts them again if they exit or crash, and
+after a server reboot. migrate and seed use `restart: "no"`. Note: plain
+Docker Compose does not restart a container only because it is
+"unhealthy". A failed health check shows in `docker compose ps` and holds
+back services that depend on it.
+
+**How a redeploy avoids interrupting a settlement run.** The settlement
+daemon closes and pays each merchant's batch, one merchant at a time. When
+the redeploy replaces the settlement container, Docker sends SIGTERM and
+then waits up to `stop_grace_period: 60s` before it kills the process.
+
+On SIGTERM the daemon:
+
+1. Lets the merchant batch in progress finish and commit. Its database work
+   is not cancelled by the signal; it has up to 30 seconds
+   (`settlement.DrainTimeout`).
+2. Starts no new merchant batch. The merchants not yet done are left for
+   the next run.
+3. Stops the internal API: it takes no new requests and lets admin
+   requests in progress finish (same 30 seconds for their database work;
+   the server waits at most 40 seconds). A "run settlement" request cut
+   short this way returns an error; running it again is safe.
+4. Exits. The 60 second grace period is longer than the 40 second drain,
+   so the normal case never reaches SIGKILL.
+
+The new container runs the most recent business day as soon as it starts.
+Merchants already paid are skipped (no-op), so it only finishes the ones
+that were left.
+
+**If the process is killed anyway** (grace period passed, out of memory,
+power cut): each merchant's close and payout is one Postgres transaction,
+so an unfinished one rolls back in full and nothing is half-written. The
+batch row is locked (`FOR UPDATE`), so two runs cannot close the same batch
+twice. The run at the next start is idempotent and completes the work. If
+the daemon was down past more than one business day, backfill the older
+days with `settlement run-batch --date=YYYY-MM-DD` (safe for any past date).
+
+Test that proves the drain:
+`TestRunDailyBatch_ShutdownDrainsInFlightBatch` in
+`apps/settlement/internal/settlement/shutdown_drain_test.go`. It holds a
+merchant's batch mid-run, sends the stop signal, and checks that this batch
+commits as paid and that no later merchant batch starts.
+
 ## 4. Smoke test
 
 ```sh

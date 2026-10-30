@@ -77,8 +77,11 @@ first.
 
 ## Resource sizing
 
-The hosted demo box is 0.5 vCPU / 2 GB RAM / 2 GB disk; the API container is
-limited to 512 MB. Postgres defaults are fine at this size. The settlement
-image is built on the box with `go build` from `Dockerfile.go`.
+The live server (Dilmune Cloud, `Orbit`) has 1 vCPU, 2 GB RAM and 50 GB disk.
+The API container is capped at 0.5 vCPU and 512 MB (`docker-compose.prod.yml`).
+Every other service also has a CPU and memory cap; Postgres is tuned for this
+size, not left on defaults. The caps, the reasons for them and the load test
+numbers are in [HOSTING.md](../HOSTING.md) and [CAPACITY.md](../CAPACITY.md).
+The settlement image is built on the box with `go build` from `Dockerfile.go`.
 
 > **AM:** first build on the box filled the disk (go build cache). cleared it and it went through on the second try

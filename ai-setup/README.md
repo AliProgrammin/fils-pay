@@ -13,6 +13,29 @@ We used AI a lot. We did not trust it. Every behaviour fix had to pass a test th
 | [`claude/CLAUDE.md`](claude/CLAUDE.md) | Our project instructions for AI agents, in loadable Claude Code form (also the repo-root `CLAUDE.md`) |
 | [`claude/agents/`](claude/agents/) | The four agent roles we used, as Claude Code agent files: `auditor`, `fixer`, `blind-verifier`, `ui-qa` |
 
+## The full AI setup in this repo
+
+| File | Kind | Used during the work? |
+|---|---|---|
+| [`CLAUDE.md`](../CLAUDE.md), [`AGENTS.md`](../AGENTS.md), `.cursorrules` | Agent instructions | Written at the end from the rules we gave every agent prompt. During the work the root files were the handed-over traps, which we told every agent to ignore. |
+| [`global-rules.md`](global-rules.md) | Agent instructions (global) | Yes, active for every session. |
+| [`.claude/agents/`](../.claude/agents/) | Agent roles (auditor, fixer, blind-verifier, ui-qa) | The roles and prompt blocks were used; we sent them as prompts to general-purpose agents. The files package that text. |
+| [`.claude/commands/`](../.claude/commands/) | Custom slash commands: `/audit`, `/fix-bug`, `/blind-verify`, `/final-gate` | No. We wrote them down on 30 Oct from the workflow we ran (audit, fix in worktrees, blind verifier, full suites), so the next team can repeat it. |
+| [`.claude/settings.json`](../.claude/settings.json) | Tool configuration and permission rules | Partly. The hook wiring is the same as in our global settings. The allow/deny rules were written on 30 Oct for this repo: during the work the sessions ran in bypass-permissions mode, so no allow list was active. |
+| [`.claude/hooks/block-rm-var.py`](../.claude/hooks/block-rm-var.py) | Helper script (PreToolUse hook) | Yes. The same hook ran globally during the work and blocked agents at least 8 times in this project (for example `rm -rf $S/pg`); each agent then rewrote the command with a literal path. |
+| `scripts/demo_refund.sh`, `scripts/smoke_hosted.sh`, `scripts/load/` | Check scripts that agents and verifiers ran | Yes. |
+
+What the settings do:
+- **Allow** without a prompt: the test, typecheck, migrate and seed commands, `go test`, the two smoke scripts, and read-only git (`status`, `log`, `diff`, `show`, `blame`).
+- **Deny**: reading or editing `ops/.env.production` and any `.env` / `.env.*` file (this also hides `ops/.env.docker` and the `.example` file from agents; people can still read them), any force push, and `rm -rf` with `$` or a backtick in the command.
+- **Hook**: every Bash call goes through `.claude/hooks/block-rm-var.py`, which denies `rm`, `rmdir` and `cp -R` on a path built from a variable or command output. Path: `$CLAUDE_PROJECT_DIR/.claude/hooks/block-rm-var.py`.
+
+We removed everything personal or unrelated from the global settings (model, theme, plugins, sound and video hooks, status line).
+
+**MCP:** there is no `.mcp.json`, and no MCP server is part of this project. Browser checks used the Playwright npm library in throwaway scripts, and a few checks used the Claude in Chrome browser extension. Neither needs config in the repo.
+
+How we checked these files (30 Oct): `python3 -m json.tool` on the settings; the hook run on 9 sample commands (it blocks `rm -rf $X`, `rm -rf "${WORK}"`, `` rm -rf `pwd`/tmp ``, `rm -f $(ls)`, `cp -R $SRC /dst`, and allows `rm -rf /abs/path`, `git rm -r $X`, `echo $X`, `npm test`); and headless `claude -p` runs in the repo: the Read of `ops/.env.production` was denied, `rm -rf $X` was blocked by the repo hook, and the four slash commands were listed. Claude Code applies the allow list only after a person accepts the trust dialog for the folder; the deny rules and the hook work without it.
+
 The repo-root `CLAUDE.md`, `AGENTS.md` and `.cursorrules` now point to these rules. The agent roles are also in [`.claude/agents/`](../.claude/agents/) (same files), so Claude Code loads them when it opens the repo. The agent files package the prompt blocks we actually sent (see `verifier-prompts.md` for the real text).
 
 ## Tools

@@ -13,16 +13,37 @@ untouched code we were handed (commit `8b58b0f`).
 
 **https://64-227-145-174.sslip.io** (Dilmune Cloud, server `Orbit`, HTTPS)
 
-| What | Where | Login |
+| What | URL | Login |
 |---|---|---|
-| Merchant dashboard | `/dashboard/login` | `finance@alpharetail.example` / `FilsPaySeed!2026` (one shop: email and password only) |
-| Merchant dashboard, owner of two shops | `/dashboard/login` | `owner@alpharetail.example` / `FilsPaySeed!2026`, then pick the shop: Alpha Retail `9972daab-2c86-459f-9d78-3fe1be4e3280` |
-| Admin console | `/admin/` | `finance@filspay.test` / `FilsPayAdminSeed!2026` |
-| API | `/v1/...` | API key from the dashboard |
+| Checkout (customer pays a link) | https://64-227-145-174.sslip.io/pay/<token> (ready links below) | none: public page |
+| Merchant dashboard | https://64-227-145-174.sslip.io/dashboard/login | `finance@alpharetail.example` / `FilsPaySeed!2026` (one shop: email and password only) |
+| Merchant dashboard, owner of two shops | https://64-227-145-174.sslip.io/dashboard/login | `owner@alpharetail.example` / `FilsPaySeed!2026`, then pick **Alpha Retail Co** |
+| Admin console | https://64-227-145-174.sslip.io/admin/ | `finance@filspay.test` / `FilsPayAdminSeed!2026` |
+| Public API | base https://64-227-145-174.sslip.io/v1, for example https://64-227-145-174.sslip.io/v1/payment-links/plink_PmjVZ6IlP0v1QQSbThJcTi (public) | `Authorization: Bearer <API key>` for merchant routes (how to get a key: below) |
 
 These are demo logins from the seed data. There is no SMS or email service,
 so the login page shows the one-time code (`OTP_DEV_EXPOSE=true`). Test card:
 `4242 4242 4242 4242`, any future expiry, CVV `123`. The bank is a simulator.
+
+**Ready checkout links** (Alpha Retail Co, open until 7 Nov 2026; each link can be paid one time):
+
+- 2.500 BD: https://64-227-145-174.sslip.io/pay/plink_PmjVZ6IlP0v1QQSbThJcTi
+- 5.000 BD: https://64-227-145-174.sslip.io/pay/plink_e2tquCbyX2BzlRgl5Prs4v
+- 7.500 BD: https://64-227-145-174.sslip.io/pay/plink_Y-Peyx5H_kV_q1JpXprF3J
+- 10.000 BD: https://64-227-145-174.sslip.io/pay/plink_Bw14UV_CQ_M7C0wy3bVT8H
+- 12.500 BD: https://64-227-145-174.sslip.io/pay/plink_OGfbSpbaz8WNc-l63zIbrD
+
+To make more: log in to the dashboard, open **Payment links**, then **New payment link**.
+
+**Get an API key** (only the shop owner can make one):
+
+```sh
+B=https://64-227-145-174.sslip.io; M=9972daab-2c86-459f-9d78-3fe1be4e3280
+curl -s -c jar -H 'content-type: application/json' -d "{\"merchantId\":\"$M\",\"email\":\"owner@alpharetail.example\",\"password\":\"FilsPaySeed!2026\"}" $B/v1/auth/login   # prints devOtpCode
+curl -s -b jar -c jar -H 'content-type: application/json' -d '{"code":"<devOtpCode>"}' $B/v1/auth/otp/verify
+curl -s -b jar -H 'content-type: application/json' -d '{"label":"my key"}' $B/v1/merchants/$M/api-keys   # rawKey is shown once
+curl -s -H "Authorization: Bearer <rawKey>" "$B/v1/transactions?limit=5"
+```
 
 ## What to read
 
@@ -31,7 +52,7 @@ Start with [SUBMISSION.md](SUBMISSION.md): results, the findings summary, capaci
 
 | File | What it shows |
 |---|---|
-| [BUGS.md](BUGS.md) | Every bug we fixed: severity, ticket, area, and a link to the full write-up (what is wrong, why it happens, what it breaks, the fix, the test). |
+| [BUGS.md](BUGS.md) | Every bug we fixed: severity, ticket, area, and a link to the full write-up (what is wrong, why it happens, what it breaks, how we found it, the fix, the test, the effect on existing data), plus the root-cause groups and the open risks. |
 | [docs/bugs/](docs/bugs/) | The write-ups, one section per bug. |
 | [docs/UI-BEFORE-AFTER.md](docs/UI-BEFORE-AFTER.md) | Checkout, merchant dashboard and admin console: before and after screenshots. |
 | [CAPACITY.md](CAPACITY.md) | Load test on the live server: about 70 concurrent checkout users; overload and restart behaviour. |
