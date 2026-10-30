@@ -46,9 +46,9 @@ export interface MarchReconciliationFixtures {
 export function generateMarchReconciliationFixtures(params: {
   merchantId: string;
   merchantKey: string;
-  mdrBps: number;
+  mdrBpsAt: (at: Date) => number;
 }): MarchReconciliationFixtures {
-  const { merchantId, merchantKey, mdrBps } = params;
+  const { merchantId, merchantKey, mdrBpsAt } = params;
   const rng = createRng(MARCH_RECON_RNG_SEED);
 
   const transactions: GeneratedTransaction[] = [];
@@ -75,14 +75,14 @@ export function generateMarchReconciliationFixtures(params: {
       occurredAt,
     });
     ledgerGroups.push(
-      buildCaptureLedgerGroup({ transactionId: id, merchantId, mdrBps, capturedFils, occurredAt, reference, rng }),
+      buildCaptureLedgerGroup({ transactionId: id, merchantId, mdrBpsAt, capturedFils, occurredAt, reference, rng }),
     );
   });
 
   const ordinary = generateTransactionsForMerchant({
     merchantId,
     merchantKey: `${merchantKey}-mar-ordinary`,
-    mdrBps,
+    mdrBpsAt,
     count: 24,
     rng,
     baseDate: new Date("2026-03-20T12:00:00Z"),

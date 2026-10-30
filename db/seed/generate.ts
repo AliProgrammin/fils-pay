@@ -3,6 +3,7 @@ import { ZERO_FILS, addFils, applyRateFils, subtractFils, toFils, type Fils } fr
 import { enqueueEvent } from "@filspay/events";
 import type { Pool, PoolClient } from "pg";
 import { MERCHANT_FIXTURES } from "./fixtures/merchants.js";
+import { FEE_SCHEDULE_FIXTURES, mdrBpsAtFor } from "./fixtures/feeSchedules.js";
 import { generateMarchReconciliationFixtures } from "./fixtures/marchReconciliation.js";
 import {
   generatePeakDay,
@@ -242,6 +243,9 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
           ],
         );
         merchantIdsByKey.set(fixture.key, merchantId);
+        // Every seeded fee is charged at the rate in force at the event's
+        // own occurred_at, exactly as capture.ts and settlement do.
+        const mdrBpsAt = mdrBpsAtFor(fixture.key, fixture.mdrBps);
 
         const bp = fixture.businessProfile;
         await client.query(
@@ -295,7 +299,7 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
           const generated = generateMarketplaceOrdersForMerchant({
             merchantId,
             merchantKey: fixture.key,
-            mdrBps: fixture.mdrBps,
+            mdrBpsAt,
             discountBps: fixture.negotiatedDiscountBps ?? 0,
             businessDayCount: fixture.marketplaceBusinessDays,
             rng,
@@ -308,7 +312,7 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
           const generated = generateTransactionsForMerchant({
             merchantId,
             merchantKey: fixture.key,
-            mdrBps: fixture.mdrBps,
+            mdrBpsAt,
             count: fixture.splitParentKey === undefined ? TRANSACTIONS_PER_MERCHANT : 0,
             rng,
             baseDate: SEED_BASE_DATE,
@@ -398,7 +402,7 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
           const multiCapture = generateInstalmentCaptures({
             merchantId,
             merchantKey: fixture.key,
-            mdrBps: fixture.mdrBps,
+            mdrBpsAt,
           });
 
           for (const txn of multiCapture.transactions) {
@@ -473,7 +477,7 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
             const { transactions: dayTxns, ledgerGroups: dayLedgerGroups } = generatePeakDay({
               merchantId,
               merchantKey: fixture.key,
-              mdrBps: fixture.mdrBps,
+              mdrBpsAt,
               count: HIGH_VOLUME_TRANSACTIONS_PER_DAY,
               minAmountFils: HIGH_VOLUME_MIN_AMOUNT_FILS,
               maxAmountFils: HIGH_VOLUME_MAX_AMOUNT_FILS,
@@ -486,7 +490,7 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
             let dayFee: Fils = ZERO_FILS;
             let dayNet: Fils = ZERO_FILS;
             for (const txn of dayTxns) {
-              const fee = applyRateFils(txn.capturedFils, fixture.mdrBps);
+              const fee = applyRateFils(txn.capturedFils, mdrBpsAt(txn.occurredAt));
               dayGross = addFils(dayGross, txn.capturedFils);
               dayFee = addFils(dayFee, fee);
               dayNet = addFils(dayNet, subtractFils(txn.capturedFils, fee));
@@ -591,7 +595,7 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
         const schemeLineParams: Array<{ transactionId: string; amountFils: Fils; lineSequence: number }> = [];
 
         for (const txn of settledTxns) {
-          const fee = applyRateFils(txn.capturedFils, fixture.mdrBps);
+          const fee = applyRateFils(txn.capturedFils, mdrBpsAt(txn.occurredAt));
           const net = subtractFils(txn.capturedFils, fee);
           grossFils = addFils(grossFils, txn.capturedFils);
           feeFils = addFils(feeFils, fee);
@@ -652,7 +656,7 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
         // seed-only payload.
         const firstCaptured = transactions.find((t) => t.status === "captured");
         if (firstCaptured) {
-          const firstCapturedFeeFils = applyRateFils(firstCaptured.capturedFils, fixture.mdrBps);
+          const firstCapturedFeeFils = applyRateFils(firstCaptured.capturedFils, mdrBpsAt(firstCaptured.occurredAt));
           await enqueueEvent(client, {
             eventType: "transaction.captured",
             aggregateType: "transaction",
@@ -709,7 +713,7 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
       const marchFixtures = generateMarchReconciliationFixtures({
         merchantId: alphaInserted.merchantId,
         merchantKey: "alpha-retail",
-        mdrBps: alphaFixture.mdrBps,
+        mdrBpsAt: mdrBpsAtFor(alphaFixture.key, alphaFixture.mdrBps),
       });
 
       for (const txn of marchFixtures.transactions) {
@@ -784,51 +788,24 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
         }
       }
 
-      // One merchant carries a second, future-dated fee schedule so the
-      // platform's effective-dated fee resolution
+      // fee_schedules rows, so the platform's effective-dated fee resolution
       // (apps/api/src/fees/feeSchedule.ts,
-      // apps/settlement/internal/settlement/fee_schedule.go) has a real row
-      // to resolve against instead of always falling through to
-      // merchants.mdr_bps. Every other merchant has zero fee_schedules rows
-      // and is entirely unaffected by this table's existence — the fallback
-      // path is what all 7 of them exercise. 180 matches this merchant's own
-      // MERCHANT_FIXTURES mdr_bps exactly, so nothing any pre-cutover
-      // transaction resolves to changes; 165 is the renegotiated rate that
-      // takes over at the cutover instant.
-      const betaDigitalId = merchantIdsByKey.get("beta-digital");
-      if (!betaDigitalId) {
-        throw new Error("seed: beta-digital fixture is required for the fee_schedules fixture");
+      // apps/settlement/internal/settlement/fee_schedule.go) has real rows to
+      // resolve against. The rows live in fixtures/feeSchedules.ts because
+      // the captures above were already charged from that same list: one
+      // source, so a seeded fee always equals what settlement will charge.
+      // Every other merchant has no rows and falls back to merchants.mdr_bps.
+      for (const row of FEE_SCHEDULE_FIXTURES) {
+        const scheduleMerchantId = merchantIdsByKey.get(row.merchantKey);
+        if (!scheduleMerchantId) {
+          throw new Error(`seed: ${row.merchantKey} fixture is required for the fee_schedules fixture`);
+        }
+        await client.query(
+          `INSERT INTO fee_schedules (merchant_id, mdr_bps, effective_from, created_at) VALUES ($1, $2, $3, $4)`,
+          [scheduleMerchantId, row.mdrBps, row.effectiveFrom.toISOString(), row.createdAt.toISOString()],
+        );
+        feeScheduleCount += 1;
       }
-      const feeScheduleCutover = shiftDate(SEED_BASE_DATE, 5); // 2026-09-06T12:00:00Z
-      await client.query(
-        `INSERT INTO fee_schedules (merchant_id, mdr_bps, effective_from) VALUES
-           ($1, 180, '2026-01-01T00:00:00Z'),
-           ($1, 165, $2)`,
-        [betaDigitalId, feeScheduleCutover.toISOString()],
-      );
-      feeScheduleCount += 2;
-
-      // A second merchant carries fee_schedules rows whose insertion order
-      // (created_at) doesn't match their effective order (effective_from) —
-      // the ordinary result of a real-world data-entry sequence, not a
-      // contrived state. alpha-retail's rate dropped to 225bps effective
-      // 2026-08-01, entered the same day. Two weeks later, during an
-      // unrelated data-quality cleanup, an admin discovered the *original*
-      // onboarding-era rate had been recorded wrong in a legacy import and
-      // backfilled a correction for the period it actually covered
-      // (2026-03-01 onward) — entered 2026-08-15, after the August
-      // renegotiation row already existed.
-      const alphaRetailId = merchantIdsByKey.get("alpha-retail");
-      if (!alphaRetailId) {
-        throw new Error("seed: alpha-retail fixture is required for the fee_schedules fixture");
-      }
-      await client.query(
-        `INSERT INTO fee_schedules (merchant_id, mdr_bps, effective_from, created_at) VALUES
-           ($1, 225, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'),
-           ($1, 245, '2026-03-01T00:00:00Z', '2026-08-15T00:00:00Z')`,
-        [alphaRetailId],
-      );
-      feeScheduleCount += 2;
 
       // Re-establish the single zero row TRUNCATE just removed.
       await client.query(`INSERT INTO platform_stats (id, total_processed_fils) VALUES (1, 0)`);
