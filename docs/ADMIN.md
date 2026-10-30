@@ -92,9 +92,11 @@ waiting for the worker. Quick, safe, and repeatable.
 > **— unsigned:** replay-batch reuses the original delivery ids, so receivers dedupe fine.
 
 **Replay a batch** — pick an endpoint, a date range, and which delivery
-statuses to resend (default: `exhausted`; any status can be chosen). Each
-delivery is re-signed and queued; the merchant's receiver sees them as new
-deliveries.
+statuses to resend (default: `exhausted`; only `failed` and `exhausted`
+are allowed, so merchants never get a bulk resend of events they already
+processed: any other status is refused with 400 `invalid_request`). Each
+delivery is re-signed and queued with its original delivery id, so a
+receiver that dedupes on that id does not process an event twice.
 
 **Archive / restore** — before a merchant rotates their webhook URL,
 archive the endpoint's history; after they register the new one, restore

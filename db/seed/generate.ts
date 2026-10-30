@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { ZERO_FILS, addFils, applyRateFils, subtractFils, toFils, type Fils } from "@filspay/money";
-import { enqueueEvent } from "@filspay/events";
 import type { Pool, PoolClient } from "pg";
 import { MERCHANT_FIXTURES } from "./fixtures/merchants.js";
 import { FEE_SCHEDULE_FIXTURES, mdrBpsAtFor } from "./fixtures/feeSchedules.js";
@@ -665,57 +664,6 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
           lifetimeEstimate,
         ]);
 
-        // A few outbox events, enqueued inside this same transaction as the
-        // writes that produced them. Payload shapes here must match the
-        // EXACT shapes the real application code enqueues
-        // (apps/api/src/payments/capture.ts, apps/api/src/payments/void.ts,
-        // and apps/settlement's CloseBatch) — apps/reporting's consumer
-        // applies these payload fields directly, with no join back to
-        // transactions/settlement_batches to "fix up" a differently-shaped
-        // seed-only payload.
-        const firstCaptured = transactions.find((t) => t.status === "captured");
-        if (firstCaptured) {
-          const firstCapturedFeeFils = applyRateFils(firstCaptured.capturedFils, mdrBpsAt(firstCaptured.occurredAt));
-          await enqueueEvent(client, {
-            eventType: "transaction.captured",
-            aggregateType: "transaction",
-            aggregateId: firstCaptured.id,
-            payload: {
-              merchantId,
-              amountCapturedFils: firstCaptured.capturedFils,
-              feeFils: firstCapturedFeeFils,
-              newStatus: firstCaptured.status,
-              capturedTotalFils: firstCaptured.capturedFils,
-            },
-          });
-          outboxEventCount += 1;
-        }
-
-        const firstVoided = transactions.find((t) => t.status === "voided");
-        if (firstVoided) {
-          await enqueueEvent(client, {
-            eventType: "transaction.voided",
-            aggregateType: "transaction",
-            aggregateId: firstVoided.id,
-            payload: { merchantId },
-          });
-          outboxEventCount += 1;
-        }
-
-        await enqueueEvent(client, {
-          eventType: "settlement.batch_closed",
-          aggregateType: "settlement_batch",
-          aggregateId: closedBatchId,
-          payload: {
-            merchantId,
-            batchId: closedBatchId,
-            batchDate: closedBatchDate,
-            grossFils,
-            feeFils,
-            netPayoutFils: netFils,
-          },
-        });
-        outboxEventCount += 1;
       }
 
       // March 2026 capture activity for Alpha Retail Co. Kept in its own
@@ -877,6 +825,11 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
         );
       }
 
+      // The outbox history the live services would have left behind for
+      // everything seeded above, so apps/reporting builds the Overview from
+      // the same money as transactions, ledger and settlement.
+      outboxEventCount = await enqueueSeededOutboxHistory(client);
+
       await client.query("COMMIT");
     } catch (err) {
       await client.query("ROLLBACK");
@@ -1029,6 +982,61 @@ async function insertLifecycleEvents(
     return 2;
   }
   return 1;
+}
+
+/**
+ * Writes the outbox events the live services would have enqueued for the
+ * seeded history, each stamped with the instant its money moved, so
+ * apps/reporting buckets it on that Asia/Bahrain day (it buckets by
+ * outbox_events.created_at, which for a live event is the same now() as its
+ * ledger rows and transaction_events row):
+ * - transaction.captured: one per capture ledger group, as capture.ts sends it;
+ * - transaction.voided: one per 'voided' transaction_events row, as void.ts;
+ * - settlement.batch_closed: one per closed batch, as CloseBatch, at closed_at.
+ * Ordered by time (a batch after the captures it closes), the order the
+ * reporting consumer applies them in. Webhooks never deliver these: an
+ * endpoint only gets events created after it was registered.
+ */
+async function enqueueSeededOutboxHistory(client: PoolClient): Promise<number> {
+  const result = await client.query(`
+    WITH captures AS (
+      SELECT merchant_id, transaction_id, min(occurred_at) AS occurred_at, entry_group_id,
+             sum(amount_fils) FILTER (WHERE account_id = 'card_scheme_clearing' AND direction = 'debit') AS gross,
+             COALESCE(sum(amount_fils) FILTER (WHERE account_id = 'platform_fee_revenue' AND direction = 'credit'), 0) AS fee
+        FROM ledger_entries
+       WHERE description LIKE 'capture%'
+       GROUP BY merchant_id, transaction_id, entry_group_id),
+    events AS (
+      SELECT 'transaction.captured' AS event_type, 'transaction' AS aggregate_type, c.transaction_id AS aggregate_id,
+             jsonb_build_object(
+               'merchantId', c.merchant_id,
+               'amountCapturedFils', c.gross,
+               'feeFils', c.fee,
+               'newStatus', CASE WHEN c.running = t.amount_fils THEN 'captured' ELSE 'partially_captured' END,
+               'capturedTotalFils', c.running) AS payload,
+             c.occurred_at AS created_at, 0 AS rank
+        FROM (SELECT captures.*,
+                     sum(gross) OVER (PARTITION BY transaction_id ORDER BY occurred_at, entry_group_id) AS running
+                FROM captures) c
+        JOIN transactions t ON t.id = c.transaction_id
+      UNION ALL
+      SELECT 'transaction.voided', 'transaction', te.transaction_id,
+             jsonb_build_object('merchantId', t.merchant_id), te.occurred_at, 0
+        FROM transaction_events te JOIN transactions t ON t.id = te.transaction_id
+       WHERE te.event_type = 'voided'
+      UNION ALL
+      SELECT 'settlement.batch_closed', 'settlement_batch', sb.id,
+             jsonb_build_object(
+               'merchantId', sb.merchant_id, 'batchId', sb.id, 'batchDate', sb.batch_date::text,
+               'grossFils', sb.gross_fils, 'feeFils', sb.fee_fils, 'netPayoutFils', sb.net_payout_fils),
+             sb.closed_at, 1
+        FROM settlement_batches sb
+       WHERE sb.status = 'closed')
+    INSERT INTO outbox_events (event_type, aggregate_type, aggregate_id, payload, created_at)
+    SELECT event_type, aggregate_type, aggregate_id, payload, created_at
+      FROM events
+     ORDER BY created_at, rank, aggregate_id`);
+  return result.rowCount ?? 0;
 }
 
 function shiftDate(base: Date, days: number): Date {
