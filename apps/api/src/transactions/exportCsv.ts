@@ -9,8 +9,15 @@ export interface TransactionsExportFilters {
   status?: string[];
 }
 
-function csvEscape(value: string): string {
-  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+/**
+ * Escapes one free-text cell. A cell that starts with = + - @ tab or CR is a
+ * formula to Excel/Sheets (CSV injection), so it gets a leading single quote
+ * (OWASP). Use only on text fields: amounts are written by formatBhd and must
+ * stay numbers.
+ */
+function csvEscape(raw: string): string {
+  const value = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+  if (value.includes(",") || value.includes('"') || value.includes("\n") || value.includes("\r")) {
     return `"${value.replace(/"/g, '""')}"`;
   }
   return value;

