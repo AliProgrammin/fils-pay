@@ -7,6 +7,8 @@ import { bhd, calendarDate, dash, dateTime } from "../../format.js";
 import type { SettlementBatchDetailDto, SettlementBatchTransactionDto } from "../../types.js";
 import { StatusChip } from "../../components/StatusChip.js";
 import { truncateMiddle } from "../../utils/helpers.js";
+import { isUuid } from "../../inputRules.js";
+import { DetailNotFound } from "../../components/DetailNotFound.js";
 
 type LoadState =
   | { kind: "loading" }
@@ -32,7 +34,8 @@ export function SettlementBatchDetailPage() {
   const [lines, setLines] = useState<SettlementBatchTransactionDto[]>([]);
 
   useEffect(() => {
-    if (!id) {
+    // An id that is not a UUID can never exist: say "not found" without asking.
+    if (!id || !isUuid(id)) {
       setState({ kind: "not_found" });
       return;
     }
@@ -65,13 +68,13 @@ export function SettlementBatchDetailPage() {
   if (state.kind === "loading") return <p className="dash-loading" role="status">Loading…</p>;
   if (state.kind === "not_found") {
     return (
-      <section>
-        <h1>Settlement batch not found</h1>
-        <p>
-          No settlement batch with this id exists on your account.{" "}
-          <Link to="/dashboard/settlement">Back to settlement batches</Link>
-        </p>
-      </section>
+      <DetailNotFound
+        kicker="Settlement batch"
+        title="Settlement batch not found"
+        text="No settlement batch with this id exists on your account. Check the link, or find it in the list."
+        backTo="/dashboard/settlement"
+        backLabel="Back to settlement batches"
+      />
     );
   }
   if (state.kind === "error") {

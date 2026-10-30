@@ -113,6 +113,14 @@ export function bahrainNowInputValue(now: Date = new Date()): string {
   return new Date(now.getTime() + BAHRAIN_OFFSET_MS).toISOString().slice(0, 16);
 }
 
+/** The default expiry for a new payment link, as a `datetime-local` value in
+ *  Bahrain time: 7 days from now, rounded up to the next full hour. */
+export function defaultLinkExpiryInputValue(now: Date = new Date()): string {
+  const HOUR_MS = 60 * 60 * 1000;
+  const target = Math.floor((now.getTime() + 7 * DAY_MS) / HOUR_MS + 1) * HOUR_MS;
+  return new Date(target + BAHRAIN_OFFSET_MS).toISOString().slice(0, 16);
+}
+
 /** A `datetime-local` value typed in Bahrain time, as an ISO instant, or
  *  null when it is not a valid value. */
 export function bahrainInputToIso(value: string): string | null {

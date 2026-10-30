@@ -9,6 +9,8 @@ import { usePagedList } from "../../components/usePagedList.js";
 import { useToast } from "../../components/Toast.js";
 import { dash, dateTime, statusLabel } from "../../format.js";
 import type { WebhookDeliveryDto, WebhookDeliveryStatus, WebhookEndpointDto } from "../../types.js";
+import { isUuid } from "../../inputRules.js";
+import { DetailNotFound } from "../../components/DetailNotFound.js";
 
 /** `webhook_deliveries.status`' four CHECK values. Note the dispatcher only
  *  ever writes `succeeded`/`exhausted` — a row awaiting its next attempt
@@ -23,6 +25,8 @@ export function WebhookEndpointDetailPage() {
   const merchantId = me?.merchant.id;
 
   const [endpoint, setEndpoint] = useState<WebhookEndpointDto | null>(null);
+  // An id that is not a UUID can never exist: "not found" without asking.
+  const validId = id !== undefined && isUuid(id);
   const [endpointMissing, setEndpointMissing] = useState(false);
   const [searchParams] = useSearchParams();
   const statuses = searchParams.getAll("status") as WebhookDeliveryStatus[];
@@ -36,7 +40,7 @@ export function WebhookEndpointDetailPage() {
   // not hundreds, so finding the row in the list is exact in practice here —
   // unlike the payment-link case, where it can genuinely miss.
   const loadEndpoint = useCallback(async () => {
-    if (!merchantId || !id) return;
+    if (!merchantId || !id || !validId) return;
     setError(null);
     try {
       const all = await listWebhookEndpoints(merchantId);
@@ -46,7 +50,7 @@ export function WebhookEndpointDetailPage() {
     } catch (err) {
       setError(errorMessage(err));
     }
-  }, [merchantId, id]);
+  }, [merchantId, id, validId]);
 
   const filterKey = JSON.stringify([merchantId, id, statuses]);
   const list = usePagedList<WebhookDeliveryDto>(
@@ -63,7 +67,7 @@ export function WebhookEndpointDetailPage() {
       // eslint-disable-next-line react-hooks/exhaustive-deps
       [filterKey],
     ),
-    Boolean(merchantId && id),
+    Boolean(merchantId && validId),
   );
   const deliveries = list.rows;
   const loading = list.loading;
@@ -102,15 +106,15 @@ export function WebhookEndpointDetailPage() {
     }
   }
 
-  if (endpointMissing) {
+  if (!validId || endpointMissing) {
     return (
-      <section>
-        <h1>Endpoint not found</h1>
-        <p>
-          No webhook endpoint with this id exists on your account.{" "}
-          <Link to="/dashboard/webhooks">Back to webhook endpoints</Link>
-        </p>
-      </section>
+      <DetailNotFound
+        kicker="Webhook endpoint"
+        title="Endpoint not found"
+        text="No webhook endpoint with this id exists on your account. Check the link, or find it in the list."
+        backTo="/dashboard/webhooks"
+        backLabel="Back to webhook endpoints"
+      />
     );
   }
 

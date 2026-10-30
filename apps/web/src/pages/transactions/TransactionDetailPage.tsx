@@ -17,7 +17,8 @@ import { StatusChip } from "../../components/StatusChip.js";
 import { CopyButton } from "../../components/CopyButton.js";
 import { useToast } from "../../components/Toast.js";
 import { capitalize } from "../../utils/helpers.js";
-import { checkAmount, filterAmountInput, formatAmountText } from "../../inputRules.js";
+import { checkAmount, filterAmountInput, formatAmountText, isUuid } from "../../inputRules.js";
+import { DetailNotFound } from "../../components/DetailNotFound.js";
 import { FieldNote, describedBy } from "../../components/FieldNote.js";
 
 type LoadState =
@@ -50,7 +51,8 @@ export function TransactionDetailPage() {
   const [confirmDialog, confirm] = useConfirmDialog();
 
   const load = useCallback(async () => {
-    if (!id) {
+    // An id that is not a UUID can never exist: say "not found" without asking.
+    if (!id || !isUuid(id)) {
       setState({ kind: "not_found" });
       return;
     }
@@ -158,13 +160,13 @@ export function TransactionDetailPage() {
   }
   if (state.kind === "not_found") {
     return (
-      <section>
-        <h1>Transaction not found</h1>
-        <p>
-          No transaction with this id exists on your account.{" "}
-          <Link to="/dashboard/transactions">Back to transactions</Link>
-        </p>
-      </section>
+      <DetailNotFound
+        kicker="Transaction record"
+        title="Transaction not found"
+        text="No transaction with this id exists on your account. Check the link, or find it in the list."
+        backTo="/dashboard/transactions"
+        backLabel="Back to transactions"
+      />
     );
   }
   if (state.kind === "error") {

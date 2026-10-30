@@ -130,6 +130,11 @@ export function filterUuidInput(raw: string): string {
   return raw.replace(/[^0-9a-fA-F-]/g, "").slice(0, 36);
 }
 
+/** True when the text is a UUID (the shape of every record id). */
+export function isUuid(text: string): boolean {
+  return UUID_RE.test(text);
+}
+
 /** Null when the text is a merchant ID (a UUID). */
 export function checkUuid(text: string): string | null {
   return UUID_RE.test(text.trim())

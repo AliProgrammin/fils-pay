@@ -5,6 +5,7 @@ import {
   bahrainDayStartIso,
   bahrainInputToIso,
   bahrainNowInputValue,
+  defaultLinkExpiryInputValue,
   bahrainToday,
   exclusiveTo,
   inclusiveTo,
@@ -67,4 +68,13 @@ test("datetime-local values are Bahrain wall time", () => {
   assert.equal(bahrainInputToIso("2026-10-31T00:15"), "2026-10-30T21:15:00.000Z");
   assert.equal(bahrainInputToIso(""), null);
   assert.equal(bahrainInputToIso("nonsense"), null);
+});
+
+test("a new payment link expires in 7 days, at the next full hour, Bahrain time", () => {
+  // 21:15 UTC is 00:15 Bahrain on the 31st; +7 days, rounded up to 01:00.
+  assert.equal(defaultLinkExpiryInputValue(new Date("2026-10-30T21:15:00Z")), "2026-11-07T01:00");
+  // Exactly on the hour still moves to the next hour, so it is never "now".
+  assert.equal(defaultLinkExpiryInputValue(new Date("2026-10-30T09:00:00Z")), "2026-11-06T13:00");
+  const iso = bahrainInputToIso(defaultLinkExpiryInputValue());
+  assert.ok(iso !== null && Date.parse(iso) > Date.now() + 7 * 86_400_000);
 });

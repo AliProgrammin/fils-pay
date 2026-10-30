@@ -4,7 +4,7 @@ import { createPaymentLink } from "../../api/paymentLinks.js";
 import { errorMessage } from "../../errors.js";
 import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
 import { bhd } from "../../format.js";
-import { bahrainInputToIso, bahrainNowInputValue } from "../../dateRange.js";
+import { bahrainInputToIso, bahrainNowInputValue, defaultLinkExpiryInputValue } from "../../dateRange.js";
 import { useToast } from "../../components/Toast.js";
 import { FieldNote, describedBy } from "../../components/FieldNote.js";
 import {
@@ -37,7 +37,8 @@ export function PaymentLinkCreatePage() {
   const [amountBhd, setAmountBhd] = useState("");
   const [reference, setReference] = useState("");
   const [description, setDescription] = useState("");
-  const [expiresAt, setExpiresAt] = useState("");
+  // Starts filled (7 days ahead), so the required field is never empty; editable.
+  const [expiresAt, setExpiresAt] = useState(() => defaultLinkExpiryInputValue());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [amountError, setAmountError] = useState<string | null>(null);

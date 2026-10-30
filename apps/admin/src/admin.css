@@ -1590,3 +1590,101 @@ textarea[aria-invalid="true"] {
   color: var(--red-dk);
   font-weight: 600;
 }
+
+/* ---------- merchant list as cards on a phone ----------
+   Eight columns do not fit a 375px screen: the table scrolled sideways and
+   hid the status. Below 600px each row is a card, label on the left, value
+   on the right (the merchant dashboard does the same). */
+.admin-table .admin-card-link {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .admin-table-cards thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .admin-table-cards,
+  .admin-table-cards tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .admin-table-cards tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 0.5rem 0;
+    border-bottom: 2px solid var(--line);
+  }
+
+  .admin-table-cards tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .admin-table-cards tbody tr:hover td {
+    background: none;
+  }
+
+  .admin-table-cards td {
+    display: block;
+    border: none;
+    grid-column: 1 / -1;
+  }
+
+  .admin-table-cards td.admin-cell-check {
+    grid-column: 1;
+    padding: 0.55rem 0 0.3rem 0.9rem;
+  }
+
+  .admin-table-cards td.admin-card-head {
+    grid-column: 2;
+    padding: 0.4rem 0.9rem 0.4rem 0.6rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+  }
+
+  .admin-table-cards td.admin-card-head .admin-sub code {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-weight: 400;
+  }
+
+  .admin-table-cards td[data-label] {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.3rem 0.9rem;
+    text-align: right;
+  }
+
+  .admin-table-cards td[data-label]::before {
+    content: attr(data-label);
+    flex: none;
+    font-family: var(--type);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: left;
+  }
+
+  .admin-table .admin-card-link {
+    display: block;
+    padding: 0.4rem 0.9rem 0.3rem;
+    font-family: var(--type);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .admin-table-cards td.admin-empty {
+    grid-column: 1 / -1;
+  }
+}

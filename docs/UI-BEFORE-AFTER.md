@@ -229,7 +229,7 @@ Checks: `npm run typecheck` and `npm run build` pass for `apps/web` and `apps/ad
 
 ## Known UX gaps not fixed here
 
-- The admin credit form says "Also reverse the MDR on this amount (2.50%)". The server really uses `merchants.mdr_bps` (250 bps) for this, not the 225 bps rate billing uses. That is a backend question, not a label bug.
+- Fixed since: the admin credit form now shows the rate in force, for example "Also reverse the MDR on this amount (2.25%)" for Alpha Retail Co (base MDR 2.50%). The server uses the same rate in force (`getEffectiveMdrBps`), so label and amount agree.
 - The dashboard Overview needs the `apps/reporting` worker. It was not run for these screenshots, so Overview is not shown.
 
 ## QA pass (before the final)
@@ -270,3 +270,18 @@ Every form field now blocks wrong input or explains it, under the field (`aria-d
 | ![](ui/inputs-admin-adjust-credit.png) |
 
 Checks: `npm run typecheck` and `npm test` (fresh migrated database) pass; `npm run build -w apps/web` and the admin build with `--base=/admin/` pass. New unit tests cover inclusive To to exclusive API value, presets and "today" in Bahrain time, the max-date and To-before-From rules, the pager (next/previous/cache/reload/past-the-end), card checks and grouped amounts.
+
+## Judge fixes (after the final QA)
+
+Checked in a real browser (Playwright, 1280 px and 375 px) on a fresh migrated and seeded database. No API change.
+
+- Refund: a server answer such as "The amount is more than what is left to refund" goes away when the amount changes, and is never shown behind the confirm dialog.
+- Detail pages (transaction, payment link, settlement batch, webhook endpoint): an id that is not a UUID, or an unknown id, shows "… not found" with a "Back to …" button. A bad id sends no request.
+- New payment link: expiry starts at now + 7 days, Bahrain time, rounded up to the next full hour. It stays editable and must be in the future.
+- Checkout at 480 px and less: month and year share a row and CVV has its own row, so "2030" fits. Desktop keeps three columns.
+- Admin merchants at 600 px and less: each merchant is a card (name, status chips, base MDR, refunds on/off, "Open merchant"). The table also gets a Refunds column.
+- Login pages: with no earlier sign-in in this browser, the login page does not call `/auth/me` (it could only answer 401). A signed-in user who opens the login page is still sent on. Other pages still check the session.
+
+| Admin merchants at 375 px | Bad transaction id at 375 px |
+|---|---|
+| ![](ui/fix-admin-merchant-cards-375.png) | ![](ui/fix-transaction-not-found-375.png) |

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { logout as logoutRequest, me as fetchMe } from "../api/dashboardAuth.js";
+import { ApiError } from "../errors.js";
 import type { DashboardMe } from "../types.js";
 
 export type DashboardAuthStatus = "loading" | "authenticated" | "anonymous";
@@ -40,6 +41,29 @@ export function writeLastMerchantId(merchantId: string): void {
   }
 }
 
+/** Set while this browser had a signed-in session. The session cookie is
+ *  HttpOnly, so the page cannot see it; this flag is only a hint. With no
+ *  hint, the login page skips `GET /v1/auth/me`, which could only answer
+ *  401 (and log that 401 in the console). Every other page still asks. */
+const SESSION_HINT_KEY = "filspay.dashboard.sessionHint";
+
+function readSessionHint(): boolean {
+  try {
+    return window.localStorage.getItem(SESSION_HINT_KEY) === "1";
+  } catch {
+    return true; // Storage blocked: always ask the server.
+  }
+}
+
+function writeSessionHint(on: boolean): void {
+  try {
+    if (on) window.localStorage.setItem(SESSION_HINT_KEY, "1");
+    else window.localStorage.removeItem(SESSION_HINT_KEY);
+  } catch {
+    // Nothing depends on this succeeding.
+  }
+}
+
 /**
  * Holds the answer to "who am I, per the server?" — loaded once on mount
  * from `GET /v1/auth/me`. Nothing in this app treats a value here
@@ -62,17 +86,25 @@ export function DashboardAuthProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     try {
       const current = await fetchMe();
+      writeSessionHint(true);
       setMe(current);
       setStatus("authenticated");
-    } catch {
+    } catch (err) {
       // Any failure — 401, a revoked session, the API being down — lands on
       // the login screen rather than a half-rendered dashboard.
+      if (err instanceof ApiError) writeSessionHint(false);
       setMe(null);
       setStatus("anonymous");
     }
   }, []);
 
   useEffect(() => {
+    // On the login page with no sign-in on record, there is nothing to ask:
+    // show the form. A signed-in visitor (hint set) is still sent on.
+    if (window.location.pathname === "/dashboard/login" && !readSessionHint()) {
+      setStatus("anonymous");
+      return;
+    }
     void refresh();
   }, [refresh]);
 
@@ -80,6 +112,7 @@ export function DashboardAuthProvider({ children }: { children: ReactNode }) {
     try {
       await logoutRequest();
     } finally {
+      writeSessionHint(false);
       setMe(null);
       setStatus("anonymous");
     }

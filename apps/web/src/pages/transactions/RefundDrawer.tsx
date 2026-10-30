@@ -75,6 +75,9 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
     setAmountError(parsed.ok ? null : parsed.message);
     setReasonError(trimmedReason === "" ? "Enter a reason for the refund" : null);
     if (!parsed.ok || trimmedReason === "") return;
+    // The amount is valid now: an old answer about it must not stay on
+    // screen behind the confirm dialog.
+    setError(null);
     const confirmed = await confirm({
       title: "Refund this payment?",
       amount: bhd(parsed.amountFils),
@@ -85,7 +88,6 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
 
     busy.current = true;
     setSubmitting(true);
-    setError(null);
     try {
       // Same key for a retry of this same refund (same amount and reason),
       // so a timeout followed by a second click can never refund twice.
@@ -146,6 +148,8 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
                   onChange={(e) => {
                     const next = filterAmountInput(e.target.value);
                     setAmount(next);
+                    // A new amount: the last server answer no longer applies to it.
+                    setError(null);
                     // Re-check while a message is shown, so it goes as soon as it is fixed.
                     if (amountError) {
                       const parsed = parseRefundAmount(next, maxFils);

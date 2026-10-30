@@ -10,6 +10,8 @@ import { useConfirmDialog } from "../../components/ConfirmDialog.js";
 import { CopyButton } from "../../components/CopyButton.js";
 import { useToast } from "../../components/Toast.js";
 import type { PaymentLinkDto } from "../../types.js";
+import { isUuid } from "../../inputRules.js";
+import { DetailNotFound } from "../../components/DetailNotFound.js";
 
 /** The list endpoint's own maximum page size. */
 const LOOKUP_LIMIT = 100;
@@ -47,6 +49,11 @@ export function PaymentLinkDetailPage() {
 
   const load = useCallback(async () => {
     if (!merchantId || !id) return;
+    // An id that is not a UUID can never exist: say "not found" without asking.
+    if (!isUuid(id)) {
+      setState({ kind: "not_found" });
+      return;
+    }
     try {
       const result = await listPaymentLinks(merchantId, { limit: LOOKUP_LIMIT });
       const found = result.paymentLinks.find((link) => link.id === id);
@@ -96,13 +103,17 @@ export function PaymentLinkDetailPage() {
   }
   if (state.kind === "not_found") {
     return (
-      <section>
-        <h1>Payment link not found</h1>
-        <p>
-          This link is not among your {LOOKUP_LIMIT} most recent payment links.{" "}
-          <Link to="/dashboard/payment-links">Back to payment links</Link>
-        </p>
-      </section>
+      <DetailNotFound
+        kicker="Payment link"
+        title="Payment link not found"
+        text={
+          id && isUuid(id)
+            ? `This link is not among your ${LOOKUP_LIMIT} most recent payment links. Check the link, or find it in the list.`
+            : "No payment link with this id exists on your account. Check the link, or find it in the list."
+        }
+        backTo="/dashboard/payment-links"
+        backLabel="Back to payment links"
+      />
     );
   }
 

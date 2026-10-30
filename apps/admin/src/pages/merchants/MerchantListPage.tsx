@@ -180,7 +180,7 @@ export function MerchantListPage() {
       ) : null}
 
       <div className="admin-table-wrap">
-        <table className="admin-table">
+        <table className="admin-table admin-table-cards">
           <thead>
             <tr>
               <th className="admin-cell-check">
@@ -197,6 +197,7 @@ export function MerchantListPage() {
               <th>Onboarding</th>
               <th>KYC</th>
               <th className="admin-num" title="The merchant\u2019s base rate. A negotiated rate in force is shown on the merchant page.">Base MDR</th>
+              <th>Refunds</th>
               <th>Mode</th>
               <th>Created</th>
             </tr>
@@ -212,23 +213,29 @@ export function MerchantListPage() {
                     onChange={() => toggleSelected(merchant.id)}
                   />
                 </td>
-                <td>
+                <td className="admin-card-head">
                   <Link to={`/merchants/${merchant.id}`}>{merchant.displayName}</Link>
                   <div className="admin-sub">
                     <code>{merchant.id}</code>
                   </div>
                 </td>
-                <td><StatusChip value={merchant.status} /></td>
-                <td><StatusChip value={merchant.onboardingStatus} /></td>
-                <td><StatusChip value={merchant.kycPassed ? "passed" : "not passed"} /></td>
-                <td className="admin-num">{(merchant.mdrBps / 100).toFixed(2)}%</td>
-                <td><StatusChip value={merchant.testMode ? "test" : "live"} /></td>
-                <td>{formatDate(merchant.createdAt)}</td>
+                <td data-label="Status"><StatusChip value={merchant.status} /></td>
+                <td data-label="Onboarding"><StatusChip value={merchant.onboardingStatus} /></td>
+                <td data-label="KYC"><StatusChip value={merchant.kycPassed ? "passed" : "not passed"} /></td>
+                <td className="admin-num" data-label="Base MDR">{(merchant.mdrBps / 100).toFixed(2)}%</td>
+                <td data-label="Refunds"><StatusChip value={merchant.refundsEnabled ? "on" : "off"} /></td>
+                <td data-label="Mode"><StatusChip value={merchant.testMode ? "test" : "live"} /></td>
+                <td data-label="Created">{formatDate(merchant.createdAt)}</td>
+                <td className="admin-card-link">
+                  <Link to={`/merchants/${merchant.id}`} aria-label={`Open ${merchant.displayName}`}>
+                    Open merchant &rarr;
+                  </Link>
+                </td>
               </tr>
             ))}
             {merchants.length === 0 && !loading ? (
               <tr>
-                <td colSpan={8} className="admin-empty">
+                <td colSpan={9} className="admin-empty">
                   {hasFilters ? (
                     <>
                       No merchants match these filters.{" "}
