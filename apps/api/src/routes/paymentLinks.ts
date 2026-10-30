@@ -13,6 +13,7 @@ import { listPaymentLinks } from "../paymentLinks/query.js";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../lib/errors.js";
 import { parseLimitQuery } from "../lib/pagination.js";
 import type { SimulatedCardInput } from "../acquirer/types.js";
+import { getIdempotencyKey } from "../lib/idempotencyHeader.js";
 
 interface MerchantIdParams {
   merchantId: string;
@@ -50,16 +51,6 @@ function assertOwnMerchant(request: FastifyRequest<{ Params: MerchantIdParams }>
   if (!request.merchantAuth || request.merchantAuth.merchantId !== request.params.merchantId) {
     throw new ForbiddenError("forbidden");
   }
-}
-
-/** Same rule as routes/transactions.ts: header required, no server-generated fallback. */
-function getIdempotencyKey(request: FastifyRequest): string {
-  const header = request.headers["idempotency-key"];
-  const key = Array.isArray(header) ? header[0] : header;
-  if (!key) {
-    throw new BadRequestError("idempotency_key_required", "Idempotency-Key header is required");
-  }
-  return key;
 }
 
 /**

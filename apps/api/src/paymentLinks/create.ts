@@ -7,6 +7,9 @@ import { serializePaymentLink, type PaymentLinkDto, type PaymentLinkRow } from "
 const TOKEN_ALPHABET =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
+/** The merchant's own order id; generous, but bounded (W10). */
+const MAX_REFERENCE_LENGTH = 255;
+
 /** 22-char URL-safe token for payment link URLs. */
 function randomPlinkToken(): string {
   return randomFromAlphabet(TOKEN_ALPHABET, 22);
@@ -36,11 +39,16 @@ export async function createPaymentLink(
   let amountFils;
   try {
     amountFils = toFils(input.amountFils);
-  } catch (err) {
-    throw new BadRequestError("invalid_amount", err instanceof Error ? err.message : String(err));
+  } catch {
+    // W9: same clean message as the refund route; never toFils' internal text.
+    throw new BadRequestError("invalid_amount", "amountFils must be a positive integer number of fils");
   }
   if (amountFils <= 0) {
     throw new BadRequestError("invalid_amount", "amountFils must be a positive integer number of fils");
+  }
+
+  if (typeof input.reference === "string" && input.reference.length > MAX_REFERENCE_LENGTH) {
+    throw new BadRequestError("invalid_request", `reference must be at most ${MAX_REFERENCE_LENGTH} characters`);
   }
 
   const expiresAtDate = new Date(input.expiresAt);

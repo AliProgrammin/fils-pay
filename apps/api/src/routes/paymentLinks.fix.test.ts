@@ -230,3 +230,54 @@ test("W7: a declined capture voids the link's authorization and frees the link",
   const retry = await payPaymentLink(pool, inner, payConfig, payInput(link.token));
   assert.equal(retry.statusCode, 200, JSON.stringify(retry.body));
 });
+
+// W9: a bad amount keeps its 400 but never leaks toFils' internal text.
+test("W9: payment-link create with a bad amount gives a clean 400 message", async () => {
+  const { merchantId, rawKey } = await merchantWithKey("bad-amount");
+  for (const amountFils of [-100, "100", 10.5, null, 1e20]) {
+    const res = await app.inject({
+      method: "POST",
+      url: `/v1/merchants/${merchantId}/payment-links`,
+      headers: { authorization: `Bearer ${rawKey}` },
+      payload: { amountFils, expiresAt: new Date(Date.now() + 3_600_000).toISOString() },
+    });
+    assert.equal(res.statusCode, 400, `${String(amountFils)}: ${res.body}`);
+    assert.equal(res.json().error, "invalid_amount");
+    assert.doesNotMatch(res.body, /toFils|allowNegative/, res.body);
+  }
+});
+
+// W10: no length limits on reference or Idempotency-Key.
+test("W10: an over-long reference or Idempotency-Key is 400 invalid_request", async () => {
+  const { merchantId, rawKey } = await merchantWithKey("long-input");
+  const create = (reference: string) =>
+    app.inject({
+      method: "POST",
+      url: `/v1/merchants/${merchantId}/payment-links`,
+      headers: { authorization: `Bearer ${rawKey}` },
+      payload: { amountFils: 1_000, reference, expiresAt: new Date(Date.now() + 3_600_000).toISOString() },
+    });
+  assert.equal((await create("r".repeat(255))).statusCode, 201);
+  const longRef = await create("r".repeat(10_000));
+  assert.equal(longRef.statusCode, 400, longRef.body);
+  assert.equal(longRef.json().error, "invalid_request");
+
+  const link = await createLink(rawKey, merchantId);
+  const longKey = await app.inject({
+    method: "POST",
+    url: `/v1/payment-links/${link.token}/pay`,
+    headers: { "idempotency-key": "k".repeat(5_000) },
+    payload: { card: APPROVED_CARD },
+  });
+  assert.equal(longKey.statusCode, 400, longKey.body);
+  assert.equal(longKey.json().error, "invalid_request");
+
+  const longCaptureKey = await app.inject({
+    method: "POST",
+    url: `/v1/transactions/${randomUUID()}/capture`,
+    headers: { authorization: `Bearer ${rawKey}`, "idempotency-key": "k".repeat(256) },
+    payload: {},
+  });
+  assert.equal(longCaptureKey.statusCode, 400, longCaptureKey.body);
+  assert.equal(longCaptureKey.json().error, "invalid_request");
+});

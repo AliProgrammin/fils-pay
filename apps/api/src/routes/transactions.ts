@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { toFils } from "@filspay/money";
 import { requireApiKey } from "../apiKeys/verify.js";
 import {
@@ -17,6 +17,7 @@ import { UUID_RE } from "../admin/merchants.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
 import { parseLimitQuery } from "../lib/pagination.js";
 import type { SimulatedCardInput } from "../acquirer/types.js";
+import { getIdempotencyKey } from "../lib/idempotencyHeader.js";
 
 interface AuthorizeBody {
   amountFils?: unknown;
@@ -46,21 +47,6 @@ interface ListTransactionsQuery {
   search?: string;
   limit?: string;
   cursor?: string;
-}
-
-/**
- * Reads the Idempotency-Key header. Required on authorize and capture;
- * void is naturally idempotent and does not call this. Keys are scoped per
- * merchant + endpoint (see payments/idempotency.ts), so the same key may be
- * reused across endpoints without colliding.
- */
-function getIdempotencyKey(request: FastifyRequest): string {
-  const header = request.headers["idempotency-key"];
-  const key = Array.isArray(header) ? header[0] : header;
-  if (!key) {
-    throw new BadRequestError("idempotency_key_required", "Idempotency-Key header is required");
-  }
-  return key;
 }
 
 /** Same rule as refunds: a positive integer number of fils, else 400 (toFils would throw a 500). */

@@ -8,6 +8,7 @@ import {
 import { assertRefundRequestScope, initiateMerchantRefund } from "../refunds/initiateMerchantRefund.js";
 import { UUID_RE } from "../admin/merchants.js";
 import { BadRequestError } from "../lib/errors.js";
+import { getIdempotencyKey } from "../lib/idempotencyHeader.js";
 
 interface RefundBody {
   transactionId?: unknown;
@@ -20,16 +21,6 @@ interface MerchantIdParams {
 }
 
 const MAX_REASON_LENGTH = 500;
-
-/** Same rule as capture: the header is required, never generated server-side. */
-function getIdempotencyKey(request: FastifyRequest): string {
-  const header = request.headers["idempotency-key"];
-  const key = Array.isArray(header) ? header[0] : header;
-  if (!key) {
-    throw new BadRequestError("idempotency_key_required", "Idempotency-Key header is required");
-  }
-  return key;
-}
 
 function parseBody(body: RefundBody | undefined): { transactionId: string; amountFils: number; reason: string } {
   const { transactionId, amountFils, reason } = body ?? {};
