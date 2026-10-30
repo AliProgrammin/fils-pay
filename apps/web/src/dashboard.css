@@ -1977,3 +1977,16 @@ input[type="radio"] {
     justify-content: flex-start;
   }
 }
+
+/* Narrow header: the identity block fills its column and shortens a long
+   shop name with an ellipsis, so it can never run into the brand. */
+@media (max-width: 64rem) {
+  .dash-identity {
+    justify-self: stretch;
+    justify-content: flex-end;
+  }
+
+  .dash-identity-text {
+    overflow: hidden;
+  }
+}
