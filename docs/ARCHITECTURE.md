@@ -87,7 +87,7 @@ the action. Credits above the threshold need a second approver.
 |---|---|---|
 | `DATABASE_URL` | all | — |
 | `PGCONN_SETTLEMENT` | settlement | unset |
-| `SETTLEMENT_INTERNAL_TOKEN` | api, settlement | `dev-token` in dev |
+| `SETTLEMENT_INTERNAL_TOKEN` | api, settlement | none: the settlement daemon refuses to start without it; set any value in dev |
 | `ACQUIRER_CALLBACK_REQUIRE_SIGNATURE` | api | `true` |
 | `FEATURE_ASYNC_CLOSE` | settlement | `0` |
 

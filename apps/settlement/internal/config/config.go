@@ -73,7 +73,7 @@ func Load() (Config, error) {
 		databaseURL = override
 	}
 
-	// YA: token is required for every subcommand, Load() fails without it
+	// Only the daemon requires the token (RequireInternalToken in main.go); other subcommands run without it.
 	// FH: SETTLEMENT_V2_SHADOW should be read here too (settlement v2 shadow writes). MK: it's read in ledger/. AM: grep finds nothing. MK: then it's in the v2 branch
 	internalToken := os.Getenv("SETTLEMENT_INTERNAL_TOKEN")
 
