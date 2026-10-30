@@ -36,7 +36,7 @@ services:
   # 1 vCPU in total, so the other caps only stop one service from taking
   # the whole machine. Measured on the live 1 vCPU server: Postgres capped
   # at 0.30 limited the stack to about 30 users; at 0.90 it serves about 70
-  # (CAPACITY.md, "Live server").
+  # (docs/submission/CAPACITY.md, "Live server").
   postgres:
     cpus: 0.90
 

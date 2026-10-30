@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Overload + crash test (CAPACITY.md): pushes past capacity, kills the api
+# Overload + crash test (docs/submission/CAPACITY.md): pushes past capacity, kills the api
 # process mid-load (SIGKILL, like a crash or an OOM kill), checks that Docker
 # restarts it, then checks the data with verify.sql.
 #

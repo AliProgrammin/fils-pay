@@ -40,7 +40,7 @@ export async function verifyApiKey(pool: Pool, rawKey: string): Promise<ApiKeyCo
   // fail the request it's merely instrumenting. Written at most once per
   // LAST_USED_RESOLUTION_SECONDS: one key serves every request of an
   // integration, and writing its one row on every call made all of them
-  // queue on that row lock under load (CAPACITY.md).
+  // queue on that row lock under load (docs/submission/CAPACITY.md).
   if (row.last_used_stale) {
     void pool
       .query(

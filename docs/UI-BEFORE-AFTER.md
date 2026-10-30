@@ -8,7 +8,7 @@ Matched screenshots of checkout, the merchant dashboard and the admin console.
 - The 2026-08-31 batch for Alpha Retail was closed and paid on both sides with that side's own Go `settlement run-batch`.
 - Some bugs are only visible on the wire (H1, U12, the refunds API). For those, the image shows the real HTTP request and response from that side.
 
-Bug ids refer to [BUGS.md](../BUGS.md). `UX1` to `UX10` are the new fixes described at the end.
+Bug ids refer to [BUGS.md](submission/BUGS.md). `UX1` to `UX10` are the new fixes described at the end.
 
 ## Re-theme
 

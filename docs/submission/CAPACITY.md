@@ -278,7 +278,7 @@ the Docker host, not with `docker stop`.
   - 5 reserved with a captured transaction: the customer paid, but the
     link never showed paid.
 - The last two groups stayed stuck unless the same customer retried with
-  the same `Idempotency-Key` (bug [L5](docs/bugs/load.md#l5-a-payment-link-cut-off-by-a-crash-stays-reserved-forever)).
+  the same `Idempotency-Key` (bug [L5](../bugs/load.md#l5-a-payment-link-cut-off-by-a-crash-stays-reserved-forever)).
   Fix: a recovery sweep in the api process
   (`apps/api/src/paymentLinks/recovery.ts`), once at boot and every 30 s,
   marks a link paid when its payment was captured, and voids the
@@ -320,6 +320,6 @@ BASE_URL=http://localhost:8097 PROJECT=filspay-cap VUS=400 KILL_AFTER=80 scripts
 
 k6 summaries go to `scripts/load/results/` (not committed). The summaries
 of the live-server runs in this file are in
-[`scripts/load/evidence/`](scripts/load/evidence/) (the API key is removed). The test
+[`scripts/load/evidence/`](../../scripts/load/evidence/) (the API key is removed). The test
 writes demo data: one API key per run and one payment link and payment per
 checkout, on the seeded merchant Alpha Retail Co.

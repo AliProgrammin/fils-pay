@@ -125,7 +125,7 @@ Found in a last sweep of scripts, docs and auth paths (W1 to W6), and in a black
 
 ## Outside review (X1 to X11)
 
-An outside review on 30 Oct sent us 12 claims. We reproduced each one with a test before we changed code: 10 were real, 2 were partly right. We fixed 11 (X1 to X11), each with a test that failed on the old code and passes now. Claim 7 (fraud-review notes are stored but never shown to operators) is a feature that was never built, not a bug in code that exists; it is in [Decisions and open risks](../../BUGS.md#open-risks).
+An outside review on 30 Oct sent us 12 claims. We reproduced each one with a test before we changed code: 10 were real, 2 were partly right. We fixed 11 (X1 to X11), each with a test that failed on the old code and passes now. Claim 7 (fraud-review notes are stored but never shown to operators) is a feature that was never built, not a bug in code that exists; it is in [Decisions and open risks](../submission/BUGS.md#open-risks).
 
 ### X1 A retry after a rollback sends the bank a new idempotency key, so the bank approves twice
 - Severity: High

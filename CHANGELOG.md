@@ -7,7 +7,7 @@ it. Format loosely follows Keep a Changelog.
 ## [2.0.0] - 2026-10-30
 
 Team Orbit's handover release. Every fix is listed with its root cause, fix
-and test in [BUGS.md](BUGS.md).
+and test in [BUGS.md](docs/submission/BUGS.md).
 
 ### Added
 - Refunds (FP-300): `POST /v1/refunds` (API key or dashboard session,
@@ -18,13 +18,13 @@ and test in [BUGS.md](BUGS.md).
   reconciliation.
 - Hosting: one-server Docker stack (`ops/docker-compose.prod.yml`) with an
   HTTPS overlay (Caddy, `ops/docker-compose.tls.yml`). See
-  [HOSTING.md](HOSTING.md).
+  [HOSTING.md](docs/submission/HOSTING.md).
 - Merchant sign-in with email and password only: the new
   `POST /v1/auth/login/shops` lists the shops an email + password open; the
   dashboard then logs in to the chosen shop. `POST /v1/auth/login` is
   unchanged and still needs `merchantId`.
 - Load shedding: the API and nginx answer a fast `503` with `Retry-After`
-  when full, instead of slow timeouts. See [CAPACITY.md](CAPACITY.md).
+  when full, instead of slow timeouts. See [CAPACITY.md](docs/submission/CAPACITY.md).
 
 ### Changed
 - UI re-theme of checkout, the merchant dashboard and the admin console,
@@ -35,7 +35,7 @@ and test in [BUGS.md](BUGS.md).
   append-only ledger, refund columns and indexes).
 
 ### Fixed
-- 118 product bugs (16 critical, 42 high, 40 medium, 20 low) and 8 clean-up items, including 11 from an outside review (X1 to X11). See [BUGS.md](BUGS.md).
+- 118 product bugs (16 critical, 42 high, 40 medium, 20 low) and 8 clean-up items, including 11 from an outside review (X1 to X11). See [BUGS.md](docs/submission/BUGS.md).
 
 ### Removed
 - Dead `apps/api/src/v1/` tree with an unauthenticated capture route (H11).

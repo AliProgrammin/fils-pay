@@ -4,7 +4,7 @@ Branch `main`. Date: 30 October 2026.
 
 This review covers the API (`apps/api`), the settlement service, the database
 migrations and the hosted stack (`ops/`). Every bug id below is in
-[BUGS.md](BUGS.md). The root cause, the fix and the test of each bug are in
+[BUGS.md](docs/submission/BUGS.md). The root cause, the fix and the test of each bug are in
 `docs/bugs/*.md`.
 
 ## 1. Scope and method
@@ -17,7 +17,7 @@ migrations and the hosted stack (`ops/`). Every bug id below is in
 - **Blind verification.** A separate agent got only the requirements, not our
   fixes. It re-tested them. It found 3 misses (A12, R8, H10). We fixed all 3.
 - **Load and crash tests.** `scripts/load/run.sh` and `scripts/load/chaos.sh`
-  (see [CAPACITY.md](CAPACITY.md)).
+  (see [CAPACITY.md](docs/submission/CAPACITY.md)).
 - **Live checks.** A few read-only requests to `https://64-227-145-174.sslip.io`
   (section 4). No scanning, no load.
 

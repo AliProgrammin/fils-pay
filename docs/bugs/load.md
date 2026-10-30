@@ -2,7 +2,7 @@
 
 Found while load testing the production stack with the hosting limits
 (API 0.5 vCPU / 512 MB, whole stack 1 vCPU / 2 GB). Method and numbers:
-[CAPACITY.md](../../CAPACITY.md).
+[CAPACITY.md](../submission/CAPACITY.md).
 
 ### L1 The ledger balance check reads the whole ledger on every write
 

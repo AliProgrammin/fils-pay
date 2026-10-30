@@ -8,7 +8,7 @@ import { formatIsoDate } from "../lib/dateFormat.js";
  * authorize and capture hold their connection, idle in a transaction, while
  * the acquirer answers (0.1-0.4 s), so the pool size, not the 0.5 vCPU,
  * caps payment throughput first. Postgres's max_connections there is sized
- * to match (CAPACITY.md).
+ * to match (docs/submission/CAPACITY.md).
  *
  * This should be created once in `index.ts` and never per-request.
  */

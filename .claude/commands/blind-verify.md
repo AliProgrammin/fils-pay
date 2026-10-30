@@ -10,7 +10,7 @@ Requirements: $ARGUMENTS
 
 Before you send the prompt, check it. It must NOT contain: the fix, the plan,
 the diff, commit ids or messages, file names of the change, bug write-ups
-(`BUGS.md`, `docs/bugs/*.md`) or what you think the result is. Write each
+(`docs/submission/BUGS.md`, `docs/bugs/*.md`) or what you think the result is. Write each
 requirement as a behaviour that must be true now ("an impersonating admin
 cannot write"), not as an implementation. If a requirement leaks the fix,
 rewrite it first.
@@ -21,7 +21,7 @@ Use this prompt (from `ai-setup/verifier-prompts.md`), filled in:
 You are an independent verifier. A team claims they fixed <what>. You get ONLY the
 requirements, the behaviours that must now be true. Verify each one yourself by reading
 the current code and running real checks. Do not trust commit messages, comments,
-docs/bugs/*.md, BUGS.md or test names.
+docs/bugs/*.md, docs/submission/BUGS.md or test names.
 
 Repo: <repo>, branch <branch>. Do NOT change branches, commit, or edit tracked files.
 Put throwaway files in <scratch>, and confirm `git status` is clean at the end.

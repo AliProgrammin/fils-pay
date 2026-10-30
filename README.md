@@ -47,17 +47,17 @@ curl -s -H "Authorization: Bearer <rawKey>" "$B/v1/transactions?limit=5"
 
 ## What to read
 
-Start with [SUBMISSION.md](SUBMISSION.md): results, the findings summary, capacity, hosting, UI evidence and the AI transcript excerpts on one page.
+Start with [SUBMISSION.md](docs/submission/SUBMISSION.md): results, the findings summary, capacity, hosting, UI evidence and the AI transcript excerpts on one page.
 
 
 | File | What it shows |
 |---|---|
-| [BUGS.md](BUGS.md) | Every bug we fixed (118 product bugs + 8 clean-up items): severity, type, ticket, area, and a link to the full write-up (what is wrong, why it happens, what it breaks, how we found it, the fix, the test, the effect on existing data), plus the root-cause groups and the open risks. |
+| [BUGS.md](docs/submission/BUGS.md) | Every bug we fixed (118 product bugs + 8 clean-up items): severity, type, ticket, area, and a link to the full write-up (what is wrong, why it happens, what it breaks, how we found it, the fix, the test, the effect on existing data), plus the root-cause groups and the open risks. |
 | [docs/bugs/](docs/bugs/) | The write-ups, one section per bug. |
 | [docs/UI-BEFORE-AFTER.md](docs/UI-BEFORE-AFTER.md) | Checkout, merchant dashboard and admin console: before and after screenshots. |
-| [CAPACITY.md](CAPACITY.md) | Load test on the live server: about 70 concurrent checkout users by our strict rule (pay p95 under 1.5 s, 0 failed checkouts), up to about 90 with every checkout completing; overload and restart behaviour. |
+| [CAPACITY.md](docs/submission/CAPACITY.md) | Load test on the live server: about 70 concurrent checkout users by our strict rule (pay p95 under 1.5 s, 0 failed checkouts), up to about 90 with every checkout completing; overload and restart behaviour. |
 | [SECURITY.md](SECURITY.md) | Security review: threat model, the security bugs with root cause, fix and test, live header checks. |
-| [HOSTING.md](HOSTING.md) | How the stack runs on one 1 vCPU / 2 GB server, and how to deploy it. |
+| [HOSTING.md](docs/submission/HOSTING.md) | How the stack runs on one 1 vCPU / 2 GB server, and how to deploy it. |
 | [ai-setup/](ai-setup/) | How we used AI and how we checked what it told us, with three annotated transcript excerpts. |
 
 ## Refunds (FP-300)

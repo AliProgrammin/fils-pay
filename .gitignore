@@ -11,7 +11,7 @@ coverage/
 .vscode/
 .idea/
 
-# Production secrets for ops/docker-compose.prod.yml (see HOSTING.md)
+# Production secrets for ops/docker-compose.prod.yml (see docs/submission/HOSTING.md)
 ops/.env.production
 
 # k6 output of scripts/load/run.sh

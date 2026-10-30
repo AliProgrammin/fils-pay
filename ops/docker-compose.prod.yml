@@ -1,4 +1,4 @@
-# Production / hosted-demo stack for FilsPay. See HOSTING.md.
+# Production / hosted-demo stack for FilsPay. See docs/submission/HOSTING.md.
 #
 #   cp ops/.env.production.example ops/.env.production   # then fill it in
 #   docker compose -f ops/docker-compose.prod.yml up -d --build
@@ -12,7 +12,7 @@
 # Every service reads its settings and secrets from ops/.env.production
 # (gitignored). ops/.env.docker is a dev file and is NOT used here.
 #
-# Sized for ONE server with 1 vCPU and 2 GB RAM (see CAPACITY.md). In this
+# Sized for ONE server with 1 vCPU and 2 GB RAM (see docs/submission/CAPACITY.md). In this
 # file the CPU limits add up to 1.0 and memory to 1.5 GB, so the OS and
 # Docker keep about 0.5 GB. The HTTPS overlay (docker-compose.tls.yml) adds
 # Caddy and raises Postgres; CPU caps then share the one vCPU. Only the API

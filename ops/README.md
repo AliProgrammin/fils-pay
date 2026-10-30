@@ -5,7 +5,7 @@ talk to it directly (apps/api, apps/settlement, apps/reporting).
 
 For hosting (production mode, both front ends behind nginx on one origin)
 use `docker-compose.prod.yml` with `.env.production`, not this file. See
-`HOSTING.md` at the repo root.
+`docs/submission/HOSTING.md`.
 
 ## Quick start
 
@@ -34,7 +34,7 @@ each package), not services with their own database connection.
 | `.env.docker` | shared service settings, loaded by compose for every service |
 | `Dockerfile.node` | image for api, reporting, migrate and seed (`node:22`, `npm ci` inside the image) |
 | `Dockerfile.go` | multi-stage build of `apps/settlement` |
-| `docker-compose.prod.yml` | hosted stack (adds `web`); see `HOSTING.md` |
+| `docker-compose.prod.yml` | hosted stack (adds `web`); see `docs/submission/HOSTING.md` |
 | `.env.production.example` | settings template for the hosted stack; copy to `.env.production` (gitignored) |
 | `Dockerfile.web` + `nginx/filspay.conf` | apps/web at `/`, apps/admin at `/admin/`, `/v1/` proxied to the api |
 
@@ -81,7 +81,7 @@ The live server (Dilmune Cloud, `Orbit`) has 1 vCPU, 2 GB RAM and 50 GB disk.
 The API container is capped at 0.5 vCPU and 512 MB (`docker-compose.prod.yml`).
 Every other service also has a CPU and memory cap; Postgres is tuned for this
 size, not left on defaults. The caps, the reasons for them and the load test
-numbers are in [HOSTING.md](../HOSTING.md) and [CAPACITY.md](../CAPACITY.md).
+numbers are in [HOSTING.md](../docs/submission/HOSTING.md) and [CAPACITY.md](../docs/submission/CAPACITY.md).
 The settlement image is built on the box with `go build` from `Dockerfile.go`.
 
 > **AM:** first build on the box filled the disk (go build cache). cleared it and it went through on the second try

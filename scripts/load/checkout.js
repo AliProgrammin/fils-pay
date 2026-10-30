@@ -1,4 +1,4 @@
-// FilsPay checkout load test (k6). See CAPACITY.md and scripts/load/run.sh.
+// FilsPay checkout load test (k6). See docs/submission/CAPACITY.md and scripts/load/run.sh.
 //
 // One iteration = one customer checkout, the same calls the real flow makes:
 //   SCENARIO=link (default): the merchant creates a payment link (API key),
@@ -57,7 +57,7 @@ function scenarios() {
 export const options = {
   scenarios: scenarios(),
   setupTimeout: "120s",
-  // Fixed SLO used for the capacity estimate (CAPACITY.md).
+  // Fixed SLO used for the capacity estimate (docs/submission/CAPACITY.md).
   thresholds:
     MODE === "overload"
       ? {
