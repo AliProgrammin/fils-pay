@@ -30,7 +30,7 @@ so the login page shows the one-time code (`OTP_DEV_EXPOSE=true`). Test card:
 - 2.500 BD: https://64-227-145-174.sslip.io/pay/plink_PmjVZ6IlP0v1QQSbThJcTi
 - 5.000 BD: https://64-227-145-174.sslip.io/pay/plink_e2tquCbyX2BzlRgl5Prs4v
 - 7.500 BD: https://64-227-145-174.sslip.io/pay/plink_Y-Peyx5H_kV_q1JpXprF3J
-- 10.000 BD: https://64-227-145-174.sslip.io/pay/plink_Bw14UV_CQ_M7C0wy3bVT8H
+- 10.000 BD: https://64-227-145-174.sslip.io/pay/plink_4J3Hnhggka_GoOQCLTYS97
 - 12.500 BD: https://64-227-145-174.sslip.io/pay/plink_OGfbSpbaz8WNc-l63zIbrD
 
 To make more: log in to the dashboard, open **Payment links**, then **New payment link**.
