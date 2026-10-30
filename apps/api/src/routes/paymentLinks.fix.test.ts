@@ -200,3 +200,33 @@ test("B5: merchant B cannot cancel merchant A's payment link (404, link stays ac
   const row = await pool.query<{ status: string }>(`SELECT status FROM payment_links WHERE id = $1`, [link.id]);
   assert.equal(row.rows[0]!.status, "active");
 });
+
+// W7: a capture decline after a good authorize left the authorization
+// 'authorized' (and its hold active) with nothing to void it.
+test("W7: a declined capture voids the link's authorization and frees the link", async () => {
+  const { merchantId, rawKey } = await merchantWithKey("capture-decline");
+  const link = await createLink(rawKey, merchantId);
+  const inner = app.acquirer;
+  const declining: AcquirerSimulator = {
+    authorize: (req) => inner.authorize(req),
+    capture: async (req) => ({ outcome: "declined", acquirerReference: req.acquirerReference, latencyMs: 0 }),
+    refund: (req) => inner.refund(req),
+  };
+
+  const result = await payPaymentLink(pool, declining, payConfig, payInput(link.token));
+  assert.equal(result.statusCode, 402, JSON.stringify(result.body));
+  assert.deepEqual(result.body, { stage: "capture", error: "card_captured_declined" });
+
+  const txns = await pool.query<{ status: string; holds: string }>(
+    `SELECT t.status,
+            (SELECT count(*) FROM holds h WHERE h.transaction_id = t.id AND h.status = 'active')::text AS holds
+       FROM transactions t WHERE t.merchant_id = $1`,
+    [merchantId],
+  );
+  assert.deepEqual(txns.rows, [{ status: "voided", holds: "0" }]);
+  const row = await pool.query<{ status: string }>(`SELECT status FROM payment_links WHERE id = $1`, [link.id]);
+  assert.equal(row.rows[0]!.status, "active");
+
+  const retry = await payPaymentLink(pool, inner, payConfig, payInput(link.token));
+  assert.equal(retry.statusCode, 200, JSON.stringify(retry.body));
+});

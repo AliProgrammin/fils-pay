@@ -187,6 +187,15 @@ async function captureAndFinalize(
     // retryable failure (502) it stays bound, so the same payer can retry
     // again, and an original request that may still be running is never
     // overtaken.
+    // W7: a capture decline is final, so void the authorization (and free
+    // its hold) before freeing the link; nothing is left 'authorized'.
+    if (captureResult.statusCode === 402) {
+      await voidTransaction(pool, {
+        transactionId: txnId,
+        merchantId: link.merchantId,
+        actor: { type: "system", id: link.id },
+      });
+    }
     if (!resuming || captureResult.statusCode === 402) {
       await releaseReservation(pool, link.id, link.reservation);
     }
