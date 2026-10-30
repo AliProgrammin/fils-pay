@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   approveCreditRequest,
@@ -15,6 +15,8 @@ import { usePagedList } from "../../components/usePagedList.js";
 import { useAction } from "../../components/useAction.js";
 import { useToast } from "../../components/Toast.js";
 import type { CreditRequestDto, CreditRequestStatus } from "../../types.js";
+import { FieldNote, describedBy } from "../../components/FieldNote.js";
+import { lengthNote, REJECT_REASON_MAX } from "../../inputRules.js";
 
 const STATUS_TABS: Array<{ value: CreditRequestStatus; label: string }> = [
   { value: "pending_approval", label: "Awaiting approval" },
@@ -44,6 +46,7 @@ export function CreditsPage() {
   const [, runAction] = useAction();
   const [rejectReason, setRejectReason] = useState("");
   const [pendingReject, setPendingReject] = useState<string | null>(null);
+  const rejectNoteId = useId();
 
   const list = usePagedList<CreditRequestDto>(status, async (cursor, limit) => {
     const page = await listCreditRequests({ status, limit, cursor });
@@ -240,10 +243,13 @@ export function CreditsPage() {
             Reason (optional — recorded in the admin audit log)
             <input
               type="text"
+              maxLength={REJECT_REASON_MAX}
+              aria-describedby={describedBy(rejectNoteId, null, lengthNote(rejectReason, REJECT_REASON_MAX))}
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
             />
           </label>
+          <FieldNote id={rejectNoteId} note={lengthNote(rejectReason, REJECT_REASON_MAX)} />
         </ConfirmDialog>
       ) : null}
 

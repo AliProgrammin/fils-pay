@@ -10,6 +10,7 @@ import { usePagedList } from "../../components/usePagedList.js";
 import { bhd, dash, dateTime, statusLabel } from "../../format.js";
 import { bahrainDayStartIso, bahrainToday, exclusiveTo, rangeError, rangeLabel } from "../../dateRange.js";
 import { capitalize } from "../../utils/helpers.js";
+import { SEARCH_MAX } from "../../inputRules.js";
 import type { TransactionDto, TransactionStatus } from "../../types.js";
 
 const STATUSES: TransactionStatus[] = [
@@ -140,6 +141,8 @@ export function TransactionListPage() {
           Search
           <input
             type="search"
+            maxLength={SEARCH_MAX}
+            spellCheck={false}
             placeholder="Reference, bank reference, or transaction ID"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}

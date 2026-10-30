@@ -11,6 +11,7 @@ import { usePagedList } from "../../components/usePagedList.js";
 import { useAction } from "../../components/useAction.js";
 import { useToast } from "../../components/Toast.js";
 import type { AdminMerchantSummary, MerchantOnboardingStatus } from "../../types.js";
+import { SEARCH_MAX } from "../../inputRules.js";
 
 const ONBOARDING_STATUSES: MerchantOnboardingStatus[] = [
   "submitted",
@@ -128,6 +129,8 @@ export function MerchantListPage() {
           Search
           <input
             type="search"
+            maxLength={SEARCH_MAX}
+            spellCheck={false}
             placeholder="Display name, merchant id, or contact email"
             value={query}
             onChange={(e) => setQuery(e.target.value)}

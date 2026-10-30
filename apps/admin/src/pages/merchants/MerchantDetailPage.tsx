@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { parseBhdToFils } from "@filspay/money";
 import { getMerchant, recomputeTransactionStatuses, setRefundsEnabled, submitKycReview } from "../../api/merchants.js";
 import { adjustBalance } from "../../api/balanceAdjustments.js";
 import { issueCredit } from "../../api/credits.js";
@@ -24,6 +23,24 @@ import {
 import { useAction } from "../../components/useAction.js";
 import { useToast } from "../../components/Toast.js";
 import type { AdminMerchantDetail, CreditReasonCode, RotatedApiKey } from "../../types.js";
+import { FieldNote, describedBy } from "../../components/FieldNote.js";
+import {
+  ADJUST_REASON_MAX,
+  checkAmount,
+  CREDIT_MEMO_MAX,
+  filterAmountInput,
+  formatAmountText,
+  KEY_LABEL_MAX,
+  KYC_NOTES_MAX,
+  lengthNote,
+} from "../../inputRules.js";
+
+/** The reason codes the API accepts (admin/creditRequestValidation.ts). */
+const CREDIT_REASONS: Array<{ value: CreditReasonCode; label: string }> = [
+  { value: "goodwill", label: "Goodwill" },
+  { value: "dispute_resolution", label: "Dispute resolution" },
+  { value: "correction", label: "Correction" },
+];
 
 export function MerchantDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -60,6 +77,16 @@ export function MerchantDetailPage() {
   const [adjustReason, setAdjustReason] = useState("");
   const [creditError, setCreditError] = useState<string | null>(null);
   const [refundsError, setRefundsError] = useState<string | null>(null);
+  const [adjustAmountError, setAdjustAmountError] = useState<string | null>(null);
+  const [adjustReasonError, setAdjustReasonError] = useState<string | null>(null);
+  const [creditDateError, setCreditDateError] = useState<string | null>(null);
+  const adjustAmountNoteId = useId();
+  const adjustReasonNoteId = useId();
+  const creditAmountNoteId = useId();
+  const creditMemoNoteId = useId();
+  const creditDateNoteId = useId();
+  const kycNotesNoteId = useId();
+  const labelNoteId = useId();
 
   /** Runs one action with a busy label; a second click while busy does nothing. */
   async function perform(name: string, fn: () => Promise<void>): Promise<void> {
@@ -123,17 +150,12 @@ export function MerchantDetailPage() {
   async function handleAdjustBalance(): Promise<void> {
     if (!id) return;
     // Typed in BD like the credit form below; parsed to exact fils (no float).
-    let deltaFils: number;
-    try {
-      deltaFils = parseBhdToFils(adjustDeltaBhd);
-    } catch {
-      setActionError("Enter an amount in BD, for example 50.000 or -12.500.");
-      return;
-    }
-    if (deltaFils === 0) {
-      setActionError("The amount must not be 0.");
-      return;
-    }
+    const checked = checkAmount(adjustDeltaBhd, { allowNegative: true });
+    const reasonProblem = adjustReason.trim() === "" ? "Enter the reason for this correction" : null;
+    setAdjustAmountError(checked.ok ? null : checked.message);
+    setAdjustReasonError(reasonProblem);
+    if (!checked.ok || reasonProblem) return;
+    const deltaFils = checked.fils;
     await perform("adjust", async () => {
       const result = await adjustBalance(id, { deltaFils, reason: adjustReason.trim() });
       notify(
@@ -143,6 +165,7 @@ export function MerchantDetailPage() {
       );
       setAdjustDeltaBhd("");
       setAdjustReason("");
+      setAdjustAmountError(null);
       await load();
     });
   }
@@ -153,17 +176,13 @@ export function MerchantDetailPage() {
     setCreditError(null);
     // BD in, integer fils out, via the platform's own string-based parser —
     // never parseFloat, which cannot represent the third decimal exactly.
-    let baseAmountFils: number;
-    try {
-      baseAmountFils = parseBhdToFils(creditAmountBhd);
-    } catch {
-      setCreditError("Enter an amount in BD with up to 3 decimals, for example 12.500.");
-      return;
-    }
-    if (baseAmountFils <= 0) {
-      setCreditError("The amount must be more than 0.000 BD.");
-      return;
-    }
+    const checked = checkAmount(creditAmountBhd);
+    const dateProblem = creditEffectiveDate === "" ? "Choose the effective date"
+      : creditEffectiveDate > bahrainTodayIso() ? "The effective date cannot be in the future (Bahrain time)" : null;
+    setCreditError(checked.ok ? null : checked.message);
+    setCreditDateError(dateProblem);
+    if (!checked.ok || dateProblem) return;
+    const baseAmountFils = checked.fils;
     setPendingCredit({ baseAmountFils });
   }
 
@@ -441,25 +460,56 @@ export function MerchantDetailPage() {
               <label>
                 Delta (BD, up to 3 decimals, may be negative)
                 <input
-                  value={adjustDeltaBhd}
-                  onChange={(e) => setAdjustDeltaBhd(e.target.value)}
+                  type="text"
                   inputMode="decimal"
-                  placeholder="50.000"
+                  className="admin-amount"
+                  autoComplete="off"
+                  aria-invalid={adjustAmountError ? true : undefined}
+                  aria-describedby={describedBy(adjustAmountNoteId, adjustAmountError)}
+                  value={adjustDeltaBhd}
+                  onChange={(e) => {
+                    const next = filterAmountInput(e.target.value, { allowNegative: true });
+                    setAdjustDeltaBhd(next);
+                    if (adjustAmountError) {
+                      const checked = checkAmount(next, { allowNegative: true });
+                      setAdjustAmountError(checked.ok ? null : checked.message);
+                    }
+                  }}
+                  onBlur={() => {
+                    if (adjustDeltaBhd === "") return;
+                    const checked = checkAmount(adjustDeltaBhd, { allowNegative: true });
+                    setAdjustAmountError(checked.ok ? null : checked.message);
+                    setAdjustDeltaBhd(formatAmountText(adjustDeltaBhd));
+                  }}
+                  placeholder="50.000 or -12.500"
                 />
               </label>
+              <FieldNote id={adjustAmountNoteId} error={adjustAmountError} />
               <label>
                 Reason
                 <input
+                  type="text"
+                  maxLength={ADJUST_REASON_MAX}
+                  aria-invalid={adjustReasonError ? true : undefined}
+                  aria-describedby={describedBy(adjustReasonNoteId, adjustReasonError, lengthNote(adjustReason, ADJUST_REASON_MAX))}
                   value={adjustReason}
-                  onChange={(e) => setAdjustReason(e.target.value)}
+                  onChange={(e) => {
+                    setAdjustReason(e.target.value);
+                    if (e.target.value.trim() !== "") setAdjustReasonError(null);
+                  }}
                   placeholder="phone confirmation with merchant"
                 />
               </label>
+              <FieldNote
+                id={adjustReasonNoteId}
+                error={adjustReasonError}
+                note={lengthNote(adjustReason, ADJUST_REASON_MAX)}
+              />
               <div>
                 <button
                   type="button"
                   className="admin-btn-danger"
-                  disabled={busy || !adjustDeltaBhd.trim() || !adjustReason.trim()}
+                  disabled={busy}
                   onClick={() => void handleAdjustBalance()}
                 >
                   {busyAction === "adjust" ? "Adjusting…" : "Adjust balance"}
@@ -488,37 +538,46 @@ export function MerchantDetailPage() {
             }
           >
             <form className="admin-form" noValidate onSubmit={handleIssueCredit}>
-              {creditError && !pendingCredit ? (
-                <p className="admin-error" role="alert" id="credit-error">
-                  {creditError}
-                </p>
-              ) : null}
               <label>
                 Amount (BD, up to 3 decimals)
                 <input
                   type="text"
                   inputMode="decimal"
                   className="admin-amount"
-                  aria-invalid={creditError ? true : undefined}
-                  aria-describedby={creditError ? "credit-error" : undefined}
+                  autoComplete="off"
+                  aria-invalid={creditError && !pendingCredit ? true : undefined}
+                  aria-describedby={describedBy(creditAmountNoteId, pendingCredit ? null : creditError)}
                   required
                   placeholder="50.000"
                   value={creditAmountBhd}
                   onChange={(e) => {
-                    setCreditAmountBhd(e.target.value);
-                    setCreditError(null);
+                    const next = filterAmountInput(e.target.value);
+                    setCreditAmountBhd(next);
+                    if (creditError) {
+                      const checked = checkAmount(next);
+                      setCreditError(checked.ok ? null : checked.message);
+                    }
+                  }}
+                  onBlur={() => {
+                    if (creditAmountBhd === "") return;
+                    const checked = checkAmount(creditAmountBhd);
+                    setCreditError(checked.ok ? null : checked.message);
+                    setCreditAmountBhd(formatAmountText(creditAmountBhd));
                   }}
                 />
               </label>
+              <FieldNote id={creditAmountNoteId} error={pendingCredit ? null : creditError} />
               <label>
                 Reason
                 <select
                   value={creditReason}
                   onChange={(e) => setCreditReason(e.target.value as CreditReasonCode)}
                 >
-                  <option value="goodwill">Goodwill</option>
-                  <option value="dispute_resolution">Dispute resolution</option>
-                  <option value="correction">Correction</option>
+                  {CREDIT_REASONS.map((reason) => (
+                    <option key={reason.value} value={reason.value}>
+                      {reason.label}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label>
@@ -527,10 +586,16 @@ export function MerchantDetailPage() {
                   type="date"
                   required
                   max={bahrainTodayIso()}
+                  aria-invalid={creditDateError ? true : undefined}
+                  aria-describedby={describedBy(creditDateNoteId, creditDateError)}
                   value={creditEffectiveDate}
-                  onChange={(e) => setCreditEffectiveDate(e.target.value)}
+                  onChange={(e) => {
+                    setCreditEffectiveDate(e.target.value);
+                    setCreditDateError(null);
+                  }}
                 />
               </label>
+              <FieldNote id={creditDateNoteId} error={creditDateError} />
               <label className="admin-checkbox">
                 <input
                   type="checkbox"
@@ -541,8 +606,15 @@ export function MerchantDetailPage() {
               </label>
               <label>
                 Memo (optional)
-                <textarea value={creditMemo} onChange={(e) => setCreditMemo(e.target.value)} rows={2} />
+                <textarea
+                  value={creditMemo}
+                  maxLength={CREDIT_MEMO_MAX}
+                  aria-describedby={describedBy(creditMemoNoteId, null, lengthNote(creditMemo, CREDIT_MEMO_MAX))}
+                  onChange={(e) => setCreditMemo(e.target.value)}
+                  rows={2}
+                />
               </label>
+              <FieldNote id={creditMemoNoteId} note={lengthNote(creditMemo, CREDIT_MEMO_MAX)} />
               <div>
                 <button type="submit" className="admin-btn-danger" disabled={busy}>
                   {busyAction === "credit" ? "Submitting…" : "Issue credit"}
@@ -605,8 +677,15 @@ export function MerchantDetailPage() {
           <div className="admin-form">
             <label>
               Notes (optional)
-              <textarea value={kycNotes} onChange={(e) => setKycNotes(e.target.value)} rows={3} />
+              <textarea
+                value={kycNotes}
+                maxLength={KYC_NOTES_MAX}
+                aria-describedby={describedBy(kycNotesNoteId, null, lengthNote(kycNotes, KYC_NOTES_MAX))}
+                onChange={(e) => setKycNotes(e.target.value)}
+                rows={3}
+              />
             </label>
+            <FieldNote id={kycNotesNoteId} note={lengthNote(kycNotes, KYC_NOTES_MAX)} />
             <div className="admin-actions">
               <button
                 type="button"
@@ -764,10 +843,13 @@ export function MerchantDetailPage() {
               Label for the new key (optional)
               <input
                 type="text"
+                maxLength={KEY_LABEL_MAX}
+                aria-describedby={describedBy(labelNoteId, null, lengthNote(rotationLabel, KEY_LABEL_MAX))}
                 value={rotationLabel}
                 onChange={(e) => setRotationLabel(e.target.value)}
               />
             </label>
+            <FieldNote id={labelNoteId} note={lengthNote(rotationLabel, KEY_LABEL_MAX)} />
           </ConfirmDialog>
         ) : null}
       </div>

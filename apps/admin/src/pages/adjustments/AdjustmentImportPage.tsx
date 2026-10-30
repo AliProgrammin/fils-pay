@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   getAdjustmentImportRows,
   listAdjustmentImports,
@@ -15,6 +15,8 @@ import type {
   AdjustmentImportRowDetail,
   AdjustmentImportSummary,
 } from "../../types.js";
+import { FieldNote, describedBy } from "../../components/FieldNote.js";
+import { checkAdjustmentCsv, FILENAME_MAX, lengthNote } from "../../inputRules.js";
 
 const CSV_PLACEHOLDER = `merchantId,amount,reason
 00000000-0000-0000-0000-000000000000,4.750,statement correction`;
@@ -33,6 +35,12 @@ export function AdjustmentImportPage() {
   const notify = useToast();
   const [busy, run] = useAction();
   const [error, setError] = useState<string | null>(null);
+  /** Shown after a submit (or a blur) found bad lines; re-checked as you edit. */
+  const [showCsvProblems, setShowCsvProblems] = useState(false);
+  const csvNoteId = useId();
+  const filenameNoteId = useId();
+  const csv = checkAdjustmentCsv(csvContent);
+  const csvProblems = showCsvProblems ? csv.problems : [];
 
   const [openImportId, setOpenImportId] = useState<string | null>(null);
   const [rows, setRows] = useState<AdjustmentImportRowDetail[]>([]);
@@ -48,6 +56,10 @@ export function AdjustmentImportPage() {
   /** Amounts are BD with three decimals and are parsed server-side with parseBhdToFils. */
   async function handleApply(event: React.FormEvent): Promise<void> {
     event.preventDefault();
+    if (csv.problems.length > 0) {
+      setShowCsvProblems(true);
+      return;
+    }
     await run(async () => {
       setError(null);
       try {
@@ -60,6 +72,7 @@ export function AdjustmentImportPage() {
         );
         setCsvContent("");
         setFilename("");
+        setShowCsvProblems(false);
         history.reload();
       } catch (err) {
         setError(errorMessage(err, "adjustmentImport"));
@@ -107,25 +120,51 @@ export function AdjustmentImportPage() {
             </p>
           }
         >
-          <form className="admin-form" onSubmit={(e) => void handleApply(e)}>
+          <form className="admin-form" noValidate onSubmit={(e) => void handleApply(e)}>
             <label>
               File name (optional)
               <input
+                type="text"
+                maxLength={FILENAME_MAX}
+                autoComplete="off"
+                aria-describedby={describedBy(filenameNoteId, null, lengthNote(filename, FILENAME_MAX))}
                 value={filename}
                 onChange={(e) => setFilename(e.target.value)}
                 placeholder="march-corrections.csv"
               />
             </label>
+            <FieldNote id={filenameNoteId} note={lengthNote(filename, FILENAME_MAX)} />
             <label>
               CSV (columns: merchantId, amount, reason)
               <textarea
                 value={csvContent}
                 onChange={(e) => setCsvContent(e.target.value)}
+                onBlur={() => {
+                  if (csvContent.trim() !== "") setShowCsvProblems(true);
+                }}
                 rows={8}
                 placeholder={CSV_PLACEHOLDER}
+                spellCheck={false}
                 required
+                aria-invalid={csvProblems.length > 0 ? true : undefined}
+                aria-describedby={csvProblems.length > 0 || csv.rowCount > 0 ? csvNoteId : undefined}
               />
             </label>
+            {csvProblems.length > 0 ? (
+              <div id={csvNoteId} role="alert">
+                <p className="admin-field-error">Fix these lines before you apply the CSV:</p>
+                <ul className="admin-problem-list">
+                  {csvProblems.map((problem) => (
+                    <li key={problem}>{problem}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : csv.problems.length === 0 && csv.rowCount > 0 ? (
+              <FieldNote
+                id={csvNoteId}
+                note={`${csv.rowCount} row${csv.rowCount === 1 ? "" : "s"}, ${bhd(csv.totalFils)} in total`}
+              />
+            ) : null}
             <div>
               <button type="submit" className="admin-btn-danger" disabled={busy || !csvContent.trim()}>
                 {busy ? "Applying…" : "Apply"}

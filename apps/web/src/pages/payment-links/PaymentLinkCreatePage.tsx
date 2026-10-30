@@ -1,12 +1,20 @@
 import { useId, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { parseBhdToFils } from "@filspay/money";
 import { createPaymentLink } from "../../api/paymentLinks.js";
 import { errorMessage } from "../../errors.js";
 import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
 import { bhd } from "../../format.js";
 import { bahrainInputToIso, bahrainNowInputValue } from "../../dateRange.js";
 import { useToast } from "../../components/Toast.js";
+import { FieldNote, describedBy } from "../../components/FieldNote.js";
+import {
+  checkAmount,
+  filterAmountInput,
+  formatAmountText,
+  lengthNote,
+  LINK_DESCRIPTION_MAX,
+  LINK_REFERENCE_MAX,
+} from "../../inputRules.js";
 
 /**
  * `POST /v1/merchants/:merchantId/payment-links`, `owner`/`finance`
@@ -36,6 +44,8 @@ export function PaymentLinkCreatePage() {
   const [expiryError, setExpiryError] = useState<string | null>(null);
   const amountErrorId = useId();
   const expiryErrorId = useId();
+  const referenceNoteId = useId();
+  const descriptionNoteId = useId();
   const notify = useToast();
 
   async function handleSubmit(event: React.FormEvent): Promise<void> {
@@ -45,14 +55,9 @@ export function PaymentLinkCreatePage() {
     setAmountError(null);
     setExpiryError(null);
 
-    let amount = 0;
-    let amountProblem: string | null = null;
-    try {
-      amount = parseBhdToFils(amountBhd);
-      if (amount <= 0) amountProblem = "The amount must be more than 0.";
-    } catch {
-      amountProblem = "Enter an amount in BD, for example 12.750.";
-    }
+    const checkedAmount = checkAmount(amountBhd);
+    const amount = checkedAmount.ok ? checkedAmount.fils : 0;
+    const amountProblem = checkedAmount.ok ? null : checkedAmount.message;
     // The expiry is typed in Bahrain time, whatever the browser's own zone.
     const expiresAtIso = bahrainInputToIso(expiresAt);
     let expiryProblem: string | null = null;
@@ -105,7 +110,21 @@ export function PaymentLinkCreatePage() {
             value={amountBhd}
             aria-invalid={amountError ? true : undefined}
             aria-describedby={amountError ? amountErrorId : undefined}
-            onChange={(e) => setAmountBhd(e.target.value)}
+            autoComplete="off"
+            onChange={(e) => {
+              const next = filterAmountInput(e.target.value);
+              setAmountBhd(next);
+              if (amountError) {
+                const checked = checkAmount(next);
+                setAmountError(checked.ok ? null : checked.message);
+              }
+            }}
+            onBlur={() => {
+              if (amountBhd === "") return;
+              const checked = checkAmount(amountBhd);
+              setAmountError(checked.ok ? null : checked.message);
+              setAmountBhd(formatAmountText(amountBhd));
+            }}
           />
         </label>
         {amountError ? (
@@ -116,12 +135,28 @@ export function PaymentLinkCreatePage() {
         <p className="dash-muted dash-hint">Up to 3 decimals: 1.000 BD = 1000 fils.</p>
         <label>
           Reference (optional)
-          <input type="text" value={reference} onChange={(e) => setReference(e.target.value)} />
+          <input
+            type="text"
+            maxLength={LINK_REFERENCE_MAX}
+            autoComplete="off"
+            aria-describedby={describedBy(referenceNoteId, null, lengthNote(reference, LINK_REFERENCE_MAX))}
+            value={reference}
+            onChange={(e) => setReference(e.target.value)}
+          />
         </label>
+        <FieldNote id={referenceNoteId} note={lengthNote(reference, LINK_REFERENCE_MAX)} />
         <label>
           Description (optional)
-          <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} />
+          <input
+            type="text"
+            maxLength={LINK_DESCRIPTION_MAX}
+            autoComplete="off"
+            aria-describedby={describedBy(descriptionNoteId, null, lengthNote(description, LINK_DESCRIPTION_MAX))}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
         </label>
+        <FieldNote id={descriptionNoteId} note={lengthNote(description, LINK_DESCRIPTION_MAX)} />
         <label>
           Expires at (Bahrain time)
           <input

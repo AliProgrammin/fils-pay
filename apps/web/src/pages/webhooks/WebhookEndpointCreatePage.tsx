@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createWebhookEndpoint } from "../../api/webhooks.js";
 import { StatusChip } from "../../components/StatusChip.js";
@@ -8,6 +8,8 @@ import { dateTime } from "../../format.js";
 import { CopyButton } from "../../components/CopyButton.js";
 import { useToast } from "../../components/Toast.js";
 import type { WebhookEndpointCreateResponse } from "../../types.js";
+import { FieldNote, describedBy } from "../../components/FieldNote.js";
+import { checkHttpsUrl, WEBHOOK_URL_MAX } from "../../inputRules.js";
 
 /**
  * `POST /v1/merchants/:merchantId/webhook-endpoints`.
@@ -27,12 +29,17 @@ export function WebhookEndpointCreatePage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<WebhookEndpointCreateResponse | null>(null);
+  const [urlError, setUrlError] = useState<string | null>(null);
+  const urlNoteId = useId();
   const notify = useToast();
 
   /** The response carries the secret; this is the only time it is shown. */
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
     if (!me || submitting) return;
+    const problem = checkHttpsUrl(url);
+    setUrlError(problem);
+    if (problem) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -104,17 +111,31 @@ export function WebhookEndpointCreatePage() {
 
       {error ? <p className="dash-error" role="alert">{error}</p> : null}
 
-      <form className="dash-form dash-card" onSubmit={(e) => void handleSubmit(e)}>
+      <form className="dash-form dash-card" noValidate onSubmit={(e) => void handleSubmit(e)}>
         <label>
           Endpoint URL
           <input
             type="url"
+            inputMode="url"
             required
+            maxLength={WEBHOOK_URL_MAX}
+            autoComplete="off"
+            spellCheck={false}
             placeholder="https://example.com/filspay/webhooks"
+            aria-invalid={urlError ? true : undefined}
+            aria-describedby={describedBy(urlNoteId, urlError)}
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onChange={(e) => {
+              setUrl(e.target.value);
+              if (urlError) setUrlError(checkHttpsUrl(e.target.value));
+            }}
+            onBlur={() => {
+              if (url.trim() !== "") setUrlError(checkHttpsUrl(url));
+            }}
           />
         </label>
+        <FieldNote id={urlNoteId} error={urlError} />
+        <p className="dash-muted dash-hint">Must start with https://. FilsPay signs every delivery to this URL.</p>
         <button type="submit" className="dash-button dash-button-primary" disabled={submitting} aria-busy={submitting || undefined}>
           {submitting ? "Creating…" : "Create endpoint"}
         </button>

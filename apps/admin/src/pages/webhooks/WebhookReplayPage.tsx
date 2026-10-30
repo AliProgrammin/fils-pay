@@ -13,6 +13,7 @@ import type {
   BatchReplayResult,
   WebhookDeliveryStatus,
 } from "../../types.js";
+import { SEARCH_MAX } from "../../inputRules.js";
 
 /** The only statuses the batch-replay endpoint accepts. */
 const REPLAYABLE_STATUSES: WebhookDeliveryStatus[] = ["exhausted", "failed"];
@@ -140,6 +141,8 @@ export function WebhookReplayPage() {
             Search merchants
             <input
               type="search"
+              maxLength={SEARCH_MAX}
+              spellCheck={false}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Display name, merchant id, or contact email"

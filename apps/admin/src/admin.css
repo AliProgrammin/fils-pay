@@ -1563,3 +1563,30 @@ input[aria-invalid="true"] {
     font-size: 0.8rem;
   }
 }
+
+/* ---------- field notes (FieldNote) ---------- */
+
+.admin-hint {
+  margin: -0.5rem 0 0;
+  font-size: 0.85em;
+}
+
+.admin-field-error {
+  margin-top: -0.5rem;
+}
+
+.admin-field-error::before {
+  content: "! ";
+  font-weight: 700;
+}
+
+textarea[aria-invalid="true"] {
+  border-color: var(--red) !important;
+}
+
+.admin-problem-list {
+  margin: -0.5rem 0 0;
+  padding-left: 1.2rem;
+  color: var(--red-dk);
+  font-weight: 600;
+}

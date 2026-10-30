@@ -1,4 +1,4 @@
-import { parseBhdToFils } from "@filspay/money";
+import { checkAmount } from "../../inputRules.js";
 
 /** Statuses the API accepts a refund for (payments/refundValidation.ts). */
 const REFUNDABLE_STATUSES = new Set(["captured", "partially_captured", "partially_refunded"]);
@@ -15,15 +15,8 @@ export type ParsedRefundAmount = { ok: true; amountFils: number } | { ok: false;
  * text exactly (no float), and rejects more than 3 decimals.
  */
 export function parseRefundAmount(text: string, maxFils: number): ParsedRefundAmount {
-  let amountFils: number;
-  try {
-    amountFils = parseBhdToFils(text);
-  } catch {
-    return { ok: false, message: "Enter an amount in BD, for example 4.750" };
-  }
-  if (amountFils <= 0) return { ok: false, message: "The amount must be more than 0" };
-  if (amountFils > maxFils) return { ok: false, message: "The amount is more than what is left to refund" };
-  return { ok: true, amountFils };
+  const checked = checkAmount(text, { maxFils, example: "4.750" });
+  return checked.ok ? { ok: true, amountFils: checked.fils } : { ok: false, message: checked.message };
 }
 
 /**

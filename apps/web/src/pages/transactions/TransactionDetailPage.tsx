@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { parseBhdToFils } from "@filspay/money";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   captureTransaction,
@@ -18,6 +17,8 @@ import { StatusChip } from "../../components/StatusChip.js";
 import { CopyButton } from "../../components/CopyButton.js";
 import { useToast } from "../../components/Toast.js";
 import { capitalize } from "../../utils/helpers.js";
+import { checkAmount, filterAmountInput, formatAmountText } from "../../inputRules.js";
+import { FieldNote, describedBy } from "../../components/FieldNote.js";
 
 type LoadState =
   | { kind: "loading" }
@@ -44,6 +45,8 @@ export function TransactionDetailPage() {
   const notify = useToast();
   const [captureOpen, setCaptureOpen] = useState(false);
   const [captureAmount, setCaptureAmount] = useState("");
+  const [captureError, setCaptureError] = useState<string | null>(null);
+  const captureNoteId = useId();
   const [confirmDialog, confirm] = useConfirmDialog();
 
   const load = useCallback(async () => {
@@ -74,22 +77,17 @@ export function TransactionDetailPage() {
     event.preventDefault();
     if (!id || busy.current) return;
     setActionError(null);
-    const trimmed = captureAmount.trim();
     // Typed in BD like every other amount, parsed to exact fils (no float).
     // Left blank, `amountFils` is omitted entirely and capture.ts captures
     // everything still outstanding — its own documented default.
+    const problem = captureProblem(captureAmount);
+    setCaptureError(problem);
+    if (problem) return;
     let input: { amountFils?: number } = {};
-    if (trimmed !== "") {
-      try {
-        input = { amountFils: parseBhdToFils(trimmed) };
-      } catch {
-        setActionError("Enter an amount in BD, for example 4.750, or leave it blank to capture all of it.");
-        return;
-      }
-      if ((input.amountFils ?? 0) <= 0) {
-        setActionError("The amount must be more than 0.");
-        return;
-      }
+    if (captureAmount.trim() !== "") {
+      const checked = checkAmount(captureAmount);
+      if (!checked.ok) return;
+      input = { amountFils: checked.fils };
     }
     busy.current = true;
     setSubmitting("capture");
@@ -100,6 +98,7 @@ export function TransactionDetailPage() {
       const after = await captureTransaction(id, input, crypto.randomUUID());
       setCaptureOpen(false);
       setCaptureAmount("");
+      setCaptureError(null);
       notify(`Captured ${bhd(after.capturedFils - before)}`);
       // Refetch rather than patch: a capture wrote a new transaction_events
       // row server-side, so the timeline is stale, not merely shorter.
@@ -112,6 +111,16 @@ export function TransactionDetailPage() {
       busy.current = false;
       setSubmitting(null);
     }
+  }
+
+  /** The message for the capture box, or null when it may be sent (blank = all). */
+  function captureProblem(text: string): string | null {
+    if (text.trim() === "" || state.kind !== "loaded") return null;
+    const checked = checkAmount(text, {
+      example: "4.750",
+      maxFils: state.txn.amountFils - state.txn.capturedFils,
+    });
+    return checked.ok ? null : checked.message;
   }
 
   /** Only offered while status is authorized. */
@@ -215,17 +224,29 @@ export function TransactionDetailPage() {
 
             {capturable ? (
               captureOpen ? (
-                <form className="dash-form dash-form-inline" onSubmit={(e) => void handleCapture(e)}>
+                <form className="dash-form dash-form-inline" noValidate onSubmit={(e) => void handleCapture(e)}>
                   <label>
                     Amount in BD (blank captures all that is left)
                     <input
                       type="text"
                       inputMode="decimal"
+                      autoComplete="off"
                       placeholder={`up to ${bhd(txn.amountFils - txn.capturedFils)}`}
+                      aria-invalid={captureError ? true : undefined}
+                      aria-describedby={describedBy(captureNoteId, captureError)}
                       value={captureAmount}
-                      onChange={(e) => setCaptureAmount(e.target.value)}
+                      onChange={(e) => {
+                        const next = filterAmountInput(e.target.value);
+                        setCaptureAmount(next);
+                        if (captureError) setCaptureError(captureProblem(next));
+                      }}
+                      onBlur={() => {
+                        setCaptureError(captureProblem(captureAmount));
+                        setCaptureAmount(formatAmountText(captureAmount));
+                      }}
                     />
                   </label>
+                  <FieldNote id={captureNoteId} error={captureError} />
                   <button
                     type="submit"
                     className="dash-button dash-button-primary"
@@ -238,7 +259,10 @@ export function TransactionDetailPage() {
                     type="button"
                     className="dash-button"
                     disabled={submitting !== null}
-                    onClick={() => setCaptureOpen(false)}
+                    onClick={() => {
+                      setCaptureOpen(false);
+                      setCaptureError(null);
+                    }}
                   >
                     Cancel
                   </button>

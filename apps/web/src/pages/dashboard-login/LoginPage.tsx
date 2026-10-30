@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { login, resendOtp, verifyOtp } from "../../api/dashboardAuth.js";
 import { ApiError } from "../../api/client.js";
@@ -11,6 +11,16 @@ import {
 import type { DashboardLoginResponse } from "../../types.js";
 import { timeOfDay } from "../../format.js";
 import "../../dashboard.css";
+import { FieldNote, describedBy } from "../../components/FieldNote.js";
+import {
+  checkEmail,
+  checkOtp,
+  checkUuid,
+  digitsOnly,
+  EMAIL_MAX,
+  filterUuidInput,
+  OTP_LENGTH,
+} from "../../inputRules.js";
 
 type Step = { kind: "credentials" } | { kind: "otp"; challenge: DashboardLoginResponse };
 
@@ -75,12 +85,24 @@ export function LoginPage() {
   const [loginMerchantId, setLoginMerchantId] = useState<string | undefined>(undefined);
   // The shop picked from the list, named again on the code step.
   const [chosenShop, setChosenShop] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [merchantIdError, setMerchantIdError] = useState<string | null>(null);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const emailNoteId = useId();
+  const passwordNoteId = useId();
+  const merchantIdNoteId = useId();
+  const codeNoteId = useId();
 
   const redirectTo = (location.state as { from?: string } | null)?.from ?? "/dashboard/transactions";
 
   if (status === "authenticated") {
     return <Navigate to={redirectTo} replace />;
   }
+
+  // The API does not send the code length; a dev code shows it, else the
+  // API's default (OTP_CODE_LENGTH = 6).
+  const otpLength = step.kind === "otp" && step.challenge.devOtpCode ? step.challenge.devOtpCode.length : OTP_LENGTH;
 
   /** The merchant ID to send: only when the field is shown and filled in. */
   function sentMerchantId(): string | undefined {
@@ -92,6 +114,7 @@ export function LoginPage() {
     setStep({ kind: "credentials" });
     setShops(null);
     setCode("");
+    setCodeError(null);
     setError(message);
   }
 
@@ -126,6 +149,13 @@ export function LoginPage() {
 
   function handleCredentials(event: React.FormEvent): void {
     event.preventDefault();
+    const emailProblem = checkEmail(email);
+    const passwordProblem = password === "" ? "Enter your password" : null;
+    const merchantIdProblem = showMerchantId && merchantId.trim() !== "" ? checkUuid(merchantId) : null;
+    setEmailError(emailProblem);
+    setPasswordError(passwordProblem);
+    setMerchantIdError(merchantIdProblem);
+    if (emailProblem || passwordProblem || merchantIdProblem) return;
     void submitCredentials(sentMerchantId());
   }
 
@@ -134,6 +164,9 @@ export function LoginPage() {
   async function handleOtp(event: React.FormEvent): Promise<void> {
     event.preventDefault();
     if (submitting) return;
+    const codeProblem = checkOtp(code, otpLength);
+    setCodeError(codeProblem);
+    if (codeProblem) return;
     setSubmitting(true);
     setError(null);
     setNotice(null);
@@ -168,6 +201,7 @@ export function LoginPage() {
       const challenge = await resendOtp();
       setStep({ kind: "otp", challenge });
       setCode("");
+      setCodeError(null);
       setNotice("A new code has been sent.");
     } catch (err) {
       // Includes `429 resend_too_soon` — the server owns the cadence rule, so
@@ -233,33 +267,47 @@ export function LoginPage() {
           ) : null}
 
           {step.kind === "credentials" ? (
-            <form onSubmit={handleCredentials} className="dash-form">
+            <form onSubmit={handleCredentials} className="dash-form" noValidate>
               <label>
                 Email
                 <input
                   type="email"
+                  inputMode="email"
                   autoComplete="username"
                   required
+                  maxLength={EMAIL_MAX}
+                  spellCheck={false}
+                  aria-invalid={emailError ? true : undefined}
+                  aria-describedby={describedBy(emailNoteId, emailError)}
                   value={email}
                   onChange={(e) => {
                     setEmail(e.target.value);
                     setShops(null);
+                    if (emailError) setEmailError(checkEmail(e.target.value));
+                  }}
+                  onBlur={() => {
+                    if (email.trim() !== "") setEmailError(checkEmail(email));
                   }}
                 />
               </label>
+              <FieldNote id={emailNoteId} error={emailError} />
               <label>
                 Password
                 <input
                   type="password"
                   autoComplete="current-password"
                   required
+                  aria-invalid={passwordError ? true : undefined}
+                  aria-describedby={describedBy(passwordNoteId, passwordError)}
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);
                     setShops(null);
+                    if (e.target.value !== "") setPasswordError(null);
                   }}
                 />
               </label>
+              <FieldNote id={passwordNoteId} error={passwordError} />
               {showMerchantId ? (
                 <>
                   <label>
@@ -270,15 +318,33 @@ export function LoginPage() {
                       autoComplete="off"
                       spellCheck={false}
                       placeholder="00000000-0000-0000-0000-000000000000"
+                      maxLength={36}
+                      aria-invalid={merchantIdError ? true : undefined}
+                      aria-describedby={describedBy(merchantIdNoteId, merchantIdError)}
                       value={merchantId}
-                      onChange={(e) => setMerchantId(e.target.value)}
+                      onChange={(e) => {
+                        const next = filterUuidInput(e.target.value);
+                        setMerchantId(next);
+                        if (merchantIdError) setMerchantIdError(checkUuid(next));
+                      }}
+                      onBlur={() => {
+                        if (merchantId !== "") setMerchantIdError(checkUuid(merchantId));
+                      }}
                     />
                   </label>
+                  <FieldNote id={merchantIdNoteId} error={merchantIdError} />
                   <p className="dash-muted dash-hint">
                     The shop ID FilsPay gave you when your account was set up. Ask your shop
                     owner if you do not have it.
                   </p>
-                  <button type="button" className="dash-text-button" onClick={() => setShowMerchantId(false)}>
+                  <button
+                    type="button"
+                    className="dash-text-button"
+                    onClick={() => {
+                      setShowMerchantId(false);
+                      setMerchantIdError(null);
+                    }}
+                  >
                     Sign in without a merchant ID
                   </button>
                 </>
@@ -292,7 +358,7 @@ export function LoginPage() {
               </button>
             </form>
           ) : (
-            <form onSubmit={(e) => void handleOtp(e)} className="dash-form">
+            <form onSubmit={(e) => void handleOtp(e)} className="dash-form" noValidate>
               <p>
                 A one-time code was issued for <strong>{email}</strong>
                 {chosenShop ? (
@@ -314,11 +380,24 @@ export function LoginPage() {
                   type="text"
                   inputMode="numeric"
                   autoComplete="one-time-code"
+                  pattern={`\\d{${otpLength}}`}
                   required
+                  autoFocus
+                  aria-invalid={codeError ? true : undefined}
+                  aria-describedby={describedBy(codeNoteId, codeError)}
                   value={code}
-                  onChange={(e) => setCode(e.target.value)}
+                  onChange={(e) => {
+                    // maxLength would cut a pasted "123 456" before the space is dropped.
+                    const next = digitsOnly(e.target.value, otpLength);
+                    setCode(next);
+                    if (codeError) setCodeError(checkOtp(next, otpLength));
+                  }}
+                  onBlur={() => {
+                    if (code !== "") setCodeError(checkOtp(code, otpLength));
+                  }}
                 />
               </label>
+              <FieldNote id={codeNoteId} error={codeError} />
               <button type="submit" className="dash-button dash-button-primary" disabled={submitting}>
                 {submitting ? "Verifying…" : "Verify"}
               </button>

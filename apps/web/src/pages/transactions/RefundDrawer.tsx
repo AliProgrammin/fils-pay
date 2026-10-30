@@ -10,6 +10,8 @@ import { bhd } from "../../format.js";
 import { useConfirmDialog } from "../../components/ConfirmDialog.js";
 import type { TransactionDto } from "../../types.js";
 import { RefundKeyKeeper, parseRefundAmount, refundableFils } from "./refundForm.js";
+import { filterAmountInput, formatAmountText, lengthNote, REFUND_REASON_MAX } from "../../inputRules.js";
+import { FieldNote, describedBy } from "../../components/FieldNote.js";
 
 interface RefundDrawerProps {
   txn: TransactionDto;
@@ -29,6 +31,8 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [amountError, setAmountError] = useState<string | null>(null);
+  const [reasonError, setReasonError] = useState<string | null>(null);
   const keys = useRef(new RefundKeyKeeper());
   const [confirmDialog, confirm] = useConfirmDialog();
   // The API said refunds are off for this account: say so, offer no button.
@@ -36,6 +40,8 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
   const notify = useToast();
   const amountRef = useRef<HTMLInputElement>(null);
   const errorId = useId();
+  const amountNoteId = useId();
+  const reasonNoteId = useId();
   const busy = useRef(false);
 
   // Opening the form puts the cursor in the amount box.
@@ -65,15 +71,10 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
     event.preventDefault();
     if (!merchantId || busy.current) return;
     const parsed = parseRefundAmount(amount, maxFils);
-    if (!parsed.ok) {
-      setError(parsed.message);
-      return;
-    }
     const trimmedReason = reason.trim();
-    if (trimmedReason === "") {
-      setError("Enter a reason for the refund");
-      return;
-    }
+    setAmountError(parsed.ok ? null : parsed.message);
+    setReasonError(trimmedReason === "" ? "Enter a reason for the refund" : null);
+    if (!parsed.ok || trimmedReason === "") return;
     const confirmed = await confirm({
       title: "Refund this payment?",
       amount: bhd(parsed.amountFils),
@@ -97,6 +98,7 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
       keys.current.reset();
       setOpen(false);
       setAmount("");
+      setAmountError(null);
       setReason("");
       notify(`Refund of ${bhd(parsed.amountFils)} sent`);
       // Refetch: the refund wrote a new timeline event and changed the totals.
@@ -135,24 +137,46 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
                   ref={amountRef}
                   type="text"
                   required
-                  aria-describedby={error ? errorId : undefined}
                   inputMode="decimal"
+                  autoComplete="off"
+                  aria-invalid={amountError ? true : undefined}
+                  aria-describedby={describedBy(amountNoteId, amountError)}
                   placeholder={`up to ${formatBhd(toFils(maxFils))}`}
                   value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  onChange={(e) => {
+                    const next = filterAmountInput(e.target.value);
+                    setAmount(next);
+                    // Re-check while a message is shown, so it goes as soon as it is fixed.
+                    if (amountError) {
+                      const parsed = parseRefundAmount(next, maxFils);
+                      setAmountError(parsed.ok ? null : parsed.message);
+                    }
+                  }}
+                  onBlur={() => {
+                    if (amount === "") return;
+                    const parsed = parseRefundAmount(amount, maxFils);
+                    setAmountError(parsed.ok ? null : parsed.message);
+                    setAmount(formatAmountText(amount));
+                  }}
                 />
               </label>
+              <FieldNote id={amountNoteId} error={amountError} />
               <label className="dash-grow">
                 Reason (required)
                 <input
                   type="text"
                   required
-                  maxLength={500}
-                  aria-describedby={error ? errorId : undefined}
+                  maxLength={REFUND_REASON_MAX}
+                  aria-invalid={reasonError ? true : undefined}
+                  aria-describedby={describedBy(reasonNoteId, reasonError, lengthNote(reason, REFUND_REASON_MAX))}
                   value={reason}
-                  onChange={(e) => setReason(e.target.value)}
+                  onChange={(e) => {
+                    setReason(e.target.value);
+                    if (e.target.value.trim() !== "") setReasonError(null);
+                  }}
                 />
               </label>
+              <FieldNote id={reasonNoteId} error={reasonError} note={lengthNote(reason, REFUND_REASON_MAX)} />
               <button
                 type="submit"
                 className="dash-button dash-button-primary"
@@ -161,7 +185,13 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
               >
                 {submitting ? "Refunding…" : "Refund"}
               </button>
-              <button type="button" className="dash-button" disabled={submitting} onClick={() => setOpen(false)}>
+              <button type="button" className="dash-button" disabled={submitting}
+                onClick={() => {
+                  setOpen(false);
+                  setAmountError(null);
+                  setReasonError(null);
+                }}
+              >
                 Cancel
               </button>
             </form>

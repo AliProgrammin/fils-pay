@@ -16,11 +16,15 @@ import type { PayoutTrendsResponse, TopLinksResponse, VolumesResponse } from "..
  *  not introduce the first one. */
 const POLL_MS = 60_000;
 
+/** The API takes 1 to 50 top links (analytics/query.ts); offer a few sizes. */
+const TOP_LINKS_CHOICES = [5, 10, 20, 50] as const;
+
 export function OverviewPage() {
   // Left blank, the server applies its own "last 30 Asia/Bahrain days"
   // default — the client does not compute a competing one.
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  // A dropdown, so the value is always one the API accepts as is.
   const [topLinksLimit, setTopLinksLimit] = useState(10);
 
   const [volumes, setVolumes] = useState<VolumesResponse | null>(null);
@@ -28,10 +32,6 @@ export function OverviewPage() {
   const [topLinks, setTopLinks] = useState<TopLinksResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Mirrors the server's own clamp so this page never displays a limit the
-  // server would have silently overridden.
-  const clampedLimit = Math.min(50, Math.max(1, Math.trunc(topLinksLimit) || 10));
 
   const dateError = rangeError(from, to, bahrainToday());
 
@@ -48,7 +48,7 @@ export function OverviewPage() {
       const [v, p, t] = await Promise.all([
         getVolumes(range),
         getPayoutTrends(range),
-        getTopLinks({ ...range, limit: clampedLimit }),
+        getTopLinks({ ...range, limit: topLinksLimit }),
       ]);
       setVolumes(v);
       setPayouts(p);
@@ -58,7 +58,7 @@ export function OverviewPage() {
     } finally {
       setLoading(false);
     }
-  }, [from, to, clampedLimit]);
+  }, [from, to, topLinksLimit]);
 
   // overview memory leak (heap +40mb/hr), pretty sure its these effects — am
   // FH: profiled for 1h, heap flat. maybe it was a browser extension? open
@@ -100,13 +100,13 @@ export function OverviewPage() {
         />
         <label>
           Top links
-          <input
-            type="number"
-            min={1}
-            max={50}
-            value={topLinksLimit}
-            onChange={(e) => setTopLinksLimit(Number(e.target.value))}
-          />
+          <select value={topLinksLimit} onChange={(e) => setTopLinksLimit(Number(e.target.value))}>
+            {TOP_LINKS_CHOICES.map((choice) => (
+              <option key={choice} value={choice}>
+                {choice}
+              </option>
+            ))}
+          </select>
         </label>
         <button
           type="submit"

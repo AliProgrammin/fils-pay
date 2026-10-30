@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { listMerchants } from "../../api/merchants.js";
 import { rebuildAnalytics, rebuildBalances, runBatch } from "../../api/settlement.js";
 import { recalculateMdr } from "../../api/mdrRecalculation.js";
 import { errorMessage } from "../../errors.js";
@@ -10,6 +11,8 @@ import { useAction } from "../../components/useAction.js";
 import { useToast } from "../../components/Toast.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
 import { bhd, formatBusinessDate } from "../../format.js";
+import { FieldNote, describedBy } from "../../components/FieldNote.js";
+import { checkUuid, filterUuidInput } from "../../inputRules.js";
 import type {
   AnalyticsRebuildSummary,
   BalanceRebuildSummary,
@@ -52,9 +55,37 @@ export function SettlementPage() {
   const [mdrError, setMdrError] = useState<string | null>(null);
   const [mdrResult, setMdrResult] = useState<MdrRecalcSummary | null>(null);
 
+  const [merchantIdError, setMerchantIdError] = useState<string | null>(null);
+  const [mdrMerchantIdError, setMdrMerchantIdError] = useState<string | null>(null);
+  const [runDateError, setRunDateError] = useState<string | null>(null);
+  const merchantIdNoteId = useId();
+  const mdrMerchantIdNoteId = useId();
+  const runDateNoteId = useId();
+  const merchantListId = useId();
+  /** Known merchants, offered as suggestions in both merchant id boxes. */
+  const [merchantChoices, setMerchantChoices] = useState<Array<{ id: string; displayName: string }>>([]);
+  useEffect(() => {
+    let live = true;
+    listMerchants({ limit: 100 })
+      .then((page) => {
+        if (live) setMerchantChoices(page.merchants.map((m) => ({ id: m.id, displayName: m.displayName })));
+      })
+      // Suggestions only: the box still takes a pasted id without them.
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+
   /** Idempotent per business date: re-running returns the already-closed batches. */
   async function handleRunBatch(event: React.FormEvent): Promise<void> {
     event.preventDefault();
+    const idProblem = merchantId.trim() === "" ? null : checkUuid(merchantId);
+    const dateProblem = date === "" ? "Choose the business date"
+      : date > bahrainYesterdayIso() ? "Choose a business date before today (Bahrain time)" : null;
+    setMerchantIdError(idProblem);
+    setRunDateError(dateProblem);
+    if (idProblem || dateProblem) return;
     await runRun(async () => {
       setRunError(null);
       setRunResult(null);
@@ -104,7 +135,9 @@ export function SettlementPage() {
   // FH: ADMIN.md says this is safe
   async function handleRecalculateMdr(event: React.FormEvent): Promise<void> {
     event.preventDefault();
-    if (mdrRangeError || !mdrFrom || !mdrTo) return;
+    const idProblem = checkUuid(mdrMerchantId);
+    setMdrMerchantIdError(idProblem);
+    if (idProblem || mdrRangeError || !mdrFrom || !mdrTo) return;
     await runMdr(async () => {
       setMdrError(null);
       setMdrResult(null);
@@ -159,15 +192,20 @@ export function SettlementPage() {
             </p>
           }
         >
-          <form className="admin-form admin-form-row" onSubmit={(e) => void handleRunBatch(e)}>
+          <form className="admin-form admin-form-row" noValidate onSubmit={(e) => void handleRunBatch(e)}>
             <label>
               Business date
               <input
                 type="date"
                 required
                 max={bahrainYesterdayIso()}
+                aria-invalid={runDateError ? true : undefined}
+                aria-describedby={describedBy(runDateNoteId, runDateError)}
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={(e) => {
+                  setDate(e.target.value);
+                  setRunDateError(null);
+                }}
               />
             </label>
             <label className="admin-span-2">
@@ -176,13 +214,34 @@ export function SettlementPage() {
                 type="text"
                 className="admin-amount"
                 placeholder="00000000-0000-0000-0000-000000000000"
+                list={merchantListId}
+                autoComplete="off"
+                spellCheck={false}
+                aria-invalid={merchantIdError ? true : undefined}
+                aria-describedby={describedBy(merchantIdNoteId, merchantIdError)}
                 value={merchantId}
-                onChange={(e) => setMerchantId(e.target.value)}
+                onChange={(e) => {
+                  const next = filterUuidInput(e.target.value);
+                  setMerchantId(next);
+                  if (merchantIdError) setMerchantIdError(next === "" ? null : checkUuid(next));
+                }}
+                onBlur={() => {
+                  if (merchantId !== "") setMerchantIdError(checkUuid(merchantId));
+                }}
               />
             </label>
             <button type="submit" className="admin-btn-danger" disabled={runBusy}>
               {runBusy ? "Running…" : "Run batch"}
             </button>
+            <FieldNote id={runDateNoteId} error={runDateError} />
+            <FieldNote id={merchantIdNoteId} error={merchantIdError} />
+            <datalist id={merchantListId}>
+              {merchantChoices.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.displayName}
+                </option>
+              ))}
+            </datalist>
           </form>
         </RequireRole>
 
@@ -404,11 +463,24 @@ export function SettlementPage() {
               <input
                 className="admin-amount"
                 value={mdrMerchantId}
-                onChange={(e) => setMdrMerchantId(e.target.value)}
-                placeholder="merchant UUID"
+                list={merchantListId}
+                autoComplete="off"
+                spellCheck={false}
+                aria-invalid={mdrMerchantIdError ? true : undefined}
+                aria-describedby={describedBy(mdrMerchantIdNoteId, mdrMerchantIdError)}
+                onChange={(e) => {
+                  const next = filterUuidInput(e.target.value);
+                  setMdrMerchantId(next);
+                  if (mdrMerchantIdError) setMdrMerchantIdError(checkUuid(next));
+                }}
+                onBlur={() => {
+                  if (mdrMerchantId !== "") setMdrMerchantIdError(checkUuid(mdrMerchantId));
+                }}
+                placeholder="00000000-0000-0000-0000-000000000000"
                 required
               />
             </label>
+            <FieldNote id={mdrMerchantIdNoteId} error={mdrMerchantIdError} />
             <DateRangeFields
               from={mdrFrom}
               to={mdrTo}
