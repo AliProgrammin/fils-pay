@@ -12,6 +12,7 @@ import {
   generateTransactionsForMerchant,
   type GeneratedCaptureEvent,
   type GeneratedTransaction,
+  type LedgerGroup,
 } from "./fixtures/transactions.js";
 import { SEED, createRng } from "./rng.js";
 
@@ -361,17 +362,32 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
           ledgerGroupCount += 1;
         }
 
-        // The capture timeline. actor_type 'system' (and therefore a NULL
-        // actor_id) because a seeded capture has no session or API key
-        // behind it; metadata carries the same feeFils key
-        // recordTransactionEvent writes for a real capture.
-        for (const event of captureEvents) {
-          await client.query(
-            `INSERT INTO transaction_events (transaction_id, event_type, amount_fils, actor_type, metadata, occurred_at)
-             VALUES ($1, 'captured', $2, 'system', $3, $4)`,
-            [event.transactionId, event.amountFils, JSON.stringify({ feeFils: event.feeFils }), event.occurredAt],
-          );
-          transactionEventCount += 1;
+        // The marketplace timeline: the authorization, then the capture
+        // apps/settlement reads. Left unbatched on purpose: these
+        // captures are settled by running apps/settlement over them.
+        if (captureEvents.length > 0) {
+          const txnById = new Map(transactions.map((t) => [t.id, t]));
+          for (const event of captureEvents) {
+            const txn = txnById.get(event.transactionId);
+            if (!txn) {
+              throw new Error(`seed: capture event for unknown transaction ${event.transactionId}`);
+            }
+            await insertTimelineEvent(client, {
+              transactionId: txn.id,
+              eventType: "authorized",
+              amountFils: null,
+              metadata: {},
+              occurredAt: txn.occurredAt,
+            });
+            await insertTimelineEvent(client, {
+              transactionId: txn.id,
+              eventType: "captured",
+              amountFils: event.amountFils,
+              metadata: { feeFils: event.feeFils, acquirerReference: txn.acquirerReference },
+              occurredAt: event.occurredAt,
+            });
+            transactionEventCount += 2;
+          }
         }
 
         // A handful of holds: one per merchant, against the first
@@ -445,18 +461,16 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
             ledgerGroupCount += 1;
           }
 
+          const multiTxnById = new Map(multiCapture.transactions.map((t) => [t.id, t]));
           for (const event of multiCapture.events) {
-            await client.query(
-              `INSERT INTO transaction_events (transaction_id, event_type, amount_fils, actor_type, metadata, occurred_at)
-               VALUES ($1, $2, $3, 'system', $4, $5)`,
-              [
-                event.transactionId,
-                event.eventType,
-                event.amountFils,
-                JSON.stringify(event.feeFils === null ? {} : { feeFils: event.feeFils }),
-                event.occurredAt,
-              ],
-            );
+            const acquirerReference = multiTxnById.get(event.transactionId)?.acquirerReference;
+            await insertTimelineEvent(client, {
+              transactionId: event.transactionId,
+              eventType: event.eventType,
+              amountFils: event.amountFils,
+              metadata: event.feeFils === null ? {} : { feeFils: event.feeFils, acquirerReference },
+              occurredAt: event.occurredAt,
+            });
             transactionEventCount += 1;
           }
         }
@@ -505,6 +519,7 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
             );
             settlementBatchCount += 1;
 
+            const dayFeeByTxn = captureFeeByTransaction(dayLedgerGroups);
             let dayLineSequence = 1;
             for (const txn of dayTxns) {
               await client.query(
@@ -523,15 +538,11 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
               );
               transactionCount += 1;
 
-              // settlement_batch_id is set here, not left NULL: these
-              // events are already settled by this fixture's own closed
-              // batch, so a real batching pass must never pick them up a
+              // The capture's settlement_batch_id is set here, not left
+              // NULL: it is already settled by this fixture's own closed
+              // batch, so a real batching pass must never pick it up a
               // second time.
-              await client.query(
-                `INSERT INTO transaction_events (transaction_id, event_type, amount_fils, actor_type, occurred_at, settlement_batch_id)
-                 VALUES ($1, 'captured', $2, 'system', $3, $4)`,
-                [txn.id, txn.capturedFils, txn.occurredAt, dayBatchId],
-              );
+              transactionEventCount += await insertLifecycleEvents(client, txn, dayFeeByTxn, dayBatchId);
 
               await client.query(
                 `INSERT INTO scheme_export_lines (settlement_batch_id, transaction_id, amount_fils, amount, line_sequence)
@@ -624,6 +635,14 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
           schemeExportLineCount += 1;
         }
 
+        // Every transaction's event timeline. Each capture belongs to the
+        // closed batch above (it is in its gross and scheme export), so
+        // it carries that batch's id, exactly as CloseBatch leaves it.
+        const feeByTxn = captureFeeByTransaction(ledgerGroups);
+        for (const txn of transactions) {
+          transactionEventCount += await insertLifecycleEvents(client, txn, feeByTxn, closedBatchId);
+        }
+
         const openBatchDate = toDateOnlyString(SEED_BASE_DATE);
         await client.query(
           `INSERT INTO settlement_batches (id, merchant_id, batch_date, status)
@@ -710,6 +729,10 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
         throw new Error("seed: expected Alpha Retail Co to exist for the March reconciliation fixture");
       }
 
+      // No transaction_events for these: no settlement batch covers them,
+      // so an unbatched capture event would make the next CloseBatch for
+      // Alpha Retail settle all of March, and change this fixture's
+      // reconciliation figures.
       const marchFixtures = generateMarchReconciliationFixtures({
         merchantId: alphaInserted.merchantId,
         merchantKey: "alpha-retail",
@@ -911,6 +934,101 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
     adminUserCount,
     ledgerChecksum,
   };
+}
+
+type TimelineEventType = "authorized" | "captured" | "partially_captured" | "voided";
+
+/**
+ * One transaction_events row, with the columns and metadata keys
+ * recordTransactionEvent (apps/api/src/transactions/events.ts) writes.
+ * actor_type is 'system' with a NULL actor_id: a seeded event has no
+ * session or API key behind it.
+ */
+async function insertTimelineEvent(
+  client: PoolClient,
+  event: {
+    transactionId: string;
+    eventType: TimelineEventType;
+    amountFils: Fils | null;
+    metadata: Record<string, unknown>;
+    occurredAt: Date;
+    settlementBatchId?: string | null;
+  },
+): Promise<void> {
+  await client.query(
+    `INSERT INTO transaction_events
+       (transaction_id, event_type, amount_fils, actor_type, actor_id, metadata, occurred_at, settlement_batch_id)
+     VALUES ($1, $2, $3, 'system', NULL, $4, $5, $6)`,
+    [
+      event.transactionId,
+      event.eventType,
+      event.amountFils,
+      JSON.stringify(event.metadata),
+      event.occurredAt,
+      event.settlementBatchId ?? null,
+    ],
+  );
+}
+
+/** The fee each capture ledger group posted to platform_fee_revenue, by
+ *  transaction (0 when the fee rounded to nothing and no leg was posted). */
+function captureFeeByTransaction(groups: readonly LedgerGroup[]): Map<string, Fils> {
+  const fees = new Map<string, Fils>();
+  for (const group of groups) {
+    const feeLeg = group.legs.find((leg) => leg.accountId === "platform_fee_revenue" && leg.direction === "credit");
+    fees.set(group.transactionId, feeLeg?.amountFils ?? ZERO_FILS);
+  }
+  return fees;
+}
+
+/**
+ * The events the live API writes over a single-shot transaction's life:
+ * authorize.ts writes 'authorized'; capture.ts writes 'captured' or
+ * 'partially_captured' with the captured amount and metadata
+ * { feeFils, acquirerReference }; void.ts writes 'voided'. Every row is
+ * stamped with the transaction's occurred_at, the same instant as its
+ * capture ledger group. Returns the number of rows written.
+ */
+async function insertLifecycleEvents(
+  client: PoolClient,
+  txn: GeneratedTransaction,
+  feeByTxn: ReadonlyMap<string, Fils>,
+  settlementBatchId: string,
+): Promise<number> {
+  await insertTimelineEvent(client, {
+    transactionId: txn.id,
+    eventType: "authorized",
+    amountFils: null,
+    metadata: {},
+    occurredAt: txn.occurredAt,
+  });
+
+  if (txn.status === "captured" || txn.status === "partially_captured") {
+    const feeFils = feeByTxn.get(txn.id);
+    if (feeFils === undefined) {
+      throw new Error(`seed: ${txn.reference} captured money but has no capture ledger group`);
+    }
+    await insertTimelineEvent(client, {
+      transactionId: txn.id,
+      eventType: txn.status,
+      amountFils: txn.capturedFils,
+      metadata: { feeFils, acquirerReference: txn.acquirerReference },
+      occurredAt: txn.occurredAt,
+      settlementBatchId,
+    });
+    return 2;
+  }
+  if (txn.status === "voided") {
+    await insertTimelineEvent(client, {
+      transactionId: txn.id,
+      eventType: "voided",
+      amountFils: null,
+      metadata: {},
+      occurredAt: txn.occurredAt,
+    });
+    return 2;
+  }
+  return 1;
 }
 
 function shiftDate(base: Date, days: number): Date {

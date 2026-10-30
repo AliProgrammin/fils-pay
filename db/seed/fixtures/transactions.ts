@@ -356,8 +356,8 @@ export interface GenerateMultiCaptureResult extends GenerateTransactionsResult {
  * sequence of `captureTransaction()` calls would have left behind.
  *
  * The standard `generateTransactionsForMerchant` fixture captures every
- * transaction in a single shot and writes no event timeline at all, so
- * nothing else in the seed exercises the ordinary, real-world case where
+ * transaction in a single shot (one capture event each), so nothing else
+ * in the seed exercises the ordinary, real-world case where
  * one transaction's cumulative `captured_fils` is the sum of several
  * instalments that each have their own event row, their own fee and their
  * own balanced ledger group.
