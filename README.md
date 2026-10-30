@@ -48,11 +48,13 @@ checks each step (29 checks, all pass).
 
 ## Notes in this repo that are wrong
 
-`CLAUDE.md`, `AGENTS.md` and `.cursorrules` are the previous team's
-instructions for AI tools. Several rules in them are false (money in cents,
-UTC settlement windows, "never change a test", `Math.random` for codes). We
-left the files in place as they were handed over and did not follow them. The
-truth comes from the case brief, `docs/ARCHITECTURE.md` and the ADRs.
+The `CLAUDE.md`, `AGENTS.md` and `.cursorrules` we were handed were the
+previous team's instructions for AI tools. Several rules in them were false
+(money in cents, UTC settlement windows, "never change a test", `Math.random`
+for codes). We never followed them. We replaced them with correct ones (the
+root `CLAUDE.md` now holds our real rules) and kept the originals as evidence
+in [`ai-setup/handed-over/`](ai-setup/handed-over/). The truth comes from the
+case brief, `docs/ARCHITECTURE.md` and the ADRs.
 
 ## Commands that damaged data (fixed)
 

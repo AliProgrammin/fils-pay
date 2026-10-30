@@ -10,10 +10,10 @@ We used AI a lot. We did not trust it. Every behaviour fix had to pass a test th
 | [`global-rules.md`](global-rules.md) | Cleaned copy of our own global Claude Code rules, active for the whole session |
 | [`verifier-prompts.md`](verifier-prompts.md) | The template and the three real blind-verifier prompts we sent |
 | [`TRANSCRIPT-EXCERPTS.md`](TRANSCRIPT-EXCERPTS.md) | Three annotated transcript excerpts: where we checked the AI and it changed the result |
-| [`claude/CLAUDE.md`](claude/CLAUDE.md) | Our project instructions for AI agents, in loadable Claude Code form (replaces the repo's trap files) |
+| [`claude/CLAUDE.md`](claude/CLAUDE.md) | Our project instructions for AI agents, in loadable Claude Code form (also the repo-root `CLAUDE.md`) |
 | [`claude/agents/`](claude/agents/) | The four agent roles we used, as Claude Code agent files: `auditor`, `fixer`, `blind-verifier`, `ui-qa` |
 
-To reuse the setup: copy `ai-setup/claude/CLAUDE.md` to the repo root as `CLAUDE.md` and `ai-setup/claude/agents/` to `.claude/agents/`. We keep them in `ai-setup/` so the handed-over files stay unchanged as evidence. The agent files package the prompt blocks we actually sent (see `verifier-prompts.md` for the real text).
+The repo-root `CLAUDE.md`, `AGENTS.md` and `.cursorrules` now point to these rules. To use the agent roles in Claude Code, copy `ai-setup/claude/agents/` to `.claude/agents/`. The agent files package the prompt blocks we actually sent (see `verifier-prompts.md` for the real text).
 
 ## Tools
 
@@ -71,4 +71,4 @@ The repo ships `CLAUDE.md`, `AGENTS.md`, `.cursorrules` and AI notes in `docs/ON
 | Settlement windows are UTC midnight | The business day is Asia/Bahrain (UTC+3) |
 | Money columns as `INTEGER` are fine | ADR-0001 requires `BIGINT` |
 
-We treated these files as evidence of how the bugs got in, not as instructions. We did not change or delete them; they are still in the repo exactly as we found them. Every agent prompt told the agent to ignore them, and the agents said so in their reports (for example: "I ignored the repo's CLAUDE.md, as you said."). Excerpt 1 in [`TRANSCRIPT-EXCERPTS.md`](TRANSCRIPT-EXCERPTS.md) shows one result.
+We treated these files as evidence of how the bugs got in, not as instructions. During the work we did not change them. At the end we replaced them at the repo root with our real instructions (root `CLAUDE.md`, from [`claude/CLAUDE.md`](claude/CLAUDE.md)), so the next developer's AI does not re-create the bugs. The originals are kept unchanged in [`handed-over/`](handed-over/). Every agent prompt told the agent to ignore them, and the agents said so in their reports (for example: "I ignored the repo's CLAUDE.md, as you said."). Excerpt 1 in [`TRANSCRIPT-EXCERPTS.md`](TRANSCRIPT-EXCERPTS.md) shows one result.

@@ -36,7 +36,7 @@ The five we lead with:
 | Webhook signatures, FP-240 (critical) | Shops rejected our real messages as fake (Beta: 59 of 220). | Signed one JSON string, sent a re-ordered copy. | Serialise once, sign and send the same bytes. |
 | One shop stops all payouts (high) | One broken shop stopped the nightly payout for every shop after it. | The batch loop returned on the first error. | Record the error and continue; report all errors at the end. |
 
-We did not follow the repo's `CLAUDE.md`, `AGENTS.md` and `.cursorrules`: they hold false rules (cents, UTC windows, "never change tests", `Math.random` for codes) that protect bugs. The truth came from the case brief, `docs/ARCHITECTURE.md` and the ADRs.
+We did not follow the `CLAUDE.md`, `AGENTS.md` and `.cursorrules` we were handed: they held false rules (cents, UTC windows, "never change tests", `Math.random` for codes) that protect bugs. We replaced them with our real rules and kept the originals in `ai-setup/handed-over/`. The truth came from the case brief, `docs/ARCHITECTURE.md` and the ADRs.
 
 Commands that looked routine but damaged data (all fixed and tested): admin "Rebuild cached balances" (C1, C10, G4), "Recalculate MDR" (C6), `scripts/reconcile_march.ts` (E2), `scripts/expire_holds.ts` (E3), "Rebuild analytics" (U5), direct edits of `ledger_entries` (E4, now append-only).
 
