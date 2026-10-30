@@ -173,3 +173,43 @@ test("runConsumerPass: atomicity — an apply failure partway through a multi-ev
 test("REPORTING_EVENT_TYPES includes refund.succeeded (FP-300)", () => {
   assert.ok(REPORTING_EVENT_TYPES.includes("refund.succeeded"));
 });
+
+test("runConsumerPass: settlement.paid moves the payout trend from closed to paid (U6)", async () => {
+  const merchantId = await createMerchant("e2e-paid");
+  const batchResult = await pool.query<{ id: string }>(
+    `INSERT INTO settlement_batches (merchant_id, batch_date, status, gross_fils, fee_fils, net_payout_fils, closed_at)
+     VALUES ($1, '2026-02-02', 'closed', 8_000, 200, 7_800, now())
+     RETURNING id`,
+    [merchantId],
+  );
+  const batchId = batchResult.rows[0]!.id;
+  await enqueueEvent(pool, {
+    eventType: "settlement.batch_closed",
+    aggregateType: "settlement_batch",
+    aggregateId: batchId,
+    payload: { merchantId, batchId, batchDate: "2026-02-02", grossFils: 8_000, feeFils: 200, netPayoutFils: 7_800 },
+  });
+  await runConsumerPass(pool, config);
+
+  // Payout happens later, and the settlement service enqueues settlement.paid
+  // with the exact payload shape of payout_notify.go.
+  const paidAt = new Date("2026-02-03T06:00:00Z");
+  await pool.query(`UPDATE settlement_batches SET status = 'paid', paid_at = $2 WHERE id = $1`, [batchId, paidAt]);
+  await enqueueEvent(pool, {
+    eventType: "settlement.paid",
+    aggregateType: "settlement_batch",
+    aggregateId: batchId,
+    payload: { merchantId, batchId, batchDate: "2026-02-02", netPayoutFils: 7_800 },
+  });
+  await runConsumerPass(pool, config);
+
+  const result = await pool.query(
+    `SELECT status, paid_at, gross_fils, fee_fils, net_payout_fils FROM merchant_payout_trends
+      WHERE merchant_id = $1 AND settlement_batch_id = $2`,
+    [merchantId, batchId],
+  );
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.rows[0].status, "paid");
+  assert.equal(result.rows[0].paid_at.toISOString(), paidAt.toISOString());
+  assert.equal(Number(result.rows[0].net_payout_fils), 7_800);
+});

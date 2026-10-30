@@ -156,6 +156,28 @@ async function applyBatchClosed(client: PoolClient, row: OutboxEventRow): Promis
   }
 }
 
+/**
+ * settlement.paid — the settlement service pays a batch some time after it
+ * closes, so the status/paid_at that applyBatchClosed copied is still
+ * 'closed'/null. Re-reads the batch row and writes its current status,
+ * paid_at and amounts onto the trend row (an upsert, so it is safe to replay
+ * and still correct if no trend row exists yet). A missing batch row is a
+ * no-op, like applyBatchClosed.
+ */
+async function applySettlementPaid(client: PoolClient, row: OutboxEventRow): Promise<void> {
+  const payload = row.payload as { batchId: string };
+  await client.query(
+    `INSERT INTO merchant_payout_trends
+        (merchant_id, settlement_batch_id, batch_date, status, gross_fils, fee_fils, net_payout_fils, paid_at, last_updated_at)
+     SELECT merchant_id, id, batch_date, status, gross_fils, fee_fils, net_payout_fils, paid_at, now()
+       FROM settlement_batches WHERE id = $1
+     ON CONFLICT (merchant_id, settlement_batch_id) DO UPDATE
+       SET status = EXCLUDED.status, gross_fils = EXCLUDED.gross_fils,
+           fee_fils = EXCLUDED.fee_fils, net_payout_fils = EXCLUDED.net_payout_fils,
+           paid_at = EXCLUDED.paid_at, last_updated_at = now()`,
+    [payload.batchId],
+  );
+}
 
 /**
  * refund.succeeded — one event per refund (apps/api processRefund.ts). Adds
@@ -193,6 +215,8 @@ export async function applyEvent(client: PoolClient, row: OutboxEventRow): Promi
       return applyTransactionVoided(client, row);
     case "settlement.batch_closed":
       return applyBatchClosed(client, row);
+    case "settlement.paid":
+      return applySettlementPaid(client, row);
     case "refund.succeeded":
       return applyRefundSucceeded(client, row);
     default:
