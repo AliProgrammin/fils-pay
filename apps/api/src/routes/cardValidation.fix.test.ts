@@ -1,9 +1,10 @@
 /**
- * Card checks a real acquirer makes: an expired card is declined by the bank
- * (402 card_declined, declineReason card_expired); a card number that fails
- * the Luhn check or a CVV that is not 3-4 digits is malformed input
- * (400 invalid_request), on POST /v1/transactions and on the public
- * payment-link pay route. Requires DATABASE_URL (migrated Postgres).
+ * The one card check the API adds to the original contract: an expired card
+ * is declined by the bank (402 card_declined, declineReason card_expired),
+ * on POST /v1/transactions and on the public payment-link pay route. Every
+ * other card shape the original API accepted (a number failing Luhn, any
+ * CVV, any expiry shape) is still accepted unchanged. Requires DATABASE_URL
+ * (migrated Postgres).
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -99,28 +100,48 @@ test("authorize: a card that expired before the current month is declined as car
   assert.equal(old.json().declineReason, "card_expired");
 });
 
-test("authorize: a CVV that is not 3-4 digits is rejected as invalid_request", async () => {
-  for (const cvv of ["12", "12345", "12a", "", undefined]) {
-    const res = await authorize({ ...VALID_CARD, cvv });
-    assert.equal(res.statusCode, 400, `cvv ${String(cvv)}: ${res.body}`);
-    assert.equal(res.json().error, "invalid_request");
+test("authorize: a 2-digit expiry year means 20YY", async () => {
+  const future = await authorize({ ...VALID_CARD, expiryMonth: 12, expiryYear: 99 });
+  assert.equal(future.statusCode, 201, future.body);
+  const past = await authorize({ ...VALID_CARD, expiryMonth: 12, expiryYear: 20 });
+  assert.equal(past.statusCode, 402, past.body);
+  assert.equal(past.json().declineReason, "card_expired");
+});
+
+test("authorize: magic test cards keep their outcome even when expired", async () => {
+  const expired = { expiryMonth: 12, expiryYear: 2020 };
+  const doNotHonor = await authorize({ ...VALID_CARD, ...expired, pan: "4000000000000002" });
+  assert.equal(doNotHonor.json().declineReason, "do_not_honor");
+  const error = await authorize({ ...VALID_CARD, ...expired, pan: "4000000000000069" });
+  assert.equal(error.statusCode, 502);
+});
+
+test("authorize: card shapes the original API accepted are still approved", async () => {
+  const cards: Record<string, unknown>[] = [
+    { ...VALID_CARD, pan: "4000000000000000" }, // fails Luhn
+    { ...VALID_CARD, pan: "4242424242424241" }, // fails Luhn
+    { ...VALID_CARD, pan: "42" },
+    { ...VALID_CARD, pan: "4242abcd42424242" },
+    { ...VALID_CARD, cvv: "1" },
+    { ...VALID_CARD, cvv: "12345" },
+    { ...VALID_CARD, cvv: undefined },
+    { ...VALID_CARD, expiryMonth: 0 },
+    { ...VALID_CARD, expiryMonth: 13 },
+    { ...VALID_CARD, expiryMonth: "12" },
+    { ...VALID_CARD, expiryYear: undefined },
+    { pan: "4242424242424242" },
+  ];
+  for (const card of cards) {
+    const res = await authorize(card);
+    assert.equal(res.statusCode, 201, `${JSON.stringify(card)}: ${res.body}`);
+    assert.equal(res.json().status, "authorized");
   }
 });
 
-test("authorize: a card number failing the Luhn check is rejected as invalid_request", async () => {
-  for (const pan of ["4242424242424241", "4000000000000001", "1234567812345678", "4242abcd42424242", "42"]) {
-    const res = await authorize({ ...VALID_CARD, pan });
-    assert.equal(res.statusCode, 400, `pan ${pan}: ${res.body}`);
-    assert.equal(res.json().error, "invalid_request");
-  }
-});
-
-test("authorize: an expiry month outside 1-12 is rejected as invalid_request", async () => {
-  for (const expiryMonth of [0, 13, 1.5, "12"]) {
-    const res = await authorize({ ...VALID_CARD, expiryMonth });
-    assert.equal(res.statusCode, 400, `month ${String(expiryMonth)}: ${res.body}`);
-    assert.equal(res.json().error, "invalid_request");
-  }
+test("authorize: a non-string pan is still invalid_request (H10)", async () => {
+  const res = await authorize({ ...VALID_CARD, pan: 4242424242424242 });
+  assert.equal(res.statusCode, 400, res.body);
+  assert.equal(res.json().error, "invalid_request");
 });
 
 async function createLink() {
@@ -144,7 +165,7 @@ function pay(token: string, card: Record<string, unknown>) {
   });
 }
 
-test("payment-link pay: bad cards fail cleanly and the link stays payable", async () => {
+test("payment-link pay: an expired card fails cleanly and the link stays payable", async () => {
   const link = await createLink();
 
   const expired = await pay(link.token, { ...VALID_CARD, ...bahrainMonth(-1) });
@@ -153,17 +174,15 @@ test("payment-link pay: bad cards fail cleanly and the link stays payable", asyn
   assert.equal(expired.json().error, "card_declined");
   assert.equal(expired.json().declineReason, "card_expired");
 
-  const badCvv = await pay(link.token, { ...VALID_CARD, cvv: "1" });
-  assert.equal(badCvv.statusCode, 400, badCvv.body);
-  assert.equal(badCvv.json().error, "invalid_request");
-
-  const badLuhn = await pay(link.token, { ...VALID_CARD, pan: "4242424242424241" });
-  assert.equal(badLuhn.statusCode, 400, badLuhn.body);
-  assert.equal(badLuhn.json().error, "invalid_request");
-
   const row = await pool.query<{ status: string }>(`SELECT status FROM payment_links WHERE id = $1`, [link.id]);
   assert.equal(row.rows[0]!.status, "active");
 
   const ok = await pay(link.token, VALID_CARD);
   assert.equal(ok.statusCode, 200, ok.body);
+});
+
+test("payment-link pay: a Luhn-failing number with a future expiry is approved, as originally", async () => {
+  const link = await createLink();
+  const res = await pay(link.token, { ...VALID_CARD, pan: "4000000000000000", cvv: "1" });
+  assert.equal(res.statusCode, 200, res.body);
 });

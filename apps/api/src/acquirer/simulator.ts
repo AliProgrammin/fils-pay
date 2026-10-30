@@ -129,11 +129,18 @@ export function createAcquirerSimulator(config: SimulatorConfig): AcquirerSimula
   }
 
   /** A card is valid through the last day of its expiry month, judged on
-   *  the Asia/Bahrain calendar and the server's clock. */
+   *  the Asia/Bahrain calendar and the server's clock. A 2-digit year means
+   *  20YY. Input with no integer month 1-12 or no integer year is not judged
+   *  (never declined as expired), so every shape the API accepts keeps its
+   *  outcome. */
   function isExpired(card: AcquirerAuthorizeRequest["card"]): boolean {
+    const { expiryMonth, expiryYear } = card;
+    if (!Number.isInteger(expiryMonth) || expiryMonth < 1 || expiryMonth > 12) return false;
+    if (!Number.isInteger(expiryYear) || expiryYear < 0) return false;
+    const year = expiryYear < 100 ? 2000 + expiryYear : expiryYear;
     const bahrainNow = new Date(Date.now() + 3 * 60 * 60 * 1000);
     const currentMonthIndex = bahrainNow.getUTCFullYear() * 12 + bahrainNow.getUTCMonth();
-    return card.expiryYear * 12 + (card.expiryMonth - 1) < currentMonthIndex;
+    return year * 12 + (expiryMonth - 1) < currentMonthIndex;
   }
 
   function magicOutcomeForPan(pan: string): { outcome: AcquirerOutcome; declineReason?: string } | null {
@@ -148,11 +155,11 @@ export function createAcquirerSimulator(config: SimulatorConfig): AcquirerSimula
       const cached = authorizeCache.get(req.idempotencyKey);
       if (cached) return cached;
 
-      // An expired card, then the deterministic magic test cards, are
-      // checked first, independent of the failure-rate roll.
-      const rolled: { outcome: AcquirerOutcome; declineReason?: string } = isExpired(req.card)
-        ? { outcome: "declined", declineReason: "card_expired" }
-        : (magicOutcomeForPan(req.card.pan) ?? rollOutcome());
+      // Deterministic magic test cards are checked first, then an expired
+      // card, both independent of the failure-rate roll.
+      const rolled: { outcome: AcquirerOutcome; declineReason?: string } =
+        magicOutcomeForPan(req.card.pan) ??
+        (isExpired(req.card) ? { outcome: "declined", declineReason: "card_expired" } : rollOutcome());
       const latencyMs = await applyLatency();
 
       const result: AcquirerAuthorizeResult = {

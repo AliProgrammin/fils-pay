@@ -17,7 +17,6 @@ import { UUID_RE } from "../admin/merchants.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
 import { parseLimitQuery } from "../lib/pagination.js";
 import type { SimulatedCardInput } from "../acquirer/types.js";
-import { assertValidCardInput } from "../payments/cardInput.js";
 
 interface AuthorizeBody {
   amountFils?: unknown;
@@ -107,7 +106,6 @@ export async function transactionRoutes(app: FastifyInstance): Promise<void> {
       if (amountFils === undefined || !card || typeof card.pan !== "string") {
         throw new BadRequestError("invalid_request", "amountFils and card are required");
       }
-      assertValidCardInput(card);
 
       const input: AuthorizeInput = {
         merchantId: request.apiKeyAuth!.merchantId,
@@ -123,9 +121,8 @@ export async function transactionRoutes(app: FastifyInstance): Promise<void> {
   );
 
   app.post<{ Params: TransactionIdParams; Body: CaptureBody }>(
-    // am: requireMerchantAuth lets impersonation through here too? an admin impersonating can capture
-    // MK: impersonation is read-only, enforced in requireMerchantAuth. fine
-    // MK: confirmed — ADMIN.md says grants are support-level read only
+    // Impersonation cannot capture: requireMerchantAuth allows a grant only
+    // GET, HEAD and OPTIONS (A12).
     "/:id/capture",
     { preHandler: [requireMerchantAuth, requireMerchantRole("owner", "finance")] },
     async (request, reply) => {

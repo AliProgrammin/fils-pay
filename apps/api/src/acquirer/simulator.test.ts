@@ -174,3 +174,25 @@ test("an expired card is declined as card_expired regardless of the failure-rate
   assert.equal(result.outcome, "declined");
   assert.equal(result.declineReason, "card_expired");
 });
+
+test("expiry: current month and 2-digit future years are not expired; magic cards win over expiry", async () => {
+  const sim = createAcquirerSimulator({
+    acquirerLatencyMinMs: 0,
+    acquirerLatencyMaxMs: 1,
+    acquirerFailureRate: 0,
+    acquirerRngSeed: 3,
+  });
+  const now = new Date(Date.now() + 3 * 3_600_000);
+  const run = (c: Partial<typeof card>, key: string) =>
+    sim.authorize({ merchantId: "m1", amountFils: toFils(1000), currency: "BHD", card: { ...card, ...c }, idempotencyKey: key });
+
+  const thisMonth = await run({ expiryMonth: now.getUTCMonth() + 1, expiryYear: now.getUTCFullYear() }, "e1");
+  assert.equal(thisMonth.outcome, "approved");
+  assert.equal((await run({ expiryMonth: 12, expiryYear: 99 }, "e2")).outcome, "approved");
+  assert.equal((await run({ expiryMonth: 12, expiryYear: 20 }, "e3")).declineReason, "card_expired");
+  // Shapes that cannot be judged are not declined as expired.
+  assert.equal((await run({ expiryMonth: 13, expiryYear: 2020 }, "e4")).outcome, "approved");
+  // Magic test cards keep their original outcome.
+  assert.equal((await run({ pan: "4000000000000002", expiryYear: 2020 }, "e5")).declineReason, "do_not_honor");
+  assert.equal((await run({ pan: "4000000000000069", expiryYear: 2020 }, "e6")).outcome, "error");
+});
