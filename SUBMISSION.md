@@ -53,7 +53,7 @@ Full method and numbers: [CAPACITY.md](CAPACITY.md). Load test: `scripts/load/` 
 - **Estimate: about 70 concurrent checkout users** on the live server: about 12 completed checkouts per second, about 63 HTTP requests per second, pay call p95 1.4 s, 0 failed checkouts, 0 server errors.
 - **Past the limit:** at 90 users every checkout still completes (pay p95 2.2 s); at 120 users the API turns the excess away with a fast `503` + `Retry-After` and still completes every checkout it accepts. At 400 users (laptop test): 0 errors other than fast 503s.
 - **Restart and recovery (laptop test):** the API was killed mid-load; Docker restarted it in 6 s; the ledger balanced, 0 double charges, paid links = captured payments.
-- **Four bugs found by the load test** and fixed: L1 ledger check scanned the whole ledger on every write, L2 hot API-key row, L3 payment cut off by a crash left the card held, L4 unbounded simulator memory.
+- **Five bugs found by the load and crash tests** and fixed: L1 ledger check scanned the whole ledger on every write, L2 hot API-key row, L3 payment cut off by a crash left the card held, L4 unbounded simulator memory, L5 links cut off by a crash stayed reserved for ever (now a recovery sweep).
 
 ## 5. Hosting architecture
 
@@ -87,7 +87,7 @@ Yousif, the last developer, read the diff and started to fix his team's AI-made 
 Our setup files: [ai-setup/](ai-setup/). We used Claude Code to read, test and fix, and a second model for an independent review. The rule: an AI answer is a claim to check. Every behaviour fix needed a failing test first, and a separate "blind" agent that saw only the requirements, never our fixes, checked the results. The three annotated excerpts below are copied from our real session logs.
 
 
-Source: our Claude Code session logs (main session plus sub-agent logs), 29–30 October 2026. Times are UTC, from the logs. Quotes are copied word for word; `[...]` marks a cut. Commit ids and bug ids are on branch `handover-fixes` and in `BUGS.md`.
+Source: our Claude Code session logs (main session plus sub-agent logs), 29–30 October 2026. Times are UTC, from the logs. Quotes are copied word for word; `[...]` marks a cut. Commit ids and bug ids are on branch `main` and in `BUGS.md`.
 
 Each excerpt shows: what the AI said, how we checked it, what we found, and what changed.
 

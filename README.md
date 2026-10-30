@@ -1,5 +1,7 @@
 # FilsPay: The Handover, team Orbit
 
+[![CI](https://github.com/AliProgrammin/fils-pay/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/AliProgrammin/fils-pay/actions/workflows/ci.yml)
+
 FilsPay is a Bahraini card payment platform (1 BD = 1000 fils, business day
 Asia/Bahrain). We took it over, found and fixed its bugs, and built the
 missing feature: refunds (FP-300).

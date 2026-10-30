@@ -3,7 +3,7 @@
 Matched screenshots of checkout, the merchant dashboard and the admin console.
 
 - **Before** = the original upstream code (commit `8b58b0f`), with only the S1 migration fix added so that a fresh database can migrate.
-- **After** = branch `handover-fixes`, plus the small UX fixes listed under "New UX fixes" at the end.
+- **After** = branch `main` (our work), plus the small UX fixes listed under "New UX fixes" at the end.
 - Each side ran with its own database (`filspay_ui_before`, `filspay_ui_after`), with the same seed and the same steps. Both sides used the same Playwright script, with the Asia/Bahrain time zone and the en-GB locale. Checkout and the phone views are 375 px wide (iPhone size). The other views are 1280 px wide.
 - The 2026-08-31 batch for Alpha Retail was closed and paid on both sides with that side's own Go `settlement run-batch`.
 - Some bugs are only visible on the wire (H1, U12, the refunds API). For those, the image shows the real HTTP request and response from that side.

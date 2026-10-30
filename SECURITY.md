@@ -1,6 +1,6 @@
 # FilsPay security review
 
-Branch `handover-fixes`. Date: 30 October 2026.
+Branch `main`. Date: 30 October 2026.
 
 This review covers the API (`apps/api`), the settlement service, the database
 migrations and the hosted stack (`ops/`). Every bug id below is in

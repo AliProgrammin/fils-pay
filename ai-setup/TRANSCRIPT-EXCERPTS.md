@@ -1,6 +1,6 @@
 # Three annotated transcript excerpts — Team Orbit
 
-Source: our Claude Code session logs (main session plus sub-agent logs), 29–30 October 2026. Times are UTC, from the logs. Quotes are copied word for word; `[...]` marks a cut. Commit ids and bug ids are on branch `handover-fixes` and in `BUGS.md`.
+Source: our Claude Code session logs (main session plus sub-agent logs), 29–30 October 2026. Times are UTC, from the logs. Quotes are copied word for word; `[...]` marks a cut. Commit ids and bug ids are on branch `main` and in `BUGS.md`.
 
 Each excerpt shows: what the AI said, how we checked it, what we found, and what changed.
 

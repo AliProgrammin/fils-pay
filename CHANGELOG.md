@@ -27,7 +27,7 @@ and test in [BUGS.md](BUGS.md).
   plus plain-English errors and input checks
   ([docs/UI-BEFORE-AFTER.md](docs/UI-BEFORE-AFTER.md)).
 - Resource limits on every service; the API is capped at 0.5 vCPU / 512 MB.
-- Database migrations 0073 to 0093 (unique keys, `BIGINT` counters, an
+- Database migrations 0073 to 0094 (unique keys, `BIGINT` counters, an
   append-only ledger, refund columns and indexes).
 
 ### Fixed
