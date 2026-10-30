@@ -13,7 +13,7 @@ export type KycDocumentType = "commercial_registration" | "owner_id" | "proof_of
 /** Document types the registry/bank issues as a PDF, never as a photo. */
 const PDF_ONLY_DOCUMENT_TYPES: readonly KycDocumentType[] = ["commercial_registration", "bank_letter"];
 
-/** @property fileName Informational only; never used for validation. */
+/** @property fileName Never trusted for the type; only the PDF-only name rule reads it. */
 export interface RecordKycDocumentInput {
   merchantId: string;
   documentType: KycDocumentType;
@@ -44,8 +44,8 @@ export async function recordKycDocument(
   config: Config,
   input: RecordKycDocumentInput,
 ): Promise<RecordKycDocumentResult> {
-  // The detected bytes are the only type check; the client fileName is
-  // never trusted, also not for the PDF-only rule below (A10).
+  // The detected bytes decide the type; the client fileName is never
+  // trusted for it (A10).
   const detected = detectFileType(input.buffer);
   if (!detected) {
     throw new UnprocessableEntityError("invalid_file_type");
@@ -53,9 +53,12 @@ export async function recordKycDocument(
 
   // Commercial registration certificates and bank letters are always
   // issued as PDFs by the registry or the bank — a phone photo of either
-  // isn't an acceptable substitute for review. Checked against the detected
-  // bytes, never the client-supplied filename.
-  if (PDF_ONLY_DOCUMENT_TYPES.includes(input.documentType) && detected !== "pdf") {
+  // isn't an acceptable substitute for review. Both must hold: the bytes
+  // are a PDF (A10) and the name ends in .pdf (the original contract).
+  if (
+    PDF_ONLY_DOCUMENT_TYPES.includes(input.documentType) &&
+    (detected !== "pdf" || !input.fileName.toLowerCase().endsWith(".pdf"))
+  ) {
     throw new UnprocessableEntityError("document_must_be_pdf", "commercial_registration and bank_letter documents must be a PDF");
   }
 

@@ -63,14 +63,29 @@ test("a JPEG renamed to .pdf is rejected for a PDF-only document type", async ()
   );
 });
 
-test("a real PDF is accepted for a PDF-only document type whatever its filename", async () => {
+test("a real PDF named .pdf is accepted for a PDF-only document type", async () => {
   const { merchantId, userId } = await merchantWithUser();
   const result = await recordKycDocument(pool, config, {
     merchantId,
     documentType: "bank_letter",
-    fileName: "scan_0001",
+    fileName: "scan_0001.PDF",
     buffer: PDF_BYTES,
     uploadedBy: userId,
   });
   assert.equal(result.mimeType, "application/pdf");
+});
+
+// Contract kept (original handover): the name must also end in .pdf.
+test("real PDF bytes named .docx are rejected for a PDF-only document type", async () => {
+  const { merchantId, userId } = await merchantWithUser();
+  await assert.rejects(
+    recordKycDocument(pool, config, {
+      merchantId,
+      documentType: "commercial_registration",
+      fileName: "registration.docx",
+      buffer: PDF_BYTES,
+      uploadedBy: userId,
+    }),
+    (err: unknown) => err instanceof AppError && err.code === "document_must_be_pdf",
+  );
 });

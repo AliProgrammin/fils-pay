@@ -290,6 +290,26 @@ test("KYC upload rejects a commercial_registration whose bytes are not a PDF, ev
   assert.equal(res.json().error, "document_must_be_pdf");
 });
 
+// Contract (original handover): PDF bytes with a non-.pdf name are still rejected.
+test("KYC upload rejects a commercial_registration submitted as a non-PDF filename", async () => {
+  const { merchantId, cookie } = await signupLoginAndVerify("kycdocxname");
+
+  const pdfBuffer = Buffer.from("%PDF-1.4\n%mock minimal pdf for test\n%%EOF");
+  const { body, contentType } = buildMultipart(
+    { documentType: "commercial_registration" },
+    { fieldName: "file", filename: "registration.docx", contentType: "application/pdf", data: pdfBuffer },
+  );
+
+  const res = await app.inject({
+    method: "POST",
+    url: `/v1/merchants/${merchantId}/kyc/documents`,
+    headers: { cookie, "content-type": contentType },
+    payload: body,
+  });
+  assert.equal(res.statusCode, 422, res.body);
+  assert.equal(res.json().error, "document_must_be_pdf");
+});
+
 test("API key issuance shows the raw key exactly once; a subsequent list never exposes it", async () => {
   const { merchantId, cookie } = await signupLoginAndVerify("apikey");
 
