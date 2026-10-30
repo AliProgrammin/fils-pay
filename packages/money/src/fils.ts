@@ -264,7 +264,24 @@ export interface RefundFeeInput {
  * on a 1000 capture with a 25 fee reversed 10 x round(2.5) = 20, not 25.
  * `bigint` intermediates throughout, no float.
  */
-export function calculateRefundFee(input: RefundFeeInput): Fils {
+export function calculateRefundFee(input: RefundFeeInput): Fils;
+/** Original call form (captured, fee charged, refund): a first refund, nothing refunded before. */
+export function calculateRefundFee(capturedFils: Fils, feeChargedFils: Fils, refundAmountFils: Fils): Fils;
+export function calculateRefundFee(
+  inputOrCaptured: RefundFeeInput | Fils,
+  feeCharged?: Fils,
+  refundAmount?: Fils,
+): Fils {
+  const input: RefundFeeInput =
+    typeof inputOrCaptured === "object"
+      ? inputOrCaptured
+      : {
+          capturedFils: inputOrCaptured,
+          feeChargedFils: feeCharged as Fils,
+          refundedBeforeFils: ZERO_FILS,
+          feeReversedBeforeFils: ZERO_FILS,
+          refundAmountFils: refundAmount as Fils,
+        };
   const { capturedFils, feeChargedFils, refundedBeforeFils, feeReversedBeforeFils, refundAmountFils } = input;
   if (compareFils(capturedFils, ZERO_FILS) <= 0) {
     throw new RangeError(`calculateRefundFee: capturedFils must be positive, got ${capturedFils}`);

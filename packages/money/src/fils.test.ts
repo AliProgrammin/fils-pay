@@ -317,3 +317,17 @@ test("calculateRefundFee returns a valid Fils", () => {
   const fee = firstRefundFee(10_000, 250, 3_333);
   assert.equal(isFils(fee), true);
 });
+
+// Contract kept (original handover): the 3-number call form
+// (captured, fee charged, refund) still works, as a first refund.
+test("calculateRefundFee accepts the original (captured, fee, refund) call form", () => {
+  assert.equal(calculateRefundFee(toFils(10_000), toFils(250), toFils(10_000)), 250);
+  assert.equal(calculateRefundFee(toFils(10_000), toFils(250), toFils(5_000)), 125);
+  assert.equal(calculateRefundFee(toFils(10_000), toFils(250), ZERO_FILS), 0);
+  assert.equal(calculateRefundFee(toFils(1_000), toFils(25), toFils(100)), 2);
+  assert.throws(() => calculateRefundFee(ZERO_FILS, toFils(250), toFils(100)), RangeError);
+  assert.throws(
+    () => calculateRefundFee(toFils(10_000), toFils(-250, { allowNegative: true }), toFils(100)),
+    RangeError,
+  );
+});
