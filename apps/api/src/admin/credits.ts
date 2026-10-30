@@ -211,8 +211,8 @@ export async function createCreditRequest(
   const draft = parseCreditRequestInput(input.body);
 
   return withTransaction(pool, async (client) => {
-    const merchantResult = await client.query<{ mdr_bps: number }>(
-      `SELECT mdr_bps FROM merchants WHERE id = $1`,
+    const merchantResult = await client.query<{ mdr_bps: number; negotiated_discount_bps: number }>(
+      `SELECT mdr_bps, negotiated_discount_bps FROM merchants WHERE id = $1`,
       [input.merchantId],
     );
     const merchant = merchantResult.rows[0];
@@ -227,6 +227,7 @@ export async function createCreditRequest(
       ? calculateCreditFeeReversal(
           draft.baseAmountFils,
           await getEffectiveMdrBps(client, input.merchantId, null, merchant.mdr_bps),
+          merchant.negotiated_discount_bps,
         )
       : ZERO_FILS;
     // FH: threshold compares base + reversal, so a 50.000 BD credit with a fee reversal needs a second approver

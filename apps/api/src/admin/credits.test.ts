@@ -370,3 +370,16 @@ test("V3: a fee reversal uses the merchant's rate in force from fee_schedules, n
   });
   assert.equal(record.feeReversalFils, 450, "20.000 BD @ 225 bps, the rate capture charged");
 });
+
+// A fee reversal gives back the fee capture charged, after the merchant's negotiated discount.
+test("a fee reversal gives back the discounted fee capture charged, not the undiscounted fee", async () => {
+  const merchantId = await createMerchant("discounted-rate", 250);
+  await pool.query(`UPDATE merchants SET negotiated_discount_bps = 2000 WHERE id = $1`, [merchantId]);
+  const admin = await createAdmin("discounted-rate");
+  const record = await createCreditRequest(pool, {
+    merchantId,
+    adminUserId: admin.id,
+    body: { baseAmountFils: 10_000, reasonCode: "dispute_resolution", effectiveDate: todayIso(), reverseFee: true },
+  });
+  assert.equal(record.feeReversalFils, 200, "10.000 BD less 20% discount @ 250 bps, the fee capture charged");
+});
