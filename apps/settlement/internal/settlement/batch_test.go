@@ -177,6 +177,13 @@ func TestCloseBatch_EligibleEventSelection(t *testing.T) {
 	insertCaptureEvent(t, pool, merchantID, mdrBps, 9999, beforeWindow)
 	insertCaptureEvent(t, pool, merchantID, mdrBps, 8888, afterWindow)
 
+	// G2: CloseBatch carries forward any unbatched capture from an earlier
+	// day (a late capture must not be lost). So close the previous business
+	// day first, as the daily run would have, and it takes the 9999 event.
+	if _, err := CloseBatch(context.Background(), pool, merchantID, businessDate.AddDate(0, 0, -1)); err != nil {
+		t.Fatalf("CloseBatch(previous day): %v", err)
+	}
+
 	result, err := CloseBatch(context.Background(), pool, merchantID, businessDate)
 	if err != nil {
 		t.Fatalf("CloseBatch: %v", err)

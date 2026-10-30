@@ -62,7 +62,7 @@ type eligibleEvent struct {
 // batch's id inside the same transaction that freezes the batch's totals,
 // so a row can never be picked up by two batches.
 func CloseBatch(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID, businessDate time.Time) (BatchResult, error) {
-	start, end := BusinessDayWindow(businessDate)
+	_, end := BusinessDayWindow(businessDate)
 	batchDateOnly := time.Date(businessDate.Year(), businessDate.Month(), businessDate.Day(), 0, 0, 0, 0, time.UTC)
 
 	tx, err := db.Begin(ctx)
@@ -147,7 +147,11 @@ func CloseBatch(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID, bus
 	}
 	tierBonusBps := VolumeTierMdrBonusBps(platformProcessedFils)
 
-	// Step 6: select and lock eligible events for the whole window. The
+	// Step 6: select and lock eligible events: every unbatched capture up to
+	// the end of this window, not only those inside it. A capture that lands
+	// after its own day already closed is carried forward into the next
+	// batch (same rule as refunds in Step 9), so it is never left unsettled.
+	// The
 	// join is transaction_events (many) -> transactions (one) — the safe
 	// direction. Every amount is read from te.amount_fils — the exact
 	// incremental delta capture.ts already recorded for that one real
@@ -159,10 +163,10 @@ func CloseBatch(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID, bus
 		 WHERE t.merchant_id = $1
 		   AND te.event_type IN ('captured', 'partially_captured')
 		   AND te.settlement_batch_id IS NULL
-		   AND te.occurred_at >= $2 AND te.occurred_at < $3
+		   AND te.occurred_at < $2
 		 ORDER BY te.transaction_id, te.occurred_at
 		 FOR UPDATE OF te
-	`, merchantID, start, end)
+	`, merchantID, end)
 	if err != nil {
 		return BatchResult{}, fmt.Errorf("settlement: CloseBatch: select eligible events: %w", err)
 	}

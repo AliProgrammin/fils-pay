@@ -54,3 +54,15 @@ func BusinessDayWindow(date time.Time) (start, end time.Time) {
 	end = start.AddDate(0, 0, 1)
 	return start, end
 }
+
+// ValidateClosableBusinessDate returns an error unless the business day
+// `date` (Y/M/D only) has already ended in Asia/Bahrain at instant now.
+// Closing today or a future day would freeze a batch while captures for
+// that day are still arriving.
+func ValidateClosableBusinessDate(date, now time.Time) error {
+	_, end := BusinessDayWindow(date)
+	if now.Before(end) {
+		return fmt.Errorf("business date %s has not ended yet in Asia/Bahrain; only a past business date can be settled", date.Format("2006-01-02"))
+	}
+	return nil
+}

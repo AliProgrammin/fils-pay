@@ -223,6 +223,11 @@ func handleRunBatch(pool *pgxpool.Pool) http.Handler {
 			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "invalid_date"})
 			return
 		}
+		// Only a business day that has ended in Bahrain can be closed.
+		if err := settlement.ValidateClosableBusinessDate(businessDate, time.Now()); err != nil {
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "business_date_not_closed"})
+			return
+		}
 
 		var onlyMerchant *uuid.UUID
 		if body.MerchantID != "" {
