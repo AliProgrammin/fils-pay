@@ -13,6 +13,7 @@ import { listPaymentLinks } from "../paymentLinks/query.js";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../lib/errors.js";
 import { parseLimitQuery } from "../lib/pagination.js";
 import type { SimulatedCardInput } from "../acquirer/types.js";
+import { assertValidCardInput } from "../payments/cardInput.js";
 
 interface MerchantIdParams {
   merchantId: string;
@@ -155,6 +156,7 @@ export async function paymentLinkPublicRoutes(app: FastifyInstance): Promise<voi
     if (!card || typeof card.pan !== "string") {
       throw new BadRequestError("invalid_request", "card with a string pan is required");
     }
+    assertValidCardInput(card);
 
     // One connection for the whole claim -> authorize -> bind -> capture ->
     // finalize flow: under overload the pay is refused before the claim,

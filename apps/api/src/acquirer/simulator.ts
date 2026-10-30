@@ -128,6 +128,14 @@ export function createAcquirerSimulator(config: SimulatorConfig): AcquirerSimula
     return { outcome: "error" };
   }
 
+  /** A card is valid through the last day of its expiry month, judged on
+   *  the Asia/Bahrain calendar and the server's clock. */
+  function isExpired(card: AcquirerAuthorizeRequest["card"]): boolean {
+    const bahrainNow = new Date(Date.now() + 3 * 60 * 60 * 1000);
+    const currentMonthIndex = bahrainNow.getUTCFullYear() * 12 + bahrainNow.getUTCMonth();
+    return card.expiryYear * 12 + (card.expiryMonth - 1) < currentMonthIndex;
+  }
+
   function magicOutcomeForPan(pan: string): { outcome: AcquirerOutcome; declineReason?: string } | null {
     if (pan.endsWith("0002")) return { outcome: "declined", declineReason: "do_not_honor" };
     if (pan.endsWith("0119")) return { outcome: "declined", declineReason: "insufficient_funds" };
@@ -140,9 +148,11 @@ export function createAcquirerSimulator(config: SimulatorConfig): AcquirerSimula
       const cached = authorizeCache.get(req.idempotencyKey);
       if (cached) return cached;
 
-      // Deterministic magic test cards are checked first, independent of
-      // the failure-rate roll.
-      const rolled = magicOutcomeForPan(req.card.pan) ?? rollOutcome();
+      // An expired card, then the deterministic magic test cards, are
+      // checked first, independent of the failure-rate roll.
+      const rolled: { outcome: AcquirerOutcome; declineReason?: string } = isExpired(req.card)
+        ? { outcome: "declined", declineReason: "card_expired" }
+        : (magicOutcomeForPan(req.card.pan) ?? rollOutcome());
       const latencyMs = await applyLatency();
 
       const result: AcquirerAuthorizeResult = {

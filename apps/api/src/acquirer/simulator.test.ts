@@ -156,3 +156,21 @@ test("a seeded RNG produces reproducible outcome/latency sequences across separa
     assert.deepEqual(strip(resultA), strip(resultB));
   }
 });
+
+test("an expired card is declined as card_expired regardless of the failure-rate roll", async () => {
+  const sim = createAcquirerSimulator({
+    acquirerLatencyMinMs: 0,
+    acquirerLatencyMaxMs: 1,
+    acquirerFailureRate: 0,
+    acquirerRngSeed: 3,
+  });
+  const result = await sim.authorize({
+    merchantId: "m1",
+    amountFils: toFils(1000),
+    currency: "BHD",
+    card: { ...card, expiryMonth: 12, expiryYear: 2020 },
+    idempotencyKey: "idem-expired",
+  });
+  assert.equal(result.outcome, "declined");
+  assert.equal(result.declineReason, "card_expired");
+});
