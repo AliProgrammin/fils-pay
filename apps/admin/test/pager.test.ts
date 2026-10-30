@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CursorPageCache, loadPage, pageLabel, parsePage, parsePageSize, rowRange, type PageEntry } from "../src/pager.js";
+import { CursorPageCache, listBackHref, loadPage, pageLabel, parsePage, parsePageSize, rowRange, type PageEntry } from "../src/pager.js";
 
 test("page and size parsing from the URL", () => {
   assert.equal(parsePageSize(null), 25);
@@ -81,4 +81,10 @@ test("clearRows keeps cursors so the current page refetches with one request", a
   api.calls.length = 0;
   await loadPage(cache, 2, api.fetchPage);
   assert.deepEqual(api.calls, ["25"]);
+});
+
+test("listBackHref keeps the list's search, filters, page and size from the list link", () => {
+  assert.equal(listBackHref("/list", { listSearch: "?q=acme&status=captured&page=3&size=50" }), "/list?q=acme&status=captured&page=3&size=50");
+  assert.equal(listBackHref("/list", null), "/list", "opened directly: plain list");
+  assert.equal(listBackHref("/list", { listSearch: "//evil.example" }), "/list", "only a query string is kept");
 });

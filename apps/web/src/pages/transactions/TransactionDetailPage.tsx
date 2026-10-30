@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
+import { listBackHref } from "../../pager.js";
 import {
   captureTransaction,
   getTransaction,
@@ -38,6 +39,7 @@ type LoadState =
  */
 export function TransactionDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const backHref = listBackHref("/dashboard/transactions", useLocation().state);
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [events, setEvents] = useState<TransactionEventDto[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -164,7 +166,7 @@ export function TransactionDetailPage() {
         kicker="Transaction record"
         title="Transaction not found"
         text="No transaction with this id exists on your account. Check the link, or find it in the list."
-        backTo="/dashboard/transactions"
+        backTo={backHref}
         backLabel="Back to transactions"
       />
     );
@@ -357,7 +359,7 @@ export function TransactionDetailPage() {
       </div>
 
       <p className="dash-back">
-        <Link to="/dashboard/transactions">Back to transactions</Link>
+        <Link to={backHref}>Back to transactions</Link>
       </p>
     </section>
   );

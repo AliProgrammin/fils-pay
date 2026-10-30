@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { listTransactions } from "../../api/transactions.js";
 import { StatusChip } from "../../components/StatusChip.js";
 import { errorMessage } from "../../errors.js";
@@ -35,6 +35,7 @@ const SEARCH_DEBOUNCE_MS = 300;
  */
 export function TransactionListPage() {
   const [searchParams] = useSearchParams();
+  const listSearch = useLocation().search;
   const statuses = searchParams.getAll("status") as TransactionStatus[];
   const from = searchParams.get("from") ?? "";
   const to = searchParams.get("to") ?? "";
@@ -179,7 +180,7 @@ export function TransactionListPage() {
             {rows.map((txn) => (
               <tr key={txn.id}>
                 <td className="dash-nowrap" data-label="Occurred">
-                  <Link to={`/dashboard/transactions/${txn.id}`}>{dateTime(txn.occurredAt)}</Link>
+                  <Link to={`/dashboard/transactions/${txn.id}`} state={{ listSearch }}>{dateTime(txn.occurredAt)}</Link>
                 </td>
                 <td data-label="Reference">{dash(txn.reference)}</td>
                 <td data-label="Status">
