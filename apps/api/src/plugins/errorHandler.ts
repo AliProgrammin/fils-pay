@@ -34,6 +34,19 @@ export function errorHandler(
     return;
   }
 
+  // The body could not be parsed (bad or empty JSON, wrong content type).
+  // Fastify gives these a 4xx status; they are client mistakes, not a fault.
+  if (
+    typeof fastifyErr.code === "string" &&
+    fastifyErr.code.startsWith("FST_ERR_CTP_") &&
+    typeof fastifyErr.statusCode === "number" &&
+    fastifyErr.statusCode >= 400 &&
+    fastifyErr.statusCode < 500
+  ) {
+    reply.code(fastifyErr.statusCode).send({ error: "invalid_request", message: fastifyErr.message });
+    return;
+  }
+
   // Postgres 22021: the client sent a NUL byte or invalid UTF-8 in a text
   // field. That is bad input, not a server fault.
   if ((err as { code?: unknown }).code === "22021") {
