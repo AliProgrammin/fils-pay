@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listSettlementBatches } from "../../api/settlement.js";
 import { StatusChip } from "../../components/StatusChip.js";
-import { describeError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { Pagination } from "../../components/Pagination.js";
-import { bhd, calendarDate, dateTime } from "../../format.js";
+import { bhd, calendarDate, dateTime, statusLabel } from "../../format.js";
 import type { SettlementBatchDto, SettlementBatchStatus } from "../../types.js";
 
 const STATUSES: SettlementBatchStatus[] = ["open", "closed", "paid"];
@@ -44,7 +44,7 @@ export function SettlementBatchListPage() {
         setBatches((previous) => (cursor ? [...previous, ...result.batches] : result.batches));
         setNextCursor(result.nextCursor);
       } catch (err) {
-        setError(describeError(err));
+        setError(errorMessage(err));
       } finally {
         setLoading(false);
       }
@@ -92,7 +92,7 @@ export function SettlementBatchListPage() {
               checked={statuses.includes(status)}
               onChange={() => toggleStatus(status)}
             />
-            {status}
+            {statusLabel(status)}
           </label>
         ))}
       </fieldset>

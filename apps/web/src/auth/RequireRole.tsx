@@ -13,7 +13,7 @@ import type { MerchantRole } from "../types.js";
  * Hence the deliberate default: when the current role is unknown (the `me`
  * call hasn't resolved), `children` are shown, not hidden. Hiding on
  * uncertainty would quietly turn this into the thing deciding access. The
- * server's `403` is the answer; `describeError` renders it plainly when it
+ * server's `403` is the answer; `errorMessage` renders it plainly when it
  * comes back.
  */
 // MK: UI gate only. the server enforces roles

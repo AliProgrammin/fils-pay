@@ -6,7 +6,8 @@ import { adjustBalance } from "../../api/balanceAdjustments.js";
 import { issueCredit } from "../../api/credits.js";
 import { rotateApiKey } from "../../api/apiKeys.js";
 import { startImpersonation } from "../../api/impersonation.js";
-import { describeError, WEB_BASE_URL } from "../../api/client.js";
+import { WEB_BASE_URL } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { useAdminAuth } from "../../auth/AdminAuthContext.js";
 import { RequireRole } from "../../auth/RequireRole.js";
 import { StatusChip } from "../../components/StatusChip.js";
@@ -49,7 +50,7 @@ export function MerchantDetailPage() {
     try {
       setDetail(await getMerchant(id));
     } catch (err) {
-      setLoadError(describeError(err));
+      setLoadError(errorMessage(err));
     }
   }, [id]);
 
@@ -75,7 +76,7 @@ export function MerchantDetailPage() {
       setKycNotes("");
       await load();
     } catch (err) {
-      setActionError(describeError(err));
+      setActionError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -96,7 +97,7 @@ export function MerchantDetailPage() {
       setRotationLabel("");
       await load();
     } catch (err) {
-      setActionError(describeError(err));
+      setActionError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -132,7 +133,7 @@ export function MerchantDetailPage() {
       setAdjustReason("");
       await load();
     } catch (err) {
-      setActionError(describeError(err));
+      setActionError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -167,7 +168,9 @@ export function MerchantDetailPage() {
       setCreditReverseFee(false);
       await load();
     } catch (err) {
-      setActionError(err instanceof RangeError ? err.message : describeError(err));
+      setActionError(
+        err instanceof RangeError ? "Enter an amount in BD, for example 12.500." : errorMessage(err, "credit"),
+      );
     } finally {
       setBusy(false);
     }
@@ -183,7 +186,7 @@ export function MerchantDetailPage() {
       setNotice(enabled ? "Refunds turned on." : "Refunds turned off.");
       await load();
     } catch (err) {
-      setActionError(describeError(err));
+      setActionError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -202,7 +205,7 @@ export function MerchantDetailPage() {
       );
       await load();
     } catch (err) {
-      setActionError(describeError(err));
+      setActionError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -227,7 +230,7 @@ export function MerchantDetailPage() {
       const opened = window.open(WEB_BASE_URL, "_blank", "noopener");
       if (!opened) setImpersonationUrl(WEB_BASE_URL);
     } catch (err) {
-      setActionError(describeError(err));
+      setActionError(errorMessage(err));
     } finally {
       setBusy(false);
     }

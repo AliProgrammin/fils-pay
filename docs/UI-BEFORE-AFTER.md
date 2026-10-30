@@ -8,7 +8,7 @@ Matched screenshots of checkout, the merchant dashboard and the admin console.
 - The 2026-08-31 batch for Alpha Retail was closed and paid on both sides with that side's own Go `settlement run-batch`.
 - Some bugs are only visible on the wire (H1, U12, the refunds API). For those, the image shows the real HTTP request and response from that side.
 
-Bug ids refer to [BUGS.md](../BUGS.md). `UX1` to `UX9` are the new fixes described at the end.
+Bug ids refer to [BUGS.md](../BUGS.md). `UX1` to `UX10` are the new fixes described at the end.
 
 ## Checkout
 
@@ -174,6 +174,28 @@ Before: the login form asked for a 36-character merchant ID (UUID), the email an
 
 A request with the `merchantId` key works exactly as before (an empty or `null` value is `400 invalid_request`) (`scripts/smoke_hosted.sh` and `scripts/demo_refund.sh` are unchanged and still pass their login steps). The "Sign in to a specific shop" link shows the field at any time. If the last good sign-in used a merchant ID, the page remembers it and shows the field filled in. Tests: `apps/api/src/routes/auth.optionalMerchantId.test.ts`.
 
+### 20. Plain-English error messages (UX10)
+
+| Code asked again too soon | Refund more than is left |
+|---|---|
+| ![](ui/errors-login-resend.png) | ![](ui/errors-refund.png) |
+
+| Card declined at checkout | API stopped |
+|---|---|
+| ![](ui/errors-checkout-declined.png) | ![](ui/errors-api-down.png) |
+
+| Admin: role no longer allows the action (403) | Admin: bad row in a CSV import |
+|---|---|
+| ![](ui/errors-admin-forbidden.png) | ![](ui/errors-admin-csv.png) |
+
+Before: error boxes showed the API's own text, or the raw code when there was none. The OTP screen said `resend_too_soon`; a 403 said `Not permitted (forbidden)`; a refund over the limit showed nothing useful, because that answer is `{ ok: false, code }` and has no `error` field. When the API was down, the page showed `Failed to fetch` or `unknown_error`, and checkout said "Payment link not found".
+
+After: every error goes through one map per app (`apps/web/src/errors.ts`, `apps/admin/src/errors.ts`). Each API code gets a short message that says what happened and what to do next. Some codes have other words on another screen (for example `invalid_request` on sign-in is "Enter your email and password."). Messages use data from the answer when it helps: the refund message says how much is left, and a card decline names the bank's reason. The server's own `message` is never shown, with one exception: on the admin CSV import screen the row detail ("could not parse amount "abc"") is added after the plain message. A code the map does not know falls back to a plain message picked by HTTP status. No answer at all is "Can't reach FilsPay. Check your connection and try again."; a 5xx with no JSON body (proxy, API down) is "FilsPay is not answering right now.". Checkout now tells "link not found" (4xx) apart from "can't reach FilsPay" (no answer or 5xx).
+
+Copy fixes in the same pass: status chips and filters show plain words (`partially_captured` is "partly captured"); the transaction timeline shows events and actors in words, not codes; "Acquirer reference" is "Bank reference"; the reconciliation and batch pages say "our records" and "card network amount" in place of "ledger merchant payable" and "scheme amount"; the checkout test-card note no longer says "PAN" or "acquirer". Admin status chips show `under review`, not `under_review`. API paths, bodies, response shapes and status codes are unchanged.
+
+Checked in the browser (Playwright, local stack): wrong password, resend too soon, wrong code, refund more than left, declined card, link paid while the page was open, unknown link, network failure at checkout, support user on a finance-only page, finance admin downgraded to support mid-session, bad CSV row, and the API stopped. Tests: `apps/web/src/errors.test.ts`, `apps/admin/test/errors.test.ts`.
+
 ## New UX fixes made with this evidence
 
 These are small fixes, in the style of the code. API paths and response shapes did not change (UX9 only adds an optional field and one new 409 error).
@@ -189,6 +211,7 @@ These are small fixes, in the style of the code. API paths and response shapes d
 | UX7 | Admin "Adjust balance" is typed in BD (negative allowed), like "Issue credit" | `apps/admin/src/pages/merchants/MerchantDetailPage.tsx` |
 | UX8 | Admin checkbox sits on the same line as its text; "Rebuild analytics" text matches the U5 behaviour | `apps/admin/src/admin.css`, `MerchantDetailPage.tsx`, `SettlementPage.tsx` |
 | UX9 | Merchant login needs only email + password; the Merchant ID field appears on `409 merchant_id_required` or on request | `apps/api/src/routes/auth.ts`, `apps/web/src/pages/dashboard-login/LoginPage.tsx`, `apps/web/src/api/dashboardAuth.ts`, `apps/web/src/dashboard.css` |
+| UX10 | One error-message map per app: every API code, a network failure and an unknown code become a short plain-English message; raw enum values in the UI become words | `apps/web/src/errors.ts`, `apps/admin/src/errors.ts`, both `api/client.ts`, every page that shows an error |
 
 Checks: `npm run typecheck` and `npm run build` pass for `apps/web` and `apps/admin`. `npm test` passes for web (13/13) and admin (1/1). In the browser on the after stack: `12.3456` is rejected with the BD message, `12.5` makes a 12.500 BHD link, and an admin adjust of `1.250` and then `-1.250` changes the balance by exactly ±1.250 BHD.
 

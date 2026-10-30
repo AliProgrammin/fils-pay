@@ -2,10 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { listDeliveries, listWebhookEndpoints, replayDelivery } from "../../api/webhooks.js";
 import { StatusChip } from "../../components/StatusChip.js";
-import { describeError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
 import { Pagination } from "../../components/Pagination.js";
-import { dash, dateTime } from "../../format.js";
+import { dash, dateTime, statusLabel } from "../../format.js";
 import type { WebhookDeliveryDto, WebhookDeliveryStatus, WebhookEndpointDto } from "../../types.js";
 
 /** `webhook_deliveries.status`' four CHECK values. Note the dispatcher only
@@ -45,7 +45,7 @@ export function WebhookEndpointDetailPage() {
       setEndpoint(found);
       setEndpointMissing(found === null);
     } catch (err) {
-      setError(describeError(err));
+      setError(errorMessage(err));
     }
   }, [merchantId, id]);
 
@@ -65,7 +65,7 @@ export function WebhookEndpointDetailPage() {
         );
         setNextCursor(result.nextCursor);
       } catch (err) {
-        setError(describeError(err));
+        setError(errorMessage(err));
       } finally {
         setLoading(false);
       }
@@ -101,7 +101,7 @@ export function WebhookEndpointDetailPage() {
     } catch (err) {
       // `409 endpoint_disabled` is a real race: someone disabled the endpoint
       // between this page loading and the click.
-      setError(describeError(err));
+      setError(errorMessage(err, "webhookReplay"));
     } finally {
       setBusyId(null);
     }
@@ -158,7 +158,7 @@ export function WebhookEndpointDetailPage() {
               checked={statuses.includes(status)}
               onChange={() => toggleStatus(status)}
             />
-            {status}
+            {statusLabel(status)}
           </label>
         ))}
       </fieldset>

@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import { formatBhd, toFils } from "@filspay/money";
 import { refundTransaction } from "../../api/transactions.js";
-import { describeError } from "../../api/client.js";
+import { ApiError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
 import { RequireRole } from "../../auth/RequireRole.js";
 import { bhd } from "../../format.js";
@@ -73,7 +74,10 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
       // Refetch: the refund wrote a new timeline event and changed the totals.
       await onRefunded();
     } catch (err) {
-      setError(describeError(err));
+      setError(errorMessage(err, "refund"));
+      // Someone else refunded part of it meanwhile: reload, so "Left to
+      // refund" matches what the message says.
+      if (err instanceof ApiError && err.code === "refund_exceeds_refundable") await onRefunded();
     } finally {
       setSubmitting(false);
     }

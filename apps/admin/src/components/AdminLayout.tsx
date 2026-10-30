@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAdminAuth } from "../auth/AdminAuthContext.js";
-import { describeError, WEB_BASE_URL } from "../api/client.js";
+import { WEB_BASE_URL } from "../api/client.js";
+import { errorMessage } from "../errors.js";
 import { ImpersonationBanner } from "./ImpersonationBanner.js";
 
 /** Nav shell for every admin-plane screen: who you are signed in as, the
@@ -19,7 +20,7 @@ export function AdminLayout() {
       await signOut();
       navigate("/login", { replace: true });
     } catch (err) {
-      setError(describeError(err));
+      setError(errorMessage(err));
     }
   }
 

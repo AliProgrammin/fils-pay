@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { cancelPaymentLink, listPaymentLinks } from "../../api/paymentLinks.js";
 import { StatusChip } from "../../components/StatusChip.js";
-import { describeError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
 import { RequireRole } from "../../auth/RequireRole.js";
 import { bhd, dash, dateTime } from "../../format.js";
@@ -50,7 +50,7 @@ export function PaymentLinkDetailPage() {
       const found = result.paymentLinks.find((link) => link.id === id);
       setState(found ? { kind: "loaded", link: found } : { kind: "not_found" });
     } catch (err) {
-      setState({ kind: "error", message: describeError(err) });
+      setState({ kind: "error", message: errorMessage(err) });
     }
   }, [merchantId, id]);
 
@@ -76,7 +76,7 @@ export function PaymentLinkDetailPage() {
     } catch (err) {
       // Includes `409 not_cancelable` for a link that is paid, already
       // canceled, or `reserved` mid-payment-attempt.
-      setActionError(describeError(err));
+      setActionError(errorMessage(err, "paymentLinkCancel"));
     } finally {
       setSubmitting(false);
     }

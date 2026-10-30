@@ -2,7 +2,7 @@ import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useDashboardAuth } from "../auth/DashboardAuthContext.js";
 import { RequireRole } from "../auth/RequireRole.js";
-import { describeError } from "../api/client.js";
+import { errorMessage } from "../errors.js";
 import "../dashboard.css";
 
 /** Nav shell for every merchant dashboard screen. No impersonation banner
@@ -21,7 +21,7 @@ export function DashboardLayout() {
       await signOut();
       navigate("/dashboard/login", { replace: true });
     } catch (err) {
-      setError(describeError(err));
+      setError(errorMessage(err, "signOut"));
     }
   }
 

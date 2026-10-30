@@ -16,7 +16,7 @@ import type { AdminRole } from "../types.js";
  * Hence the deliberate default: when the current role is unknown (the `me`
  * call hasn't resolved, or returned an unexpected role), `children` are
  * shown, not hidden. Hiding on uncertainty would quietly turn this into the
- * thing deciding access. The server's `403` is the answer; `describeError`
+ * thing deciding access. The server's `403` is the answer; `errorMessage`
  * renders it plainly when it comes back.
  */
 /**

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { getMerchant, listMerchants } from "../../api/merchants.js";
 import { replayBatch } from "../../api/webhooks.js";
-import { describeError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { StatusChip } from "../../components/StatusChip.js";
 import { formatDate, fromBahrainInputValue, toBahrainInputValue } from "../../format.js";
 import type {
@@ -60,7 +60,7 @@ export function WebhookReplayPage() {
       const firstActive = (loaded.webhookEndpoints ?? []).find((e) => e.status === "active");
       setEndpointId(firstActive?.id ?? "");
     } catch (err) {
-      setError(describeError(err));
+      setError(errorMessage(err));
     }
   }, [merchantId]);
 
@@ -75,7 +75,7 @@ export function WebhookReplayPage() {
       const found = await listMerchants({ q: search.trim() || undefined, limit: 10 });
       setCandidates(found.merchants ?? []);
     } catch (err) {
-      setError(describeError(err));
+      setError(errorMessage(err));
     }
   }
 
@@ -101,7 +101,7 @@ export function WebhookReplayPage() {
         }),
       );
     } catch (err) {
-      setError(describeError(err));
+      setError(errorMessage(err));
     } finally {
       setBusy(false);
     }

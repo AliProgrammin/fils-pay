@@ -26,9 +26,10 @@ const TONES: Record<string, Tone> = {
   test: "dark",
 };
 
-/** A status value shown as a coloured chip. The text is the raw value, so
- *  nothing is renamed; the colour only adds a quick visual read. */
+/** A status value shown as a coloured chip. The text is the value with
+ *  spaces for underscores (`under_review` reads "under review"); the colour
+ *  only adds a quick visual read. */
 export function StatusChip({ value, tone }: { value: string; tone?: Tone }) {
   const resolved = tone ?? TONES[value] ?? "neutral";
-  return <span className={`admin-chip admin-chip-${resolved}`}>{value}</span>;
+  return <span className={`admin-chip admin-chip-${resolved}`}>{value.replace(/_/g, " ")}</span>;
 }

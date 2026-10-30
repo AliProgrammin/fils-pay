@@ -6,7 +6,7 @@ import {
   updateWebhookEndpoint,
 } from "../../api/webhooks.js";
 import { StatusChip } from "../../components/StatusChip.js";
-import { describeError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
 import { dateTime } from "../../format.js";
 import { useConfirmDialog } from "../../components/ConfirmDialog.js";
@@ -16,7 +16,7 @@ import type { WebhookEndpointDto } from "../../types.js";
  * `GET /v1/merchants/:merchantId/webhook-endpoints`. Unlike most
  * list reads in this platform, this one is `owner`/`finance` only
  * server-side — so a `support` user reaching this page gets a real `403`,
- * which `describeError` renders plainly. The nav link is hidden from them too
+ * which `errorMessage` renders plainly. The nav link is hidden from them too
  * (DashboardLayout), but a typed URL still lands here, and it must explain
  * itself rather than sit on a blank loading state.
  */
@@ -37,7 +37,7 @@ export function WebhookEndpointListPage() {
     try {
       setEndpoints(await listWebhookEndpoints(merchantId));
     } catch (err) {
-      setError(describeError(err));
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -57,7 +57,7 @@ export function WebhookEndpointListPage() {
       });
       await load();
     } catch (err) {
-      setError(describeError(err));
+      setError(errorMessage(err, "webhookUpdate"));
     } finally {
       setBusyId(null);
     }
@@ -82,7 +82,7 @@ export function WebhookEndpointListPage() {
       await deleteWebhookEndpoint(merchantId, endpoint.id);
       await load();
     } catch (err) {
-      setError(describeError(err));
+      setError(errorMessage(err, "webhookUpdate"));
     } finally {
       setBusyId(null);
     }

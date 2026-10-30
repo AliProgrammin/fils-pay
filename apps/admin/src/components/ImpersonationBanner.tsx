@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAdminAuth } from "../auth/AdminAuthContext.js";
-import { describeError } from "../api/client.js";
+import { errorMessage } from "../errors.js";
 import { formatDateTime } from "../format.js";
 
 /**
@@ -30,7 +30,7 @@ export function ImpersonationBanner() {
     try {
       await exitImpersonation();
     } catch (err) {
-      setError(describeError(err));
+      setError(errorMessage(err));
     } finally {
       setExiting(false);
     }
@@ -47,7 +47,7 @@ export function ImpersonationBanner() {
           {formatDateTime(impersonation.expiresAt)} (Bahrain time). Merchant screens in the dashboard are
           acting with this merchant&apos;s least-privileged (support) role.
         </span>
-        {error ? <div className="impersonation-banner-error">Could not end it: {error}</div> : null}
+        {error ? <div className="impersonation-banner-error" role="alert">Could not end it: {error}</div> : null}
       </div>
       <button type="button" onClick={() => void handleExit()} disabled={exiting}>
         {exiting ? "Exiting..." : "Exit impersonation"}

@@ -4,10 +4,15 @@ import { useParams } from "react-router-dom";
 import { formatBhd, toFils } from "@filspay/money";
 import { getPaymentLink, payPaymentLink } from "../../api/paymentLinks.js";
 import { ApiError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import type { PaymentLinkPublicDto, PayPaymentLinkResponse, SimulatedCardInput } from "../../types.js";
 import "./CheckoutPage.css";
 
-type LoadState = { kind: "loading" } | { kind: "not_found" } | { kind: "loaded"; link: PaymentLinkPublicDto };
+type LoadState =
+  | { kind: "loading" }
+  | { kind: "not_found" }
+  | { kind: "error"; message: string }
+  | { kind: "loaded"; link: PaymentLinkPublicDto };
 
 type PayState =
   | { kind: "idle" }
@@ -28,6 +33,9 @@ const BAHRAIN_TIME = new Intl.DateTimeFormat("en-GB", {
   minute: "2-digit",
   hourCycle: "h23",
 });
+
+/** Pay answers after which this link can never be paid. */
+const TERMINAL_PAY_CODES = new Set(["payment_link_already_paid", "payment_link_canceled", "payment_link_expired"]);
 
 function bahrainTime(iso: string): string {
   const date = new Date(iso);
@@ -92,10 +100,17 @@ function CheckoutFlow() {
       .then((link) => {
         if (!cancelled) setLoadState({ kind: "loaded", link });
       })
-      .catch(() => {
-        // Never distinguishes "malformed token" from "doesn't exist" —
-        // matches the API's own non-disclosure choice.
-        if (!cancelled) setLoadState({ kind: "not_found" });
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        // Every 4xx is "not found": never distinguishes "malformed token"
+        // from "doesn't exist" — matches the API's own non-disclosure
+        // choice. No answer or a server fault is not the link's fault, so
+        // it says so instead of claiming the link does not exist.
+        if (err instanceof ApiError && err.statusCode < 500) {
+          setLoadState({ kind: "not_found" });
+        } else {
+          setLoadState({ kind: "error", message: errorMessage(err, "checkoutLoad") });
+        }
       });
     return () => {
       cancelled = true;
@@ -115,39 +130,13 @@ function CheckoutFlow() {
       const result = await payPaymentLink(token, { card }, idempotencyKey);
       setPayState({ kind: "success", result });
     } catch (err) {
-      if (err instanceof ApiError) {
-        const { statusCode, body } = err;
-        if (statusCode === 402) {
-          const stageLabel =
-            body.stage === "capture" ? "Your payment could not be completed." : "Your card was declined.";
-          setPayState({ kind: "declined", message: stageLabel, retryable: true });
-        } else if (statusCode === 502) {
-          setPayState({
-            kind: "declined",
-            message: "The acquirer is temporarily unavailable. Please try again.",
-            retryable: true,
-          });
-        } else if (statusCode === 409 && body.error === "payment_link_already_paid") {
-          setPayState({ kind: "terminal", message: "This invoice has already been paid." });
-        } else if (statusCode === 409 && body.error === "payment_link_canceled") {
-          setPayState({ kind: "terminal", message: "This payment link is no longer available." });
-        } else if (statusCode === 409) {
-          setPayState({
-            kind: "declined",
-            message: "A payment is already being processed for this link. Please try again shortly.",
-            retryable: true,
-          });
-        } else if (statusCode === 410) {
-          setPayState({ kind: "terminal", message: "This payment link has expired." });
-        } else {
-          setPayState({
-            kind: "declined",
-            message: body.message ?? "Something went wrong. Please try again.",
-            retryable: true,
-          });
-        }
+      const message = errorMessage(err, "checkoutPay");
+      // Paid, canceled or expired: the link can never be paid again, so the
+      // form goes away. Everything else may work on a second try.
+      if (err instanceof ApiError && TERMINAL_PAY_CODES.has(err.code)) {
+        setPayState({ kind: "terminal", message });
       } else {
-        setPayState({ kind: "declined", message: "Something went wrong. Please try again.", retryable: true });
+        setPayState({ kind: "declined", message, retryable: true });
       }
     }
   }
@@ -176,6 +165,19 @@ function CheckoutFlow() {
         title="Payment link not found"
         message="This payment link does not exist."
         hint="Check the link you were sent, or ask the merchant for a new one."
+      />
+    );
+  }
+
+  if (loadState.kind === "error") {
+    return (
+      <StatusCard
+        stamp="Error"
+        tone="ink"
+        title="Can't load this payment"
+        message={loadState.message}
+        hint="Refresh the page to try again. Nothing has been charged."
+        alert
       />
     );
   }
@@ -422,11 +424,9 @@ function CheckoutFlow() {
 
           <p className="co-test checkout-help">
             <span className="co-test-label">Test mode</span>
-            Test cards (simulated acquirer, no real charge): any other number approves; a PAN ending <code>
-              0002
-            </code>{" "}
-            always declines (do not honor); ending <code>0119</code> always declines (insufficient funds); ending{" "}
-            <code>0069</code> always errors.
+            Test cards (no real money is taken): a card number ending <code>0002</code> is declined by
+            the bank; ending <code>0119</code> is declined for not enough money; ending <code>0069</code> fails
+            with a bank error. Any other number pays.
           </p>
         </section>
       </div>

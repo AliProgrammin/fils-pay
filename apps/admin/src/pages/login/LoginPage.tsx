@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { login, verifyOtp } from "../../api/auth.js";
-import { describeError } from "../../api/client.js";
+import { ApiError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { useAdminAuth } from "../../auth/AdminAuthContext.js";
 import type { AdminLoginResponse } from "../../types.js";
 import { formatTime } from "../../format.js";
@@ -45,7 +46,7 @@ export function LoginPage() {
       setStep({ kind: "otp", challenge });
       setPassword("");
     } catch (err) {
-      setError(describeError(err));
+      setError(errorMessage(err, "login"));
     } finally {
       setSubmitting(false);
     }
@@ -64,7 +65,13 @@ export function LoginPage() {
       await refresh();
       navigate(redirectTo, { replace: true });
     } catch (err) {
-      setError(describeError(err));
+      // These end the pending sign-in server-side: retrying the code can
+      // only fail again, so start over.
+      if (err instanceof ApiError && (err.code === "too_many_attempts" || err.code === "no_pending_session" || err.code === "otp_expired")) {
+        setStep({ kind: "credentials" });
+        setCode("");
+      }
+      setError(errorMessage(err, "otp"));
     } finally {
       setSubmitting(false);
     }

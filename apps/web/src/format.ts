@@ -99,3 +99,18 @@ export function localDateTimeToIso(value: string): string | null {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
+
+/** Plain words for the API's status and event values where the raw value
+ *  reads badly. Anything else only loses its underscores. */
+const LABELS: Record<string, string> = {
+  partially_captured: "partly captured",
+  partially_refunded: "partly refunded",
+  exhausted: "stopped retrying",
+  merchant_session: "dashboard user",
+  merchant_api_key: "API key",
+  system: "FilsPay",
+};
+
+export function statusLabel(value: string): string {
+  return LABELS[value] ?? value.replace(/_/g, " ");
+}

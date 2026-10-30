@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getReconciliation } from "../../api/settlement.js";
-import { ApiError, describeError } from "../../api/client.js";
+import { ApiError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { bhd, calendarDate } from "../../format.js";
 import type { ReconciliationReport } from "../../types.js";
 
@@ -54,7 +55,7 @@ export function ReconciliationPage() {
         setForbidden(true);
         setReport(null);
       } else {
-        setError(describeError(err));
+        setError(errorMessage(err));
       }
     } finally {
       setLoading(false);
@@ -81,7 +82,7 @@ export function ReconciliationPage() {
     <section>
       <div className="dash-page-head">
         <div>
-          <p className="dash-kicker">Ledger vs payouts · every fil accounted</p>
+          <p className="dash-kicker">Our records vs payouts · every fil accounted</p>
           <h1>Reconciliation</h1>
         </div>
       </div>
@@ -128,9 +129,9 @@ export function ReconciliationPage() {
           </div>
 
           <dl className="dash-dl dash-dl-money">
-            <dt>Ledger merchant payable (net)</dt>
+            <dt>Owed to you in our records (net)</dt>
             <dd className="dash-money">{bhd(report.ledgerMerchantPayableNetFils)}</dd>
-            <dt>Settlement net payout</dt>
+            <dt>Paid out in payouts (net)</dt>
             <dd className="dash-money">{bhd(report.settlementNetPayoutFils)}</dd>
             <dt>Pending, not yet batched</dt>
             <dd className="dash-money">{bhd(report.pendingUnbatchedFils)}</dd>
@@ -145,8 +146,7 @@ export function ReconciliationPage() {
           </dl>
 
           <p className="dash-note">
-            Gap = ledger merchant payable − settlement net payout − pending
-            unbatched − settled by a later batch + happened earlier. A zero gap
+            Gap = owed to you − paid out − pending, not yet batched − settled by a later batch + happened earlier. A zero gap
             means every captured fil is accounted for in either a settled batch
             or the pending queue. A late capture or refund is settled by the
             next batch, so it shows in both carried lines, one on each day.

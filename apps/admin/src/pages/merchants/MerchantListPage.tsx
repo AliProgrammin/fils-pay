@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listMerchants } from "../../api/merchants.js";
 import { bulkApproveKyc } from "../../api/merchantsBulk.js";
-import { describeError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { RequireRole } from "../../auth/RequireRole.js";
 import { StatusChip } from "../../components/StatusChip.js";
 import { formatDate } from "../../format.js";
@@ -47,7 +47,7 @@ export function MerchantListPage() {
         setMerchants((previous) => (cursor ? [...previous, ...page] : page));
         setNextCursor(result.nextCursor ?? null);
       } catch (err) {
-        setError(describeError(err));
+        setError(errorMessage(err));
       } finally {
         setLoading(false);
       }
@@ -94,7 +94,7 @@ export function MerchantListPage() {
       setSelectedIds(new Set());
       await load(null);
     } catch (err) {
-      setError(describeError(err));
+      setError(errorMessage(err));
     } finally {
       setBulkBusy(false);
     }

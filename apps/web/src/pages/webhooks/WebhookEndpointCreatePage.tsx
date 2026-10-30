@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createWebhookEndpoint } from "../../api/webhooks.js";
 import { StatusChip } from "../../components/StatusChip.js";
-import { describeError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
 import { dateTime } from "../../format.js";
 import type { WebhookEndpointCreateResponse } from "../../types.js";
@@ -36,7 +36,7 @@ export function WebhookEndpointCreatePage() {
     try {
       setCreated(await createWebhookEndpoint(me.merchant.id, { url: url.trim() }));
     } catch (err) {
-      setError(describeError(err));
+      setError(errorMessage(err, "webhookCreate"));
     } finally {
       setSubmitting(false);
     }

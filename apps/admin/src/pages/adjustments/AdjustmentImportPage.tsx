@@ -4,7 +4,7 @@ import {
   listAdjustmentImports,
   uploadAdjustmentImport,
 } from "../../api/adjustmentImports.js";
-import { describeError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { RequireRole } from "../../auth/RequireRole.js";
 import { bhd, formatDateTime } from "../../format.js";
 import type {
@@ -43,7 +43,7 @@ export function AdjustmentImportPage() {
       const page = await listAdjustmentImports({ limit: 25 });
       setImports(page.items);
     } catch (err) {
-      setListError(describeError(err));
+      setListError(errorMessage(err));
     }
   }, []);
 
@@ -69,7 +69,7 @@ export function AdjustmentImportPage() {
       setFilename("");
       await loadHistory();
     } catch (err) {
-      setError(describeError(err));
+      setError(errorMessage(err, "adjustmentImport"));
     } finally {
       setBusy(false);
     }
@@ -86,7 +86,7 @@ export function AdjustmentImportPage() {
       setRows(await getAdjustmentImportRows(importId));
       setOpenImportId(importId);
     } catch (err) {
-      setRowsError(describeError(err));
+      setRowsError(errorMessage(err));
     }
   }
 

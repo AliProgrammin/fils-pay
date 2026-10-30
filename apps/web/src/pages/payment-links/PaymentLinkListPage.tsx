@@ -2,11 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listPaymentLinks } from "../../api/paymentLinks.js";
 import { StatusChip } from "../../components/StatusChip.js";
-import { describeError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
 import { RequireRole } from "../../auth/RequireRole.js";
 import { Pagination } from "../../components/Pagination.js";
-import { bhd, dash, dateTime } from "../../format.js";
+import { bhd, dash, dateTime, statusLabel } from "../../format.js";
 import type { PaymentLinkDto, PaymentLinkStatus } from "../../types.js";
 
 /** The four *stored* statuses, including `reserved` — the merchant-facing
@@ -45,7 +45,7 @@ export function PaymentLinkListPage() {
         setLinks((previous) => (cursor ? [...previous, ...result.paymentLinks] : result.paymentLinks));
         setNextCursor(result.nextCursor);
       } catch (err) {
-        setError(describeError(err));
+        setError(errorMessage(err));
       } finally {
         setLoading(false);
       }
@@ -86,7 +86,7 @@ export function PaymentLinkListPage() {
               checked={statuses.includes(status)}
               onChange={() => toggleStatus(status)}
             />
-            {status}
+            {statusLabel(status)}
           </label>
         ))}
       </fieldset>

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { login, resendOtp, verifyOtp } from "../../api/dashboardAuth.js";
-import { ApiError, describeError } from "../../api/client.js";
+import { ApiError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import {
   readLastMerchantId,
   useDashboardAuth,
@@ -12,6 +13,9 @@ import { timeOfDay } from "../../format.js";
 import "../../dashboard.css";
 
 type Step = { kind: "credentials" } | { kind: "otp"; challenge: DashboardLoginResponse };
+
+/** OTP-step answers that mean the pending sign-in no longer exists. */
+const SESSION_GONE = new Set(["too_many_attempts", "no_pending_session"]);
 
 interface ShopChoice {
   merchantId: string;
@@ -106,14 +110,10 @@ export function LoginPage() {
           setShops(choices);
         } else {
           setShowMerchantId(true);
-          setError(
-            "This email is used by more than one shop. Enter the merchant ID of the shop you want to sign in to.",
-          );
+          setError(errorMessage(err, "login"));
         }
-      } else if (err instanceof ApiError && err.statusCode === 401 && err.code === "invalid_credentials") {
-        setError("The email or password is not correct.");
       } else {
-        setError(describeError(err));
+        setError(errorMessage(err, "login"));
       }
     } finally {
       setSubmitting(false);
@@ -141,13 +141,14 @@ export function LoginPage() {
       await refresh();
       navigate(redirectTo, { replace: true });
     } catch (err) {
-      // `429 too_many_attempts` revokes the pending session server-side, so
-      // retrying the OTP step against it can only ever fail again — start
-      // over instead of leaving the user tapping a dead form.
-      if (err instanceof ApiError && err.statusCode === 429 && err.code === "too_many_attempts") {
-        backToCredentials(describeError(err));
+      // `429 too_many_attempts` revokes the pending session server-side, and
+      // `no_pending_session` means it is already gone, so retrying the OTP
+      // step can only ever fail again — start over instead of leaving the
+      // user tapping a dead form.
+      if (err instanceof ApiError && SESSION_GONE.has(err.code)) {
+        backToCredentials(errorMessage(err, "otp"));
       } else {
-        setError(describeError(err));
+        setError(errorMessage(err, "otp"));
       }
     } finally {
       setSubmitting(false);
@@ -165,9 +166,13 @@ export function LoginPage() {
       setNotice("A new code has been sent.");
     } catch (err) {
       // Includes `429 resend_too_soon` — the server owns the cadence rule, so
-      // whatever it says is shown as-is rather than pre-empted by a
-      // client-side timer that could drift from it.
-      setError(describeError(err));
+      // its answer is shown rather than pre-empted by a client-side timer
+      // that could drift from it.
+      if (err instanceof ApiError && SESSION_GONE.has(err.code)) {
+        backToCredentials(errorMessage(err, "resend"));
+      } else {
+        setError(errorMessage(err, "resend"));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -265,8 +270,8 @@ export function LoginPage() {
                     />
                   </label>
                   <p className="dash-muted dash-hint">
-                    The UUID issued when your account was created. Your API integration
-                    already uses this value.
+                    The shop ID FilsPay gave you when your account was set up. Ask your shop
+                    owner if you do not have it.
                   </p>
                   <button type="button" className="dash-text-button" onClick={() => setShowMerchantId(false)}>
                     Sign in without a merchant ID

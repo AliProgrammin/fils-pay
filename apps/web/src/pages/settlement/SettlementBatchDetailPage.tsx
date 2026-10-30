@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getSettlementBatch, getSettlementBatchTransactions } from "../../api/settlement.js";
-import { ApiError, describeError } from "../../api/client.js";
+import { ApiError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { bhd, calendarDate, dash, dateTime } from "../../format.js";
 import type { SettlementBatchDetailDto, SettlementBatchTransactionDto } from "../../types.js";
 import { StatusChip } from "../../components/StatusChip.js";
@@ -52,7 +53,7 @@ export function SettlementBatchDetailPage() {
         if (err instanceof ApiError && err.statusCode === 404) {
           setState({ kind: "not_found" });
         } else {
-          setState({ kind: "error", message: describeError(err) });
+          setState({ kind: "error", message: errorMessage(err) });
         }
       }
     })();
@@ -156,7 +157,7 @@ export function SettlementBatchDetailPage() {
               <th>Status</th>
               <th className="dash-num">Authorized</th>
               <th className="dash-num">Captured</th>
-              <th className="dash-num">Scheme amount</th>
+              <th className="dash-num">Card network amount</th>
             </tr>
           </thead>
           <tbody>
@@ -186,8 +187,8 @@ export function SettlementBatchDetailPage() {
         </table>
       </div>
       <p className="dash-note">
-      The scheme amount is the card-network export figure, quantized to two
-        decimal places at that boundary — it can be up to 9 fils below the
+      The card network amount is the figure the card network reports, rounded to two
+        decimal places — it can be up to 9 fils below the
         captured amount by design.
       </p>
 

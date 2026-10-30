@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { parseBhdToFils } from "@filspay/money";
 import { createPaymentLink } from "../../api/paymentLinks.js";
-import { describeError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { useDashboardAuth } from "../../auth/DashboardAuthContext.js";
 import { localDateTimeToIso } from "../../format.js";
 
@@ -67,7 +67,7 @@ export function PaymentLinkCreatePage() {
       });
       navigate(`/dashboard/payment-links/${link.id}`, { replace: true });
     } catch (err) {
-      setError(describeError(err));
+      setError(errorMessage(err, "paymentLinkCreate"));
     } finally {
       setSubmitting(false);
     }

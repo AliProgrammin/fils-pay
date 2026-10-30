@@ -6,9 +6,10 @@ import {
   getTransactionEvents,
   voidTransaction,
 } from "../../api/transactions.js";
-import { ApiError, describeError } from "../../api/client.js";
+import { ApiError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { RequireRole } from "../../auth/RequireRole.js";
-import { bhd, dash, dateTime } from "../../format.js";
+import { bhd, dash, dateTime, statusLabel } from "../../format.js";
 import type { TransactionDto, TransactionEventDto } from "../../types.js";
 import { RefundDrawer } from "./RefundDrawer.js";
 import { useConfirmDialog } from "../../components/ConfirmDialog.js";
@@ -54,7 +55,7 @@ export function TransactionDetailPage() {
       if (err instanceof ApiError && err.statusCode === 404) {
         setState({ kind: "not_found" });
       } else {
-        setState({ kind: "error", message: describeError(err) });
+        setState({ kind: "error", message: errorMessage(err) });
       }
     }
   }, [id]);
@@ -83,7 +84,7 @@ export function TransactionDetailPage() {
       // row server-side, so the timeline is stale, not merely shorter.
       await load();
     } catch (err) {
-      setActionError(describeError(err));
+      setActionError(errorMessage(err, "capture"));
     } finally {
       setSubmitting(false);
     }
@@ -109,7 +110,7 @@ export function TransactionDetailPage() {
       await voidTransaction(id);
       await load();
     } catch (err) {
-      setActionError(describeError(err));
+      setActionError(errorMessage(err, "void"));
     } finally {
       setSubmitting(false);
     }
@@ -238,7 +239,7 @@ export function TransactionDetailPage() {
         <dd>{txn.currency}</dd>
         <dt>Reference</dt>
         <dd>{dash(txn.reference)}</dd>
-        <dt>Acquirer reference</dt>
+        <dt>Bank reference</dt>
         <dd>
           <code>{txn.acquirerReference}</code>
         </dd>
@@ -269,12 +270,10 @@ export function TransactionDetailPage() {
             {events.map((event) => (
               <tr key={event.id}>
                 <td className="dash-nowrap">{dateTime(event.occurredAt)}</td>
-                <td>
-                  <code>{event.eventType}</code>
-                </td>
+                <td>{statusLabel(event.eventType)}</td>
                 <td className="dash-num">{event.amountFils === null ? "—" : bhd(event.amountFils)}</td>
                 <td>
-                  {event.actorType}
+                  {statusLabel(event.actorType)}
                   {event.actorId ? (
                     <div className="dash-muted">
                       <code>{event.actorId}</code>

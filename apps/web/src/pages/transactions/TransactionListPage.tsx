@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listTransactions } from "../../api/transactions.js";
 import { StatusChip } from "../../components/StatusChip.js";
-import { describeError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { Pagination } from "../../components/Pagination.js";
-import { bhd, dash, dateTime, dayStartIso } from "../../format.js";
+import { bhd, dash, dateTime, dayStartIso, statusLabel } from "../../format.js";
 import { pluralize, truncateMiddle } from "../../utils/helpers.js";
 import type { TransactionDto, TransactionStatus } from "../../types.js";
 
@@ -64,7 +64,7 @@ export function TransactionListPage() {
         );
         setNextCursor(result.nextCursor);
       } catch (err) {
-        setError(describeError(err));
+        setError(errorMessage(err));
       } finally {
         setLoading(false);
       }
@@ -100,7 +100,7 @@ export function TransactionListPage() {
               checked={statuses.includes(status)}
               onChange={() => toggleStatus(status)}
             />
-            {status.replace(/_/g, " ")}
+            {statusLabel(status)}
             </label>
         ))}
       </fieldset>
@@ -123,7 +123,7 @@ export function TransactionListPage() {
           Search
           <input
             type="search"
-            placeholder="Reference, acquirer reference, or transaction id"
+            placeholder="Reference, bank reference, or transaction ID"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
           />
@@ -146,7 +146,7 @@ export function TransactionListPage() {
               <th>Status</th>
               <th className="dash-num">Authorized</th>
               <th className="dash-num">Captured</th>
-              <th>Acquirer reference</th>
+              <th>Bank reference</th>
             </tr>
           </thead>
           <tbody>

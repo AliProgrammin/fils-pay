@@ -1,4 +1,9 @@
 import type { ApiErrorBody } from "../types.js";
+import { ApiError, NetworkError } from "../errors.js";
+
+/** Error types live in ../errors.ts (no Vite env there, so unit tests can
+ *  load them). Re-exported so callers keep one import. */
+export { ApiError, NetworkError };
 
 const API_BASE_URL =
   (import.meta.env.VITE_ADMIN_API_BASE_URL as string | undefined) ?? "http://localhost:3000";
@@ -8,23 +13,6 @@ const API_BASE_URL =
 // FH: used to build the impersonation link
 export const WEB_BASE_URL =
   (import.meta.env.VITE_WEB_BASE_URL as string | undefined) ?? "http://localhost:5173";
-
-/** Mirrors apps/api's own uniform `{ error, message? }` body
- *  (lib/errors.ts / plugins/errorHandler.ts) — one error shape end to
- *  end, not reinvented client-side. Identical to apps/web's ApiError. */
-export class ApiError extends Error {
-  readonly statusCode: number;
-  readonly code: string;
-  readonly body: ApiErrorBody;
-
-  constructor(statusCode: number, body: ApiErrorBody) {
-    super(body.message ?? body.error);
-    this.name = "ApiError";
-    this.statusCode = statusCode;
-    this.code = body.error;
-    this.body = body;
-  }
-}
 
 /**
  * `credentials: "include"` on every call: the admin plane is cookie-based
@@ -39,16 +27,23 @@ export class ApiError extends Error {
  */
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const hasBody = init?.body !== undefined && init.body !== null;
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    credentials: "include",
-    headers: hasBody
-      ? { "Content-Type": "application/json", ...init?.headers }
-      : { ...init?.headers },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      credentials: "include",
+      headers: hasBody
+        ? { "Content-Type": "application/json", ...init?.headers }
+        : { ...init?.headers },
+    });
+  } catch (err) {
+    // fetch rejects only when no answer arrived (offline, API down, blocked).
+    throw new NetworkError(err);
+  }
   const body = await res.json().catch(() => null);
   if (!res.ok) {
-    throw new ApiError(res.status, (body as ApiErrorBody) ?? { error: "unknown_error" });
+    const errorBody = body !== null && typeof body === "object" ? (body as ApiErrorBody) : null;
+    throw new ApiError(res.status, errorBody);
   }
   return body as T;
 }
@@ -58,18 +53,4 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
  *  "there is deliberately no body here" explicit at the call site. */
 export async function requestNoContent(path: string, init?: RequestInit): Promise<void> {
   await request<unknown>(path, init);
-}
-
-/** Human-readable text for anything thrown by `request` — used by every
- *  page's error banner so a failure (including a server-side `403` from a
- *  role gate) is always *shown*, never silently swallowed. */
-export function describeError(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.statusCode === 403) {
-      return `Not permitted (${err.code}) — your admin role does not allow this action.`;
-    }
-    return err.body.message ?? err.code;
-  }
-  if (err instanceof Error) return err.message;
-  return "Something went wrong.";
 }

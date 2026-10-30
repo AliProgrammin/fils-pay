@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { rebuildAnalytics, rebuildBalances, runBatch } from "../../api/settlement.js";
 import { recalculateMdr } from "../../api/mdrRecalculation.js";
-import { describeError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { RequireRole } from "../../auth/RequireRole.js";
 import { bahrainYesterdayIso } from "../../bahrainDate.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
@@ -58,7 +58,7 @@ export function SettlementPage() {
         await runBatch({ date, merchantId: merchantId.trim() ? merchantId.trim() : undefined }),
       );
     } catch (err) {
-      setRunError(describeError(err));
+      setRunError(errorMessage(err, "settlementRun"));
     } finally {
       setRunBusy(false);
     }
@@ -74,7 +74,7 @@ export function SettlementPage() {
       setRebuildResult(await rebuildBalances());
       setConfirmingRebuild(false);
     } catch (err) {
-      setRebuildError(describeError(err));
+      setRebuildError(errorMessage(err));
     } finally {
       setRebuildBusy(false);
     }
@@ -88,7 +88,7 @@ export function SettlementPage() {
       setAnalyticsResult(await rebuildAnalytics());
       setConfirmingAnalytics(false);
     } catch (err) {
-      setAnalyticsError(describeError(err));
+      setAnalyticsError(errorMessage(err));
     } finally {
       setAnalyticsBusy(false);
     }
@@ -103,7 +103,7 @@ export function SettlementPage() {
     try {
       setMdrResult(await recalculateMdr(mdrMerchantId.trim(), { from: mdrFrom, to: mdrTo }));
     } catch (err) {
-      setMdrError(describeError(err));
+      setMdrError(errorMessage(err));
     } finally {
       setMdrBusy(false);
     }

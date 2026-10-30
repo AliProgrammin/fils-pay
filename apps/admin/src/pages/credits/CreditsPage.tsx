@@ -5,7 +5,7 @@ import {
   listCreditRequests,
   rejectCreditRequest,
 } from "../../api/credits.js";
-import { describeError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { RequireRole } from "../../auth/RequireRole.js";
 import { StatusChip } from "../../components/StatusChip.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
@@ -48,7 +48,7 @@ export function CreditsPage() {
       setItems(page.items ?? []);
       setNextCursor(page.nextCursor);
     } catch (err) {
-      setLoadError(describeError(err));
+      setLoadError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -65,7 +65,7 @@ export function CreditsPage() {
       setItems((current) => [...current, ...(page.items ?? [])]);
       setNextCursor(page.nextCursor);
     } catch (err) {
-      setLoadError(describeError(err));
+      setLoadError(errorMessage(err));
     }
   }
 
@@ -82,7 +82,7 @@ export function CreditsPage() {
       );
       await load();
     } catch (err) {
-      setActionError(describeError(err));
+      setActionError(errorMessage(err));
     } finally {
       setBusyId(null);
     }
@@ -99,7 +99,7 @@ export function CreditsPage() {
       setRejectReason("");
       await load();
     } catch (err) {
-      setActionError(describeError(err));
+      setActionError(errorMessage(err));
     } finally {
       setBusyId(null);
     }

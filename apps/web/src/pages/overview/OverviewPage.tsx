@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getPayoutTrends, getTopLinks, getVolumes } from "../../api/analytics.js";
-import { describeError } from "../../api/client.js";
+import { errorMessage } from "../../errors.js";
 import { StatusChip } from "../../components/StatusChip.js";
 import { StalenessBadge } from "../../components/StalenessBadge.js";
 import { bhd, calendarDate, dash, dateTime } from "../../format.js";
@@ -47,7 +47,7 @@ export function OverviewPage() {
       setPayouts(p);
       setTopLinks(t);
     } catch (err) {
-      setError(describeError(err));
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
