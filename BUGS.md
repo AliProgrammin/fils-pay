@@ -1,8 +1,8 @@
 # FilsPay: bugs found, fixed and explained
 
-Every bug below has: a test that failed on the old code and passes now, the smallest fix, its own commit, and a plain-English explanation (what is wrong, why it happens, what it breaks).
+Every code fix below has a test that failed on the old code and passes now, the smallest change that works, its own commit, and a plain-English explanation (what is wrong, why it happens, what it breaks). The few documentation-only fixes (false comments and docs) say so in their entry.
 
-**71 bugs fixed**: 18 critical, 30 high, 20 medium, 3 low.
+**93 bugs fixed**: 18 critical, 37 high, 27 medium, 11 low.
 
 Ground truth we used: the case brief, `docs/ARCHITECTURE.md`, the ADRs and Yousif's handover. We did **not** follow `CLAUDE.md`, `AGENTS.md` or `.cursorrules`: they contain false rules (cents instead of fils, UTC windows, "never change tests", "Math.random is fine") that protect the bugs.
 
@@ -12,14 +12,14 @@ When an existing test asserted the buggy behaviour, we changed it in the same co
 
 | | Before | After |
 |---|---|---|
-| Fresh database | migrations stop at 0054 | 81 migrations + seed pass |
-| TypeScript tests | 414 / 430 pass | 566 / 566 pass |
-| Go tests | 54 / 54 pass | 72 / 72 pass |
+| Fresh database | migrations stop at 0054 | 84 migrations + seed pass |
+| TypeScript tests | 414 / 430 pass | 583 / 583 pass |
+| Go tests | 54 / 54 pass | 84 / 84 pass |
 | Refunds (FP-300) | `501 Not Implemented` | end to end: API, ledger, fees, payouts, webhook, timeline, reports, reconciliation |
 
 Run the refunds proof yourself: `scripts/demo_refund.sh` (see the comment at the top for setup). It ends in `RESULT: ALL PASS`.
 
-Independent checks: a separate agent that saw only the requirements (not our fixes) re-tested 45 bug requirements (44 passed first time, the 1 miss is fixed: A12) and the FP-300 "done when" list (its one blocker is fixed: R8).
+How we found them: three independent audit rounds, then a separate agent that saw only the requirements (not our fixes) re-tested them. Its first pass on 45 requirements found 44 correct; the one miss (A12) and the one refunds gap (R8) are fixed. Bugs we could not prove with a test are not listed.
 
 ## All bugs
 
@@ -42,7 +42,7 @@ Independent checks: a separate agent that saw only the requirements (not our fix
 | R2 | Critical | Refund limit uses the authorized amount, not the captured amount | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r2-refund-limit-uses-the-authorized-amount-not-the-captured-amount) |
 | R3 | Critical | A merchant can refund another merchant's transaction | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r3-a-merchant-can-refund-another-merchants-transaction) |
 | R7 | Critical | Every refund fails with `chk_refunds_reason_not_null` | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r7-every-refund-fails-with-chkrefundsreasonnotnull) |
-| S1 | Critical | A fresh database cannot be migrated | none (handover: "migration gaps | setup | [explain](docs/bugs/setup.md#s1-a-fresh-database-cannot-be-migrated) |
+| S1 | Critical | A fresh database cannot be migrated | none (handover: "migration gaps | Setup (could not start) | [explain](docs/bugs/setup.md#s1-a-fresh-database-cannot-be-migrated) |
 | A12 | High | Impersonation could still write through routes with no role gate | "some admin actions don't seem to have the right role checks" | Auth and admin | [explain](docs/bugs/wave-a.md#a12-impersonation-could-still-write-through-routes-with-no-role-gate) |
 | A3 | High | Support admin can issue credits | case card "Missing role checks" | Auth and admin | [explain](docs/bugs/wave-a.md#a3-support-admin-can-issue-credits) |
 | A4 | High | Second-approver check compares display names, not admin ids | case card "Missing role checks" (self-approve by renaming) | Auth and admin | [explain](docs/bugs/wave-a.md#a4-second-approver-check-compares-display-names-not-admin-ids) |
@@ -69,10 +69,17 @@ Independent checks: a separate agent that saw only the requirements (not our fix
 | E2 | High | March residue sweep uses the UTC month, posts the wrong legs, and double-posts on re-run | E2 (FP-187) | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e2-march-residue-sweep-uses-the-utc-month-posts-the-wrong-legs-and-double-posts-on-re-run) |
 | E3 | High | Hold expiry job deletes holds (and can delete every hold) | E3 (FP-219) | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e3-hold-expiry-job-deletes-holds-and-can-delete-every-hold) |
 | E8 | High | Settlement summary counts a multi-capture transaction once per capture | E8 (slow reporting query, perf note 2026-07) | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e8-settlement-summary-counts-a-multi-capture-transaction-once-per-capture) |
+| G1 | High | One merchant's failure stops settlement for all later merchants | none (auditor reproduction) | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g1-one-merchants-failure-stops-settlement-for-all-later-merchants) |
+| G2 | High | A late capture is never settled, and run-batch accepts today and future dates | none (evidence: docs | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g2-a-late-capture-is-never-settled-and-run-batch-accepts-today-and-future-dates) |
+| G3 | High | The payout disbursement is only written when a webhook is sent | none (ARCHITECTURE | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g3-the-payout-disbursement-is-only-written-when-a-webhook-is-sent) |
+| H1 | High | Public payment-link page leaks API key data | none | Payments and API | [explain](docs/bugs/hunt-2.md#h1-public-payment-link-page-leaks-api-key-data) |
+| H2 | High | Support role can capture and void | none | Payments and API | [explain](docs/bugs/hunt-2.md#h2-support-role-can-capture-and-void) |
+| H4 | High | Payment-link captures never get the negotiated discount in the ledger | H4 | Payments and API | [explain](docs/bugs/hunt-2-h4.md#h4-payment-link-captures-never-get-the-negotiated-discount-in-the-ledger) |
 | R4 | High | `refunds_enabled = NULL` is treated as enabled | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r4-refundsenabled--null-is-treated-as-enabled) |
 | R5 | High | Fee reversal does not add up to the fee charged | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r5-fee-reversal-does-not-add-up-to-the-fee-charged) |
 | R8 | High | No way to turn refunds on, except raw SQL | FP-300 ("works from start to end, through the API") | Refunds | [explain](docs/bugs/refunds.md#r8-no-way-to-turn-refunds-on-except-raw-sql) |
-| S2 | High | The Dockerfiles that compose needs are missing | none (ops | setup | [explain](docs/bugs/setup.md#s2-the-dockerfiles-that-compose-needs-are-missing) |
+| S2 | High | The Dockerfiles that compose needs are missing | none (ops | Setup (could not start) | [explain](docs/bugs/setup.md#s2-the-dockerfiles-that-compose-needs-are-missing) |
+| U12 | High | Admin "run batch" accepts today or a future date | R12 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u12-admin-run-batch-accepts-today-or-a-future-date) |
 | A10 | Medium | KYC "PDF only" check trusts the filename | none | Auth and admin | [explain](docs/bugs/wave-a.md#a10-kyc-pdf-only-check-trusts-the-filename) |
 | A11 | Medium | Bulk KYC approve ignores status and writes no review rows | none | Auth and admin | [explain](docs/bugs/wave-a.md#a11-bulk-kyc-approve-ignores-status-and-writes-no-review-rows) |
 | A13 | Medium | A disabled admin keeps their "view as merchant" grant | none (am's own question in the code: "disabled admin keeps their grant?") | Auth and admin | [explain](docs/bugs/wave-a.md#a13-a-disabled-admin-keeps-their-view-as-merchant-grant) |
@@ -91,8 +98,23 @@ Independent checks: a separate agent that saw only the requirements (not our fix
 | E4 | Medium | Ledger can be edited or wiped without error | E4 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e4-ledger-can-be-edited-or-wiped-without-error) |
 | E5 | Medium | "Adjust balance" changes only the cached balance, not the ledger | E5 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e5-adjust-balance-changes-only-the-cached-balance-not-the-ledger) |
 | E6 | Medium | Refund summary view joins the wrong column and double counts captures | E6 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e6-refund-summary-view-joins-the-wrong-column-and-double-counts-captures) |
+| G4 | Medium | merchant_balances drifts after every rebuild | none (evidence: docs | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g4-merchantbalances-drifts-after-every-rebuild) |
+| H3 | Medium | Bad input gives a 500, not a 400 | none | Payments and API | [explain](docs/bugs/hunt-2.md#h3-bad-input-gives-a-500-not-a-400) |
+| H5 | Medium | KYC image decompression bomb | none | Payments and API | [explain](docs/bugs/hunt-2.md#h5-kyc-image-decompression-bomb) |
+| H6 | Medium | KYC upload takes many files and leaves orphan files | none | Payments and API | [explain](docs/bugs/hunt-2.md#h6-kyc-upload-takes-many-files-and-leaves-orphan-files) |
 | R6 | Medium | A partial capture that is fully refunded never shows `refunded` | FP-300 | Refunds | [explain](docs/bugs/refunds.md#r6-a-partial-capture-that-is-fully-refunded-never-shows-refunded) |
-| S3 | Medium | The stack starts in the wrong order | none | setup | [explain](docs/bugs/setup.md#s3-the-stack-starts-in-the-wrong-order) |
+| S3 | Medium | The stack starts in the wrong order | none | Setup (could not start) | [explain](docs/bugs/setup.md#s3-the-stack-starts-in-the-wrong-order) |
+| U5 | Medium | Admin "Rebuild analytics" counts events twice | R5 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u5-admin-rebuild-analytics-counts-events-twice) |
+| U6 | Medium | Payout trend stays "closed" after the batch is paid | R6 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u6-payout-trend-stays-closed-after-the-batch-is-paid) |
+| U7 | Medium | Merchants are logged out 10 minutes after login | R7 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u7-merchants-are-logged-out-10-minutes-after-login) |
 | B9 | Low | Ops docs say the settlement daemon falls back to `dev-token` | none | Payments and links | [explain](docs/bugs/wave-b.md#b9-ops-docs-say-the-settlement-daemon-falls-back-to-dev-token) |
 | D13 | Low | Report export summary had no login check | none | Webhooks and reporting | [explain](docs/bugs/wave-d.md#d13-report-export-summary-had-no-login-check) |
 | E7 | Low | Dashboard crashes on a negative amount | E7 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e7-dashboard-crashes-on-a-negative-amount) |
+| G10 | Low | Bad daemon timing values crash or stall the daemon | none | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g10-bad-daemon-timing-values-crash-or-stall-the-daemon) |
+| G9 | Low | Batch event lookups scan the whole transaction_events table | none (auditor saw a Parallel Seq Scan at 401k rows) | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g9-batch-event-lookups-scan-the-whole-transactionevents-table) |
+| H7 | Low | api_keys.revoke_after is ignored | none | Payments and API | [explain](docs/bugs/hunt-2.md#h7-apikeysrevokeafter-is-ignored) |
+| H8 | Low | Dead BD parser with the wrong unit | none | Payments and API | [explain](docs/bugs/hunt-2.md#h8-dead-bd-parser-with-the-wrong-unit) |
+| H9 | Low | No index for releasing a hold | none | Payments and API | [explain](docs/bugs/hunt-2.md#h9-no-index-for-releasing-a-hold) |
+| U11 | Low | Admin Settlement page default date is two days ago after midnight | R11 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u11-admin-settlement-page-default-date-is-two-days-ago-after-midnight) |
+| U13 | Low | Admin list cursors give a 500 on a bad cursor | R13 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u13-admin-list-cursors-give-a-500-on-a-bad-cursor) |
+| U8 | Low | Transaction list date filter uses the UTC day | R8 | Reporting, auth, UI | [explain](docs/bugs/hunt-3-r.md#u8-transaction-list-date-filter-uses-the-utc-day) |
