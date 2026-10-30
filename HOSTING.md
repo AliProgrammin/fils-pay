@@ -89,6 +89,13 @@ of it: the host's load balancer or a reverse proxy (Caddy, nginx, Traefik)
 that forwards to the web port. Then set `COOKIE_SECURE=true` and use the
 https address in `CHECKOUT_BASE_URL`.
 
+**Server size.** The stack is sized for one server with 1 vCPU and 2 GB
+RAM. `ops/docker-compose.prod.yml` sets CPU and memory limits on every
+service (the API gets 0.5 vCPU and 512 MB; all limits add up to 1.0 CPU and
+1.5 GB), restarts any service that stops (`restart: always`), and keeps the
+Postgres data in the `pgdata` volume. Load test results, the capacity
+estimate and how to rerun them: [CAPACITY.md](CAPACITY.md).
+
 ## 4. Smoke test
 
 ```sh

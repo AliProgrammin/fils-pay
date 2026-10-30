@@ -17,6 +17,12 @@ export interface Config {
   pgPoolIdleTimeoutMs: number;
   pgPoolConnectionTimeoutMs: number;
 
+  /** Load shedding (plugins/loadShedding.ts): answer 503 + Retry-After when
+   *  more requests than this wait for a pool connection. 0 turns it off. */
+  loadShedMaxPoolWaiting: number;
+  /** ...or when the mean event loop delay is above this. 0 turns it off. */
+  loadShedMaxEventLoopDelayMs: number;
+
   sessionTtlHours: number;
   pendingSessionTtlMinutes: number;
   otpTtlMinutes: number;
@@ -209,6 +215,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     pgPoolMin: parseIntEnv(env.PG_POOL_MIN, 0),
     pgPoolIdleTimeoutMs: parseIntEnv(env.PG_POOL_IDLE_TIMEOUT_MS, 30_000),
     pgPoolConnectionTimeoutMs: parseIntEnv(env.PG_POOL_CONNECTION_TIMEOUT_MS, 5_000),
+
+    loadShedMaxPoolWaiting: parseIntEnv(env.LOAD_SHED_MAX_POOL_WAITING, 50),
+    loadShedMaxEventLoopDelayMs: parseIntEnv(env.LOAD_SHED_MAX_EVENT_LOOP_DELAY_MS, 200),
 
     sessionTtlHours: parseIntEnv(env.SESSION_TTL_HOURS, 12),
     pendingSessionTtlMinutes: parseIntEnv(env.PENDING_SESSION_TTL_MINUTES, 10),

@@ -3,12 +3,12 @@ import type { Config } from "../config.js";
 import { formatIsoDate } from "../lib/dateFormat.js";
 
 /**
- * Creates the single shared `pg.Pool` for the process. Given the 0.5 vCPU /
- * 512 MB budget for the whole API container, the pool is small on purpose
- * (`max: 5` by default) — with 0.5 vCPU the process cannot usefully execute
- * many queries concurrently anyway, and a large pool mostly wastes memory
- * (each `pg` connection holds its own buffers) while risking exhausting
- * Postgres's own `max_connections` once other services share the instance.
+ * Creates the single shared `pg.Pool` for the process. `max: 5` by default
+ * (dev, tests). Production sets PG_POOL_MAX in ops/docker-compose.prod.yml:
+ * authorize and capture hold their connection, idle in a transaction, while
+ * the acquirer answers (0.1-0.4 s), so the pool size, not the 0.5 vCPU,
+ * caps payment throughput first. Postgres's max_connections there is sized
+ * to match (CAPACITY.md).
  *
  * This should be created once in `index.ts` and never per-request.
  */
@@ -16,6 +16,9 @@ export function createPool(config: Config): Pool {
   const pool = new Pool({
     connectionString: config.databaseUrl,
     max: config.pgPoolMax,
+    // Idle connections above `min` close after idleTimeoutMillis; `min` stay
+    // open, so a burst after a quiet spell does not wait for new connections.
+    min: config.pgPoolMin,
     idleTimeoutMillis: config.pgPoolIdleTimeoutMs,
     connectionTimeoutMillis: config.pgPoolConnectionTimeoutMs,
   });
@@ -43,4 +46,15 @@ export function createPool(config: Config): Pool {
   }
 
   return pool;
+}
+
+/**
+ * Opens `pool`'s `min` connections up front (index.ts, at boot). Opening a
+ * Postgres connection costs a process fork and a SCRAM handshake; doing
+ * dozens of them at once inside the first burst of traffic made that burst
+ * queue for the pool.
+ */
+export async function warmPool(pool: Pool, min: number): Promise<void> {
+  const clients = await Promise.all(Array.from({ length: min }, () => pool.connect()));
+  for (const client of clients) client.release();
 }

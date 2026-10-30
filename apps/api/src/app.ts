@@ -5,6 +5,7 @@ import { createAcquirerSimulator } from "./acquirer/simulator.js";
 import { cookiesPlugin } from "./plugins/cookies.js";
 import { multipartPlugin } from "./plugins/multipart.js";
 import { errorHandler } from "./plugins/errorHandler.js";
+import { loadSheddingPlugin } from "./plugins/loadShedding.js";
 import { healthRoutes } from "./routes/health.js";
 import { authRoutes } from "./routes/auth.js";
 import { businessProfileRoutes } from "./routes/businessProfile.js";
@@ -47,6 +48,11 @@ export function buildApp(config: Config, pool: Pool, options: BuildAppOptions = 
   app.decorate("webhookTransport", options.webhookTransport ??
       createFetchTransport({ allowPrivateNetworks: config.webhookAllowPrivateTargets }));
 
+  // First, so an overloaded API refuses new work before parsing cookies or bodies.
+  app.register(loadSheddingPlugin, {
+    maxPoolWaiting: config.loadShedMaxPoolWaiting,
+    maxEventLoopDelayMs: config.loadShedMaxEventLoopDelayMs,
+  });
   app.register(cookiesPlugin);
   app.register(multipartPlugin, { config });
   app.setErrorHandler(errorHandler);

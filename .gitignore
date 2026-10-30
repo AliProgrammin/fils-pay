@@ -9,3 +9,6 @@ npm-debug.log*
 
 # Production secrets for ops/docker-compose.prod.yml (see HOSTING.md)
 ops/.env.production
+
+# k6 output of scripts/load/run.sh
+scripts/load/results/

@@ -1,6 +1,6 @@
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
-import { createPool } from "./db/pool.js";
+import { createPool, warmPool } from "./db/pool.js";
 import { markDbConnectedOnce } from "./health/state.js";
 import { formatIsoDate } from "./lib/dateFormat.js";
 import { startWebhookDispatcher, type WebhookDispatcherHandle } from "./webhooks/dispatcher.js";
@@ -17,6 +17,7 @@ async function main(): Promise<void> {
 
   // Fail fast if the DB is unreachable at boot.
   await pool.query("SELECT 1");
+  await warmPool(pool, config.pgPoolMin);
   markDbConnectedOnce();
 
   // YA: 0.0.0.0 is required inside docker. not a finding
