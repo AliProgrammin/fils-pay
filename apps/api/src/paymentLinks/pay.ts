@@ -3,6 +3,7 @@ import { toFils, type Fils } from "@filspay/money";
 import { authorizeTransaction } from "../payments/authorize.js";
 import { captureTransaction } from "../payments/capture.js";
 import { voidTransaction } from "../payments/void.js";
+import { derivePublicStatus } from "./status.js";
 import type { AcquirerSimulator, SimulatedCardInput } from "../acquirer/types.js";
 
 export interface PayPaymentLinkInput {
@@ -29,6 +30,8 @@ interface ClaimedLinkRow {
 interface LinkStatusRow {
   status: string;
   expires_at: Date;
+  reserved_at: Date | null;
+  payment_in_flight: boolean;
 }
 
 /**
@@ -329,9 +332,13 @@ async function classifyClaimFailure(
   reservationTimeoutSeconds: number,
   expiryCheckTime: Date,
 ): Promise<PayPaymentLinkResult> {
-  const result = await pool.query<LinkStatusRow>(`SELECT status, expires_at FROM payment_links WHERE token = $1`, [
-    token,
-  ]);
+  const result = await pool.query<LinkStatusRow>(
+    `SELECT pl.status, pl.expires_at, pl.reserved_at,
+            EXISTS (SELECT 1 FROM transactions t
+                     WHERE t.id = pl.pending_transaction_id AND t.status <> 'voided') AS payment_in_flight
+       FROM payment_links pl WHERE pl.token = $1`,
+    [token],
+  );
   const row = result.rows[0];
 
   if (!row) {
@@ -344,6 +351,16 @@ async function classifyClaimFailure(
     return { statusCode: 409, body: { error: "payment_link_canceled" } };
   }
   if (row.status === "active" && row.expires_at.getTime() <= expiryCheckTime.getTime()) {
+    return { statusCode: 410, body: { error: "payment_link_expired" } };
+  }
+  if (
+    row.status === "reserved" &&
+    derivePublicStatus(
+      { status: row.status, expiresAt: row.expires_at, reservedAt: row.reserved_at, paymentInFlight: row.payment_in_flight },
+      reservationTimeoutSeconds,
+    ) === "expired"
+  ) {
+    // A timed-out reservation on a link past its expiry: report it as expired.
     return { statusCode: 410, body: { error: "payment_link_expired" } };
   }
   if (row.status === "reserved") {
