@@ -2,7 +2,7 @@
 
 Every code fix below has a test that failed on the old code and passes now, the smallest change that works, its own commit, and a plain-English explanation (what is wrong, why it happens, what it breaks). The few documentation-only fixes (false comments and docs) say so in their entry.
 
-**93 bugs fixed**: 18 critical, 37 high, 27 medium, 11 low.
+**94 bugs fixed**: 18 critical, 37 high, 27 medium, 12 low.
 
 Ground truth we used: the case brief, `docs/ARCHITECTURE.md`, the ADRs and Yousif's handover. We did **not** follow `CLAUDE.md`, `AGENTS.md` or `.cursorrules`: they contain false rules (cents instead of fils, UTC windows, "never change tests", "Math.random is fine") that protect the bugs.
 
@@ -13,13 +13,13 @@ When an existing test asserted the buggy behaviour, we changed it in the same co
 | | Before | After |
 |---|---|---|
 | Fresh database | migrations stop at 0054 | 84 migrations + seed pass |
-| TypeScript tests | 414 / 430 pass | 583 / 583 pass |
+| TypeScript tests | 414 / 430 pass | 586 / 586 pass |
 | Go tests | 54 / 54 pass | 84 / 84 pass |
 | Refunds (FP-300) | `501 Not Implemented` | end to end: API, ledger, fees, payouts, webhook, timeline, reports, reconciliation |
 
 Run the refunds proof yourself: `scripts/demo_refund.sh` (see the comment at the top for setup). It ends in `RESULT: ALL PASS`.
 
-How we found them: three independent audit rounds, then a separate agent that saw only the requirements (not our fixes) re-tested them. Its first pass on 45 requirements found 44 correct; the one miss (A12) and the one refunds gap (R8) are fixed. Bugs we could not prove with a test are not listed.
+How we found them: three independent audit rounds, then a separate agent that saw only the requirements (not our fixes) re-tested them. Its first pass on 45 requirements found 44 correct, the refunds check found one gap, and the final pass on 23 new requirements found 22 correct. Every miss (A12, R8, H10) is fixed. Bugs we could not prove with a test are not listed.
 
 ## All bugs
 
@@ -112,6 +112,7 @@ How we found them: three independent audit rounds, then a separate agent that sa
 | E7 | Low | Dashboard crashes on a negative amount | E7 | Data, scripts, DB | [explain](docs/bugs/wave-e.md#e7-dashboard-crashes-on-a-negative-amount) |
 | G10 | Low | Bad daemon timing values crash or stall the daemon | none | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g10-bad-daemon-timing-values-crash-or-stall-the-daemon) |
 | G9 | Low | Batch event lookups scan the whole transaction_events table | none (auditor saw a Parallel Seq Scan at 401k rows) | Settlement money (Go) | [explain](docs/bugs/hunt-3-g.md#g9-batch-event-lookups-scan-the-whole-transactionevents-table) |
+| H10 | Low | Three inputs still crashed the API with a 500 | none (found by our blind verifier after H3) | Payments and API | [explain](docs/bugs/hunt-2.md#h10-three-inputs-still-crashed-the-api-with-a-500) |
 | H7 | Low | api_keys.revoke_after is ignored | none | Payments and API | [explain](docs/bugs/hunt-2.md#h7-apikeysrevokeafter-is-ignored) |
 | H8 | Low | Dead BD parser with the wrong unit | none | Payments and API | [explain](docs/bugs/hunt-2.md#h8-dead-bd-parser-with-the-wrong-unit) |
 | H9 | Low | No index for releasing a hold | none | Payments and API | [explain](docs/bugs/hunt-2.md#h9-no-index-for-releasing-a-hold) |
