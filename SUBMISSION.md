@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Repository | https://github.com/AliProgrammin/fils-pay (default branch `handover-fixes`) |
+| Repository | https://github.com/AliProgrammin/fils-pay (branch `main`; the untouched handover is branch `original-handover`) |
 | Running server | https://64-227-145-174.sslip.io (Dilmune Cloud server **Orbit**, 1 vCPU / 2 GB) |
 | Merchant dashboard | `/dashboard/login`: `finance@alpharetail.example` / `FilsPaySeed!2026` |
 | Admin console | `/admin/`: `finance@filspay.test` / `FilsPayAdminSeed!2026` |
@@ -15,10 +15,10 @@
 
 | | Before | After |
 |---|---|---|
-| Bugs found and fixed | | **103** (18 critical, 40 high, 32 medium, 13 low) |
-| TypeScript tests | 414 / 430 pass | **605 / 605** |
+| Bugs found and fixed | | **105** (18 critical, 41 high, 33 medium, 13 low) |
+| TypeScript tests | 414 / 430 pass | **708 / 708** |
 | Go tests | 54 / 54 | **84 / 84** |
-| Fresh database | migrations failed | 85 migrations run clean |
+| Fresh database | migrations failed | 86 migrations run clean |
 | Refunds (FP-300) | `501` / `404` | **live, end to end** |
 | Capacity (live server) | not measured | **about 70 concurrent users**, 12 checkouts/s, pay p95 1.4 s, 0 errors |
 
