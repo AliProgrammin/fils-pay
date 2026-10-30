@@ -2,8 +2,11 @@
 
 ## Our estimate (measured on the live Dilmune server)
 
-**About 70 concurrent checkout users: about 12 completed checkouts per
-second, about 63 HTTP requests per second, pay call p95 about 1.4 s.**
+**About 70 concurrent checkout users by our strict rule (pay p95 under
+1.5 s, 0 failed checkouts, 0 server errors, 0 refused); up to about 90
+users with every checkout completing (14.0 checkouts/s, pay p95 2.17 s,
+0 failed, 0 refused).** At 70 users: 12.4 completed checkouts per second,
+about 63 HTTP requests per second, pay call p95 1.41 s.
 0 failed checkouts, 0 server errors, 0 refused requests. Measured on the
 live server `Orbit` (1 vCPU, 2 GB, Bangalore) over HTTPS, from a laptop in
 Bahrain, with `scripts/load/run.sh` (scenario `link`: create a payment link,

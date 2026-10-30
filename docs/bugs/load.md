@@ -65,6 +65,7 @@ Found while load testing the production stack with the hosting limits
 **Effect on existing data:** No money row is wrong: captured payments are in the ledger; only the link status is stale. Links stuck before the fix are cleared by the L5 recovery sweep, which also runs at boot.
 
 ### L4 The bank simulator's memory grows without limit
+- Type: Clean-up (bank simulator only; a real bank replaces it). No effect on users, money, data or security in production.
 
 - **Severity:** Medium (capacity)
 - **Ticket:** none (found by the load test)

@@ -41,7 +41,7 @@
 - Effect on existing data: Lines exported before the fix have no residue posting, so their residue is still in `card_scheme_clearing` with no record (for the 2026-09-14 Delta file: gross 20,000,123 fils, sum of `amount_fils` 19,998,970). We did not backfill. Finance must post the residue for old lines. Query: `SELECT l.id, l.transaction_id, l.amount_fils FROM scheme_export_lines l WHERE NOT EXISTS (SELECT 1 FROM ledger_entries e WHERE e.transaction_id = l.transaction_id AND e.account_id = 'scheme_rounding_residue');` (lines with residue 0 need nothing).
 
 ### C4 Platform volume counter overflows at 2,147,483,647 fils
-- Severity: Critical. Ticket: platform volume tier (HANDOVER). Where: `db/migrations/0049_platform_stats.sql`, `apps/settlement/internal/settlement/platform_volume.go:13-27`.
+- Severity: Medium (first rated Critical; lowered because the real counter is far below the limit and no fee was ever charged wrong; it is a time bomb, not a loss today). Ticket: platform volume tier (HANDOVER). Where: `db/migrations/0049_platform_stats.sql`, `apps/settlement/internal/settlement/platform_volume.go:13-27`.
 - What is wrong: `platform_stats.total_processed_fils` is INTEGER. Go reads it as `int32`, adds the batch gross in Go, and writes it back.
 - Why it happens: INTEGER and int32 max is 2,147,483,647 fils (2,147,483.647 BD). The tier threshold is 2,000,000,000 fils, only 7% below. The Go add wraps silently.
 - What it breaks: at 2,147,000,000 fils, one 1,000.000 BD batch writes -2,146,967,296. The tier bonus (15 bps) turns off for every merchant, and fees jump back up. The counter is wrong forever after.
@@ -81,7 +81,7 @@
 - Effect on existing data: The fix stops new rewrites only. Paid batches that an old run rewrote keep the wrong `fee_fils` and `net_payout_fils`, and their adjustment legs stay in the ledger. We did not restore them; finance must compare each with the bank instruction and reverse wrong legs. Query: `SELECT DISTINCT b.id, b.batch_date, b.fee_fils, b.net_payout_fils FROM settlement_batches b JOIN ledger_entries e ON e.settlement_batch_id = b.id WHERE e.description = 'MDR recalculation adjustment' AND b.status = 'paid';`
 
 ### C7 Daily close runs at 03:00 Bahrain, not after midnight
-- Severity: High. Ticket: case brief "settlement closes every day at midnight Bahrain time (UTC+3)". Where: `apps/settlement/internal/scheduler/daemon.go:80-90`, `apps/settlement/internal/settlement/window.go:42`.
+- Severity: Medium (first rated High; lowered because the right business day was closed with the right amounts, only about 3 hours late). Ticket: case brief "settlement closes every day at midnight Bahrain time (UTC+3)". Where: `apps/settlement/internal/scheduler/daemon.go:80-90`, `apps/settlement/internal/settlement/window.go:42`.
 - What is wrong: the daemon calls `BusinessDayWindow(time.Now().UTC())`. `BusinessDayWindow` takes the calendar date from the value's own location, so it gets the UTC date.
 - Why it happens: from 00:00 to 03:00 Bahrain, the UTC date is still yesterday. So "today" is one day behind, and the day that "just ended" is two days ago (already closed, a no-op).
 - What it breaks: with a 15 min delay, the close of 14 May should run at 00:15 on 15 May Bahrain time. It runs at 03:15. Merchants are paid about 3 hours late every day, and the logs ("close ~03:15 local") show it.

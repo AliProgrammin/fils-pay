@@ -144,7 +144,8 @@ taking the whole machine. In the prod file alone they add up to 1.0 CPU and
 from 0.35 to 0.90 CPU. The caps then add up to about 1.95 CPU; they are
 caps, not reservations, and all services share the one vCPU. A first live
 run with Postgres at 0.30 served only about 30 users; at 0.90 it serves
-about 70. Load test results, the capacity estimate and how to rerun them:
+about 70 by our strict rule (pay p95 under 1.5 s, 0 failed checkouts), and
+up to about 90 with every checkout completing. Load test results, the capacity estimate and how to rerun them:
 [CAPACITY.md](CAPACITY.md).
 
 ## Health checks, restarts and safe redeploys

@@ -1,10 +1,10 @@
 # Refunds (FP-212 / FP-300) bug fixes
 
-Each entry: one bug, one failing test first, one smallest fix, one commit.
+Each entry: one bug, one failing test first, one smallest fix, one commit. R1 to R7 were found while building refunds (FP-300).
 
 ### R7 Every refund fails with `chk_refunds_reason_not_null`
-- Severity: Critical
-- Ticket: FP-300
+- Severity: Medium (first rated Critical; lowered because refunds (FP-300) were not live yet, so no merchant or customer was hit; it blocked the feature we were building)
+- Ticket: FP-300. Found while building refunds (FP-300).
 - Where: `apps/api/src/payments/processRefund.ts` (the `INSERT INTO refunds`)
 - What is wrong: Every refund failed at the last step. 11 refund tests failed with `chk_refunds_reason_not_null`.
 - Why it happens: Migration 0070 sets `refunds.reason` default to `'unspecified'` and adds a CHECK that the reason is not NULL. Its comment says the CHECK is there "to catch application code that accidentally passes NULL". The code passed `input.reason ?? null`, so an explicit NULL went in. A column default only applies when the column is left out, not when NULL is passed.
@@ -16,7 +16,7 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 
 ### R1 Two refunds at the same time both succeed
 - Severity: Critical
-- Ticket: FP-209
+- Ticket: FP-209. Found while building refunds (FP-300).
 - Where: `apps/api/src/payments/processRefund.ts` (the old three-step flow: validate, acquirer, journal)
 - What is wrong: Two refunds for the full amount, sent at the same time with different idempotency keys, both succeeded. The cardholder got the money back twice, and `refunded_fils` showed only one of them.
 - Why it happens: Step 1 read the transaction with no `FOR UPDATE`, validated, and committed. Step 2 called the acquirer outside any transaction. Step 3 wrote `refunded_fils = old value + amount` from the stale step-1 read. Both requests read `refunded_fils = 0`, both passed, both paid out, and the last write won. Capture (`capture.ts`) does not have this bug because it holds a row lock across the acquirer call.
@@ -28,7 +28,7 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 
 ### R2 Refund limit uses the authorized amount, not the captured amount
 - Severity: Critical
-- Ticket: FP-300
+- Ticket: FP-300. Found while building refunds (FP-300).
 - Where: `apps/api/src/payments/processRefund.ts` (`refundableFils`), `apps/api/src/payments/refundValidation.test.ts` (fixture)
 - What is wrong: A merchant could refund more than was captured. Authorize 10.000 BD, capture 4.000 BD, and a refund of up to 10.000 BD was accepted.
 - Why it happens: The code computed `refundable = amount_fils (authorized) - refunded_fils`. Money that was only authorized was never taken from the card, so it cannot go back. The unit test fixture built `refundableFils` with the same wrong formula, so the tests agreed with the bug. Migration 0043 only checked `refunded_fils >= 0`.
@@ -40,7 +40,7 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 
 ### R3 A merchant can refund another merchant's transaction
 - Severity: Critical
-- Ticket: FP-300
+- Ticket: FP-300. Found while building refunds (FP-300).
 - Where: `apps/api/src/refunds/initiateMerchantRefund.ts` (transaction lookup), `apps/api/src/payments/processRefund.ts` (row lock query)
 - What is wrong: Merchant B could send merchant A's transaction id and the refund went through. It was booked against merchant A (A's money went to the cardholder).
 - Why it happens: Both lookups used `WHERE id = $1` only, and `initiateMerchantRefund` then passed `txn.merchant_id` (the owner of the row) on to `processRefund` instead of the authenticated merchant. The path scope check only compares the URL merchant id with the session, not the transaction's owner. The test that would have caught this was deleted as "redundant".
@@ -52,7 +52,7 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 
 ### R5 Fee reversal does not add up to the fee charged
 - Severity: High
-- Ticket: FP-300
+- Ticket: FP-300. Found while building refunds (FP-300).
 - Where: `packages/money/src/fils.ts` (`calculateRefundFee`), `apps/api/src/payments/processRefund.ts` (fee base query)
 - What is wrong: (1) Partial refunds did not reverse the whole fee. Fee 25 fils on a 1.000 BD capture, ten refunds of 0.100 BD: each reversed round(2.5) = 2, so 20 in total, not 25. The merchant lost 5 fils for a payment that was fully refunded. (2) For a merchant with a negotiated discount, the refund reversed the gross MDR, not the net fee the merchant was really charged, so the merchant got the discount back a second time.
 - Why it happens: (1) `calculateRefundFee` rounded each refund alone, with no memory of earlier refunds. Yousif's handover says it "sums back to the original fee across partials"; it did not. (2) The fee base summed only the `platform_fee_revenue` credits and ignored the `capture: negotiated discount adjustment` debits.
@@ -64,7 +64,7 @@ Each entry: one bug, one failing test first, one smallest fix, one commit.
 
 ### R6 A partial capture that is fully refunded never shows `refunded`
 - Severity: Medium
-- Ticket: FP-300
+- Ticket: FP-300. Found while building refunds (FP-300).
 - Where: `apps/api/src/payments/refundState.ts` (`nextStatusAfterRefund`)
 - What is wrong: Authorize 10.000 BD, capture 4.000 BD, refund the 4.000 BD: the status stayed `partially_captured`. A partial refund of it also stayed `partially_captured`. The timeline said "refunded" while the status said the payment was still open for capture.
 - Why it happens: The function returned `partially_captured` first whenever `captured < authorized`, before it looked at refunds. This contradicts the type's own contract ("refunded means refunded_fils === captured_fils") and Huda's finance rule ("a transaction is refunded when every fils we captured went back").

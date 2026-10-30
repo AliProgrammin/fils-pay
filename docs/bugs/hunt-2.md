@@ -89,6 +89,7 @@
 - Effect on existing data: No row is changed. Keys past `revoke_after` stop working at once. Keys used after that time: `SELECT id, merchant_id, revoke_after, last_used_at FROM api_keys WHERE revoke_after < now() AND last_used_at > revoke_after;`
 
 ### H8 Dead BD parser with the wrong unit
+- Type: Clean-up (dead code, nothing calls it). No effect on users, money, data or security in production.
 - Severity: Low
 - Ticket: none
 - Where: apps/api/src/payments/discountAdjustment.ts (`parsePromotionalDiscountFils`)
@@ -128,6 +129,7 @@
 - Effect on existing data: None. Request-time checks only. A link that one of these calls left reserved was freed at the reservation timeout.
 
 ### H11 Dead v1 transaction routes with an unauthenticated capture endpoint
+- Type: Clean-up (dead code, never registered). No effect on users, money, data or security in production.
 - Severity: Low
 - Ticket: none (found in the final clean-up)
 - Where: apps/api/src/v1/routes/transactions.ts and apps/api/src/v1/fees/calculateFee.ts (both removed)
@@ -140,6 +142,7 @@
 - Effect on existing data: None. The route was never registered, so it never ran.
 
 ### H12 An expired card is approved
+- Type: Clean-up (bank simulator only; a real bank declines expired cards). No effect on users, money, data or security in production.
 - Severity: Medium
 - Ticket: none (found in the final card-handling review)
 - Where: apps/api/src/acquirer/simulator.ts (`isExpired`, used by `authorize`)

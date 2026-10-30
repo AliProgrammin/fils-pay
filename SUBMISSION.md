@@ -17,16 +17,16 @@
 
 | | Before | After |
 |---|---|---|
-| Bugs found and fixed | | **105** (18 critical, 40 high, 33 medium, 14 low) |
-| TypeScript tests | 414 / 430 pass | **711 / 711** |
+| Bugs found and fixed | | **107 product bugs** (16 critical, 41 high, 35 medium, 15 low) **+ 8 clean-up items** |
+| TypeScript tests | 414 / 430 pass | **733 / 733** |
 | Go tests | 54 / 54 | **86 / 86** |
 | Fresh database | migrations failed | 86 migrations run clean |
 | Refunds (FP-300) | `501` / `404` | **live, end to end** |
-| Capacity (live server) | not measured | **about 70 concurrent users**, 12 checkouts/s, pay p95 1.4 s, 0 errors |
+| Capacity (live server) | not measured | **about 70 concurrent users** by the strict rule (pay p95 under 1.5 s, 0 failed checkouts): 12.4 checkouts/s, pay p95 1.41 s; **up to about 90** with every checkout completing (pay p95 2.17 s) |
 
 ## 2. Findings report (correctness)
 
-The full report is [BUGS.md](BUGS.md): every bug with severity, ticket, area and a write-up (what is wrong, why it happens, what it breaks, how we found and reproduced it, the fix, the test, the effect on existing data) in [docs/bugs/](docs/bugs/). BUGS.md ends with [Root causes](BUGS.md#root-causes) (8 groups) and [Decisions and open risks](BUGS.md#decisions-and-open-risks). 97 of the 105 fixes have a test that failed on the old code and passes now; the other 8 (setup S1 to S3, speed L1, L2, L4, docs B9, dead code H11) are proven another way, as BUGS.md says. Fixes are small commits, each with the why in its message. The security review (threat model, security bugs, live header checks) is [SECURITY.md](SECURITY.md).
+The full report is [BUGS.md](BUGS.md): every bug with severity, ticket, area and a write-up (what is wrong, why it happens, what it breaks, how we found and reproduced it, the fix, the test, the effect on existing data) in [docs/bugs/](docs/bugs/). BUGS.md ends with [Root causes](BUGS.md#root-causes) (8 groups) and [Decisions and open risks](BUGS.md#decisions-and-open-risks). We count **107 product bugs + 8 clean-up items** (115 entries). A clean-up item has no effect on users, money, data or security in production: D9 (test only), D12 (dev-only key), H8, H11 and W6 (dead code), B9 (docs only), L4 and H12 (bank simulator only). 102 of the 107 product bugs (107 of all 115 entries) have a test that failed on the old code and passes now; the other 8 entries (setup S1 to S3, speed L1, L2, L4, docs B9, dead code H11) are proven another way, as BUGS.md says. Fixes are small commits, each with the why in its message. The security review (threat model, security bugs, live header checks) is [SECURITY.md](SECURITY.md).
 
 The five we lead with:
 
@@ -52,10 +52,10 @@ Proof: `scripts/demo_refund.sh` (29 checks, all pass) and `scripts/smoke_hosted.
 
 Full method and numbers: [CAPACITY.md](CAPACITY.md). Load test: `scripts/load/` (k6, checkout scenario: create a payment link, open checkout, pay, double-click check).
 
-- **Estimate: about 70 concurrent checkout users** on the live server: about 12 completed checkouts per second, about 63 HTTP requests per second, pay call p95 1.4 s, 0 failed checkouts, 0 server errors. These are the rules the estimate uses (pay p95 under 1.5 s, 0 failed checkouts, 0 errors, 0 refused). Our rule of p95 under 300 ms for create link and read link is not met on the live server: create link p95 318, 333 and 365 ms at 30, 50 and 70 users, read link p95 389 ms at 70. Most of that is the network path from Bahrain to Bangalore: the static checkout page alone has a median of about 155 ms.
+- **Estimate: about 70 concurrent checkout users by the strict rule** (pay p95 under 1.5 s, 0 failed checkouts, 0 server errors, 0 refused); **up to about 90 users with every checkout completing** (14.0 checkouts/s, pay p95 2.17 s, 0 failed, 0 refused). At 70 users on the live server: 12.4 completed checkouts per second, about 63 HTTP requests per second, pay call p95 1.41 s. Our rule of p95 under 300 ms for create link and read link is not met on the live server: create link p95 318, 333 and 365 ms at 30, 50 and 70 users, read link p95 389 ms at 70. Most of that is the network path from Bahrain to Bangalore: the static checkout page alone has a median of about 155 ms.
 - **Past the limit:** at 90 users every checkout still completes (pay p95 2.2 s); at 120 users it is past the limit: checkouts drop to 10.7/s, pay p95 rises to 7.4 s, and 92 requests (0.6/s) are refused with `503` + `Retry-After`; 0 failed checkouts, 0 server errors. The API refuses work when its database queue is full, not when it gets slow, so accepted payments slow down before the excess is refused. At 400 users (laptop test): 0 errors other than 503s, median 1 ms to get the 503.
 - **Restart and recovery:** we killed the API (`kill -9`) in the middle of a 200-user test on the live server. Docker restarted it; it was healthy again in 8 s (6 s on the laptop). 47 checkouts failed during the test and the client saw an error for each; none was charged twice and the ledger stayed balanced. That test found L5 (links cut off mid-payment stayed reserved); the fix is a recovery sweep, see CAPACITY.md.
-- **Five bugs found by the load and crash tests** and fixed: L1 ledger check scanned the whole ledger on every write, L2 hot API-key row, L3 payment cut off by a crash left the card held, L4 unbounded simulator memory, L5 links cut off by a crash stayed reserved for ever (now a recovery sweep).
+- **Four bugs and one clean-up item found by the load and crash tests** and fixed: L1 ledger check scanned the whole ledger on every write, L2 hot API-key row, L3 payment cut off by a crash left the card held, L4 unbounded simulator memory (clean-up: bank simulator only), L5 links cut off by a crash stayed reserved for ever (now a recovery sweep).
 
 ## 5. Hosting architecture
 

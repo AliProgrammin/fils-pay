@@ -63,6 +63,7 @@ Found in a last sweep of scripts, docs and auth paths (W1 to W6), and in a black
 - Effect on existing data: None.
 
 ### W6 Dead settlement client call with the wrong unit
+- Type: Clean-up (dead code, nothing calls it). No effect on users, money, data or security in production.
 - Severity: Low
 - Ticket: none
 - Where: apps/api/src/admin/settlementClient.ts:276-298 (`notifySettlementRefundAdjustment`)

@@ -95,6 +95,7 @@
 - Effect on existing data: None in the database: references stay as the merchant sent them, and the fix acts only when the CSV is written. CSV files already downloaded are not changed. To find risky references: `SELECT id, merchant_id, reference FROM transactions WHERE reference ~ '^[=+@\t\r-]';`
 
 ### B9 Ops docs say the settlement daemon falls back to `dev-token`
+- Type: Clean-up (docs only). No effect on users, money, data or security in production.
 - Severity: Low (docs) / Ticket: none / Where: ops/README.md:73, ops/docker-compose.yml:106
 - What is wrong: both say that when `SETTLEMENT_INTERNAL_TOKEN` is not set, the settlement daemon uses `dev-token`, so "nothing extra is needed" for local runs.
 - Why it happens: the comments were not updated when the code changed. `apps/settlement/internal/config/config.go` `RequireInternalToken` returns an error when the token is empty, and `cmd/settlement/main.go` calls it for `daemon` and exits. There is no fallback value anywhere in the Go code. FH's note in the compose file already said "it exits at boot without the token for me".

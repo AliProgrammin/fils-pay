@@ -35,7 +35,7 @@ and test in [BUGS.md](BUGS.md).
   append-only ledger, refund columns and indexes).
 
 ### Fixed
-- 105 bugs: 18 critical, 40 high, 33 medium, 14 low. See [BUGS.md](BUGS.md).
+- 107 product bugs (16 critical, 41 high, 35 medium, 15 low) and 8 clean-up items. See [BUGS.md](BUGS.md).
 
 ### Removed
 - Dead `apps/api/src/v1/` tree with an unauthenticated capture route (H11).

@@ -11,6 +11,7 @@
 - Effect on existing data: Deliveries already marked failed or exhausted stay that way, so merchants missed those events. They can be sent again with the admin replay (it now keeps the original id, see D11). To list them: `SELECT id, endpoint_id, event_type, status FROM webhook_deliveries WHERE status IN ('failed', 'exhausted') AND response_status_code = 401;`
 
 ### D9 Flaky backoff test: "failing endpoint: backoff/exhaustion ..."
+- Type: Clean-up (test code only). No effect on users, money, data or security in production.
 - Severity: Medium. Ticket: none. Where: apps/api/src/webhooks/dispatcher.test.ts:195 and :215
 - What is wrong: the test asserts `backoffDelayMs(1, config) === 1000`, but the function adds a random +/-10 % jitter, so it returns 900..1100 (seen: 926, 950, 1081).
 - Why it happens: the test calls the jittered function with the default `Math.random`. The code is correct (jitter is the documented design); the test is wrong.
@@ -51,6 +52,7 @@
 - Effect on existing data: Replays already sent carried new ids; they cannot be recalled, and a receiver may have processed them twice. We did not change old rows. To list them: `SELECT r.id, r.delivery_event_id, o.delivery_event_id AS original_id FROM webhook_deliveries r JOIN webhook_deliveries o ON o.id = r.replay_of_delivery_id WHERE r.delivery_event_id <> o.delivery_event_id;`
 
 ### D12 Dev fallback webhook encryption key is 34 bytes, so the API cannot boot in dev
+- Type: Clean-up (dev-only setting; production has no fallback). No effect on users, money, data or security in production.
 - Severity: Medium. Ticket: none. Where: apps/api/src/config.ts:153
 - What is wrong: `DEV_FALLBACK_WEBHOOK_KEY_B64` decodes to "test-key-for-dev-only-not-for-prod", which is 34 bytes. AES-256 needs exactly 32.
 - Why it happens: the fallback string was never checked against the 32-byte rule that `loadConfig` itself enforces.
