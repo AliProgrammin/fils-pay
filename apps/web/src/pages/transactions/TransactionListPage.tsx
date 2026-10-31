@@ -182,7 +182,7 @@ export function TransactionListPage() {
                 <td className="dash-nowrap" data-label="Occurred">
                   <Link to={`/dashboard/transactions/${txn.id}`} state={{ listSearch }}>{dateTime(txn.occurredAt)}</Link>
                 </td>
-                <td data-label="Reference"><span className="dash-ref" title={txn.reference ?? undefined}>{dash(txn.reference)}</span></td>
+                <td data-label="Reference"><span className="dash-ref-cut" title={txn.reference ?? undefined}>{dash(txn.reference)}</span></td>
                 <td data-label="Status">
                   <StatusChip status={txn.status} />
                 </td>

@@ -674,7 +674,7 @@
 }
 
 /* A long reference (up to 255 characters, no spaces) must not stretch the table. */
-.dash-ref {
+.dash-ref-cut {
   display: inline-block;
   max-width: 24ch;
   overflow: hidden;

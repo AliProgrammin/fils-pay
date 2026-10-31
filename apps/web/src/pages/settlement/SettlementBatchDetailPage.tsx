@@ -170,7 +170,7 @@ export function SettlementBatchDetailPage() {
                     <code>{truncateMiddle(line.transactionId, 18)}</code>
                   </Link>
                 </td>
-                <td data-label="Reference"><span className="dash-ref" title={line.reference ?? undefined}>{dash(line.reference)}</span></td>
+                <td data-label="Reference"><span className="dash-ref-cut" title={line.reference ?? undefined}>{dash(line.reference)}</span></td>
                 <td data-label="Status">
                   <StatusChip status={line.status} />
                 </td>
