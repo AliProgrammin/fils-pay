@@ -3,6 +3,7 @@ import { AdminLayout } from "./components/AdminLayout.js";
 import { RequireAdminAuth } from "./components/RequireAdminAuth.js";
 import { AdjustmentImportPage } from "./pages/adjustments/AdjustmentImportPage.js";
 import { CreditsPage } from "./pages/credits/CreditsPage.js";
+import { FraudNotesPage } from "./pages/fraudNotes/FraudNotesPage.js";
 import { LoginPage } from "./pages/login/LoginPage.js";
 import { MerchantListPage } from "./pages/merchants/MerchantListPage.js";
 import { MerchantDetailPage } from "./pages/merchants/MerchantDetailPage.js";
@@ -36,6 +37,7 @@ export const router = createBrowserRouter([
           { path: "/credits", element: <CreditsPage /> },
           { path: "/settlement", element: <SettlementPage /> },
           { path: "/adjustment-imports", element: <AdjustmentImportPage /> },
+          { path: "/fraud-notes", element: <FraudNotesPage /> },
           { path: "/webhooks", element: <WebhookReplayPage /> },
           { path: "/webhooks/:merchantId", element: <WebhookReplayPage /> },
           { path: "*", element: <NotFoundPage /> },

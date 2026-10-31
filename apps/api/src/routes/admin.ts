@@ -19,6 +19,7 @@ import { adminAdjustmentImportRoutes } from "./adminAdjustmentImport.js";
 import { adminAuthRoutes } from "./adminAuth.js";
 import { adminBalanceAdjustmentRoutes } from "./adminBalanceAdjustments.js";
 import { adminCreditRoutes } from "./adminCredits.js";
+import { adminFraudNotesRoutes } from "./adminFraudNotes.js";
 import { adminMerchantRoutes } from "./adminMerchants.js";
 import { adminMerchantsBulkRoutes } from "./adminMerchantsBulk.js";
 import { adminMerchantsRecomputeRoutes } from "./adminMerchantsRecompute.js";
@@ -89,6 +90,7 @@ export async function adminRoutes(app: FastifyInstance, options: AdminRoutesOpti
   await app.register(adminMerchantsBulkRoutes, { prefix: "/merchants" });
   await app.register(adminBalanceAdjustmentRoutes, { prefix: "/merchants" });
   await app.register(adminAdjustmentImportRoutes, { prefix: "/adjustment-imports" });
+  await app.register(adminFraudNotesRoutes, { prefix: "/fraud-notes" });
   // No prefix: this plugin's routes span two paths under /v1/admin — the
   // credits queue itself, and the create route on the merchant it credits.
   await app.register(adminCreditRoutes);

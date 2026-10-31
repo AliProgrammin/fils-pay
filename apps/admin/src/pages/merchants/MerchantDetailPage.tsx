@@ -4,6 +4,7 @@ import { listBackHref } from "../../pager.js";
 import { getMerchant, recomputeTransactionStatuses, setRefundsEnabled, submitKycReview } from "../../api/merchants.js";
 import { adjustBalance } from "../../api/balanceAdjustments.js";
 import { issueCredit } from "../../api/credits.js";
+import { listFraudNotes } from "../../api/fraudNotes.js";
 import { rotateApiKey } from "../../api/apiKeys.js";
 import { startImpersonation } from "../../api/impersonation.js";
 import { WEB_BASE_URL } from "../../api/client.js";
@@ -24,7 +25,7 @@ import {
 } from "../../format.js";
 import { useAction } from "../../components/useAction.js";
 import { useToast } from "../../components/Toast.js";
-import type { AdminMerchantDetail, CreditReasonCode, RotatedApiKey } from "../../types.js";
+import type { AdminMerchantDetail, CreditReasonCode, FraudNoteDto, RotatedApiKey } from "../../types.js";
 import { FieldNote, describedBy } from "../../components/FieldNote.js";
 import {
   ADJUST_REASON_MAX,
@@ -37,6 +38,9 @@ import {
   KYC_NOTES_MAX,
   lengthNote,
 } from "../../inputRules.js";
+
+/** How many of the merchant's latest fraud notes the detail page shows. */
+const RECENT_FRAUD_NOTES = 5;
 
 /** The reason codes the API accepts (admin/creditRequestValidation.ts). */
 const CREDIT_REASONS: Array<{ value: CreditReasonCode; label: string }> = [
@@ -71,6 +75,10 @@ export function MerchantDetailPage() {
   const [rotatedKey, setRotatedKey] = useState<RotatedApiKey | null>(null);
 
   const [impersonationUrl, setImpersonationUrl] = useState<string | null>(null);
+
+  const [fraudNotes, setFraudNotes] = useState<FraudNoteDto[]>([]);
+  const [fraudNotesMore, setFraudNotesMore] = useState(false);
+  const [fraudNotesError, setFraudNotesError] = useState<string | null>(null);
 
   const [creditAmountBhd, setCreditAmountBhd] = useState("");
   const [creditReason, setCreditReason] = useState<CreditReasonCode>("goodwill");
@@ -128,6 +136,25 @@ export function MerchantDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The acquirer's fraud-review verdicts for this merchant, newest first.
+  useEffect(() => {
+    if (!id || !isUuid(id)) return;
+    let cancelled = false;
+    setFraudNotesError(null);
+    listFraudNotes({ merchantId: id, limit: RECENT_FRAUD_NOTES })
+      .then((page) => {
+        if (cancelled) return;
+        setFraudNotes(page.items);
+        setFraudNotesMore(page.nextCursor !== null);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setFraudNotesError(errorMessage(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   async function handleKycReview(outcome: "approved" | "rejected"): Promise<void> {
     if (!id) return;
@@ -944,6 +971,50 @@ export function MerchantDetailPage() {
             </table>
           </div>
         )}
+      </div>
+
+      <div className="admin-panel">
+        <h2>Fraud notes</h2>
+        <p className="admin-muted">
+          The bank&apos;s fraud-review verdicts on this merchant&apos;s payments. Read-only: a
+          confirmed-fraud note still needs a person to decide on a void or a refund.
+        </p>
+        {fraudNotesError ? <p className="admin-error" role="alert">{fraudNotesError}</p> : null}
+        {fraudNotes.length === 0 && !fraudNotesError ? (
+          <p className="admin-empty">No fraud notes for this merchant.</p>
+        ) : fraudNotes.length > 0 ? (
+          <div className="admin-table-wrap">
+            <table className="admin-table admin-table-cards">
+              <thead>
+                <tr>
+                  <th>Received</th>
+                  <th>Outcome</th>
+                  <th>Transaction</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                {fraudNotes.map((item) => (
+                  <tr key={item.id}>
+                    <td className="admin-card-head">{formatDateTime(item.receivedAt)}</td>
+                    <td data-label="Outcome"><StatusChip value={item.outcome} /></td>
+                    <td data-label="Transaction">
+                      <code title={item.transactionId}>{item.transactionId.slice(0, 8)}…</code>
+                    </td>
+                    <td data-label="Note" className="admin-note">{item.note}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+        {fraudNotes.length > 0 ? (
+          <p>
+            <Link to={`/fraud-notes?merchantId=${merchant.id}`}>
+              {fraudNotesMore ? "See all fraud notes for this merchant" : "Open in Fraud notes"}
+            </Link>
+          </p>
+        ) : null}
       </div>
 
       <div className="admin-grid-2">

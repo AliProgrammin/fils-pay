@@ -18,9 +18,10 @@ interface TransactionMerchantRow {
 /**
  * Applies one acquirer callback: looks up the transaction it refers to and
  * appends a note recording the acquirer's own delayed verdict.
- * acquirer_callback_notes is append-only and surfaced on the transaction
- * timeline for support/finance to read — a fraud-review verdict is
- * informational, not a state transition, so this never touches
+ * acquirer_callback_notes is append-only. Operators read it in the admin
+ * console ("Fraud notes" page and the merchant detail page), through
+ * GET /v1/admin/fraud-notes — it is not on any transaction timeline. A
+ * fraud-review verdict is informational, not a state transition, so this never touches
  * transactions.status or the ledger; a confirmed-fraud outcome still needs
  * a human decision to void/refund, exactly as today.
  */

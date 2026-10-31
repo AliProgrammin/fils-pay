@@ -1169,6 +1169,20 @@ button:disabled {
 
 /* ---------- small screens ---------- */
 
+/* Six nav links must fit one header row on a 1280px screen. */
+@media (max-width: 90rem) {
+  .admin-header {
+    gap: 0 1rem;
+  }
+  .admin-brand-tag {
+    display: none;
+  }
+  .admin-header .admin-nav a {
+    padding: 0 0.5rem;
+    letter-spacing: 0.03em;
+  }
+}
+
 @media (max-width: 1000px) {
   .admin-header {
     padding: 0 1rem;
@@ -1687,4 +1701,10 @@ textarea[aria-invalid="true"] {
   .admin-table-cards td.admin-empty {
     grid-column: 1 / -1;
   }
+}
+
+/* A bank note can be one long word; it wraps instead of widening the table. */
+.admin-table td.admin-note {
+  min-width: 14rem;
+  overflow-wrap: anywhere;
 }

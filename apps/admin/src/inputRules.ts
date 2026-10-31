@@ -126,6 +126,32 @@ export function checkUuid(text: string): string | null {
     : "A merchant id has 36 characters, like 3f2a9c1e-0b4d-4e8a-9c2f-1a2b3c4d5e6f";
 }
 
+/** Null when the text is a transaction id (a UUID). */
+export function checkTransactionId(text: string): string | null {
+  return UUID_RE.test(text.trim())
+    ? null
+    : "A transaction id has 36 characters, like 3f2a9c1e-0b4d-4e8a-9c2f-1a2b3c4d5e6f";
+}
+
+/**
+ * Largest adjustment CSV file the import screen reads. The API takes JSON
+ * bodies up to Fastify's default 1 MiB (apps/api/src/app.ts sets no
+ * bodyLimit), and JSON escaping can double the CSV text (every newline or
+ * quote becomes two characters), so half of that always fits.
+ */
+export const CSV_FILE_MAX_BYTES = 512 * 1024;
+
+/** Null when a chosen file can be read into the CSV box. */
+export function checkCsvFile(file: { name: string; size: number }): string | null {
+  if (!file.name.toLowerCase().endsWith(".csv")) return "Choose a .csv file. Save the sheet as CSV first.";
+  if (file.size === 0) return "This file is empty. Choose the CSV with your rows.";
+  if (file.size > CSV_FILE_MAX_BYTES) {
+    const kb = (bytes: number) => `${Math.ceil(bytes / 1024)} KB`;
+    return `This file is too large (${kb(file.size)}). The most you can import at once is ${kb(CSV_FILE_MAX_BYTES)}. Split it into smaller files.`;
+  }
+  return null;
+}
+
 /** A short note once a text field is close to its limit, else null. */
 export function lengthNote(value: string, max: number): string | null {
   if (value.length >= max) return `You reached the limit of ${max} characters`;

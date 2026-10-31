@@ -385,3 +385,25 @@ export interface AdjustmentImportRowDetail {
   reason: string | null;
   ledgerEntryGroupId: string | null;
 }
+
+/** `cleared` or `confirmed_fraud` today (acquirer/callbacks.ts). */
+export type FraudNoteOutcome = "cleared" | "confirmed_fraud";
+
+/** One row of `GET /v1/admin/fraud-notes`: the acquirer's fraud-review
+ *  verdict on one transaction. Informational only: nothing on the
+ *  transaction or the ledger changes. */
+export interface FraudNoteDto {
+  id: string;
+  callbackId: string;
+  transactionId: string;
+  merchantId: string;
+  merchantName: string;
+  outcome: FraudNoteOutcome;
+  note: string;
+  receivedAt: string;
+}
+
+export interface FraudNoteListResponse {
+  items: FraudNoteDto[];
+  nextCursor: string | null;
+}

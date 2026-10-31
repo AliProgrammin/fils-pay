@@ -3,9 +3,12 @@ import { test } from "node:test";
 import {
   checkAdjustmentCsv,
   checkAmount,
+  checkCsvFile,
   checkEmail,
   checkOtp,
+  checkTransactionId,
   checkUuid,
+  CSV_FILE_MAX_BYTES,
   CREDIT_MEMO_MAX,
   digitsOnly,
   filterAmountInput,
@@ -94,4 +97,23 @@ test("an amount with more than 3 decimals is refused with a clear message, never
     assert.equal(checked.ok, false, "1.2345 BD must not become 1.234 BD");
     assert.match((checked as { message: string }).message, /at most 3 decimals/);
   }
+});
+
+test("checkTransactionId names a transaction, not a merchant", () => {
+  assert.equal(checkTransactionId(ID), null);
+  assert.match(checkTransactionId("abc") ?? "", /transaction id has 36 characters/);
+});
+
+test("checkCsvFile: a .csv file under the limit passes; too large or not .csv is refused", () => {
+  // The API takes JSON bodies up to Fastify's default 1 MiB; JSON escaping can
+  // double the CSV text, so the file limit is half of that.
+  assert.equal(CSV_FILE_MAX_BYTES, 512 * 1024);
+  assert.equal(checkCsvFile({ name: "march.csv", size: 1200 }), null);
+  assert.equal(checkCsvFile({ name: "MARCH.CSV", size: CSV_FILE_MAX_BYTES }), null);
+  assert.equal(
+    checkCsvFile({ name: "big.csv", size: CSV_FILE_MAX_BYTES + 1 }),
+    "This file is too large (513 KB). The most you can import at once is 512 KB. Split it into smaller files.",
+  );
+  assert.equal(checkCsvFile({ name: "report.xlsx", size: 100 }), "Choose a .csv file. Save the sheet as CSV first.");
+  assert.equal(checkCsvFile({ name: "empty.csv", size: 0 }), "This file is empty. Choose the CSV with your rows.");
 });

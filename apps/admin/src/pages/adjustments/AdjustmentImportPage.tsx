@@ -16,14 +16,15 @@ import type {
   AdjustmentImportSummary,
 } from "../../types.js";
 import { FieldNote, describedBy } from "../../components/FieldNote.js";
-import { checkAdjustmentCsv, FILENAME_MAX, lengthNote } from "../../inputRules.js";
+import { checkAdjustmentCsv, checkCsvFile, FILENAME_MAX, lengthNote } from "../../inputRules.js";
 
 const CSV_PLACEHOLDER = `merchantId,amount,reason
 00000000-0000-0000-0000-000000000000,4.750,statement correction`;
 
 /**
- * "Import adjustments" — paste a CSV of manual balance corrections and apply
- * them. There is no preview step: the paste box submits directly, because an
+ * "Import adjustments" — paste a CSV of manual balance corrections (or choose
+ * a .csv file, which is read in the browser into the same box) and apply
+ * them. There is no preview step: the box submits directly, because an
  * adjustment CSV is assembled and checked in the spreadsheet it came from.
  *
  * The history table below drills into per-row detail, which shows the raw
@@ -39,6 +40,8 @@ export function AdjustmentImportPage() {
   const [showCsvProblems, setShowCsvProblems] = useState(false);
   const csvNoteId = useId();
   const filenameNoteId = useId();
+  const fileNoteId = useId();
+  const [fileError, setFileError] = useState<string | null>(null);
   const csv = checkAdjustmentCsv(csvContent);
   const csvProblems = showCsvProblems ? csv.problems : [];
 
@@ -72,12 +75,35 @@ export function AdjustmentImportPage() {
         );
         setCsvContent("");
         setFilename("");
+        setFileError(null);
         setShowCsvProblems(false);
         history.reload();
       } catch (err) {
         setError(errorMessage(err, "adjustmentImport"));
       }
     });
+  }
+
+  /** Reads the chosen file into the CSV box; the API call is the same as for a paste. */
+  async function handleFileChosen(event: React.ChangeEvent<HTMLInputElement>): Promise<void> {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    // Clear the picker so choosing the same file again (after an edit) reads it again.
+    input.value = "";
+    if (!file) return;
+    const problem = checkCsvFile(file);
+    setFileError(problem);
+    if (problem) return;
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      setFileError("We could not read this file. Check that it is a CSV and try again.");
+      return;
+    }
+    setCsvContent(text);
+    setShowCsvProblems(true);
+    if (filename.trim() === "") setFilename(file.name.slice(0, FILENAME_MAX));
   }
 
   async function handleOpenRows(importId: string): Promise<void> {
@@ -135,10 +161,24 @@ export function AdjustmentImportPage() {
             </label>
             <FieldNote id={filenameNoteId} note={lengthNote(filename, FILENAME_MAX)} />
             <label>
+              Choose a CSV file, or paste the CSV below
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                aria-invalid={fileError ? true : undefined}
+                aria-describedby={describedBy(fileNoteId, fileError)}
+                onChange={(e) => void handleFileChosen(e)}
+              />
+            </label>
+            <FieldNote id={fileNoteId} error={fileError} />
+            <label>
               CSV (columns: merchantId, amount, reason)
               <textarea
                 value={csvContent}
-                onChange={(e) => setCsvContent(e.target.value)}
+                onChange={(e) => {
+                  setCsvContent(e.target.value);
+                  setFileError(null);
+                }}
                 onBlur={() => {
                   if (csvContent.trim() !== "") setShowCsvProblems(true);
                 }}

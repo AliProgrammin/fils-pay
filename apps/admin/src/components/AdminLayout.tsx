@@ -58,6 +58,7 @@ export function AdminLayout() {
           <NavLink to="/credits">Credits</NavLink>
           <NavLink to="/settlement">Settlement ops</NavLink>
           <NavLink to="/adjustment-imports">Import adjustments</NavLink>
+          <NavLink to="/fraud-notes">Fraud notes</NavLink>
           <NavLink to="/webhooks">Webhook replay</NavLink>
         </nav>
         <div className="admin-identity">

@@ -62,7 +62,8 @@ date range you want the new rate applied to. Their batches are recalculated
 at the current rate and the difference is posted, so their history and
 reconciliation match what finance agreed with them.
 
-**Import adjustments** — paste a CSV of corrections with a
+**Import adjustments** — paste a CSV of corrections, or choose a `.csv`
+file (up to 512 KB; it is read into the same box), with a
 `merchantId,amount,reason` header. Amounts are in BD as finance's sheets
 already have them (`4.75`, `120.00`). Rows are applied as soon as you
 submit; each import's rows are kept with the original text for reference.
@@ -70,6 +71,15 @@ The same content can be applied only once. A second upload of it (even
 with another file name, line endings or `4.75` written as `4.750`) is
 rejected with "This CSV was already applied as import ..." and posts
 nothing.
+
+## Fraud notes
+
+**Fraud notes** — the bank's fraud-review verdicts (`cleared` or
+`confirmed_fraud`) on card payments, most recent first, filterable by
+merchant id or transaction id. Any role can read them; a merchant's latest
+five also show on its page. A note changes nothing by itself: a payment
+marked confirmed fraud still needs someone to void or refund it.
+API: `GET /v1/admin/fraud-notes`.
 
 ## Settlement ops
 
