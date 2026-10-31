@@ -24,13 +24,28 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?
 // this leaks the session cookie to whatever VITE_API_BASE_URL is — am
 // — MK: CORS is locked to the two origins in config. fine
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await send(path, init);
+  return (await res.json().catch(() => null)) as T;
+}
+
+/** For the routes that answer with a file, not JSON (a KYC document). The
+ *  error path is the same as `request`'s: an error answer is still JSON. */
+export async function requestBlob(path: string, init?: RequestInit): Promise<Blob> {
+  const res = await send(path, init);
+  return res.blob();
+}
+
+async function send(path: string, init?: RequestInit): Promise<Response> {
   const hasBody = init?.body !== undefined && init.body !== null;
+  // A FormData body (KYC upload) sets its own multipart Content-Type, with
+  // the boundary; a JSON Content-Type on it would break the upload.
+  const isJsonBody = hasBody && !(init?.body instanceof FormData);
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
       credentials: "include",
-      headers: hasBody
+      headers: isJsonBody
         ? { "Content-Type": "application/json", ...init?.headers }
         : { ...init?.headers },
     });
@@ -38,12 +53,12 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // fetch rejects only when no answer arrived (offline, API down, blocked).
     throw new NetworkError(err);
   }
-  const body = await res.json().catch(() => null);
   if (!res.ok) {
+    const body = await res.json().catch(() => null);
     const errorBody = body !== null && typeof body === "object" ? (body as ApiErrorBody) : null;
     throw new ApiError(res.status, errorBody);
   }
-  return body as T;
+  return res;
 }
 
 /** For the routes that answer `204 No Content` (logout, cancel payment

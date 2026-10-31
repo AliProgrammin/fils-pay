@@ -109,3 +109,42 @@ test("refund errors a merchant can act on", () => {
     "Refunds are paused for your account. Contact FilsPay support.",
   );
 });
+
+test("settings errors are plain words", () => {
+  assert.equal(
+    errorMessage(new ApiError(403, { error: "forbidden" }), "apiKeys"),
+    "Only the shop owner can see and manage API keys.",
+  );
+  assert.equal(
+    errorMessage(new ApiError(413, { error: "file_too_large", message: "request file too large" }), "kycUpload"),
+    "This file is too large. The largest file you can upload is 8 MB.",
+  );
+  for (const code of ["document_must_be_pdf", "invalid_file_type", "invalid_image", "api_key_not_found", "kyc_document_not_found", "business_profile_not_found"]) {
+    const text = errorMessage(new ApiError(422, { error: code }));
+    assert.notEqual(text, GENERIC_MESSAGE, code);
+    assertPlain(text);
+  }
+});
+
+test("password and team errors say what to do", () => {
+  assert.equal(
+    errorMessage(new ApiError(400, { error: "invalid_current_password" }), "passwordChange"),
+    "Your current password is not correct.",
+  );
+  assert.equal(
+    errorMessage(new ApiError(409, { error: "last_owner" }), "teamUpdate"),
+    "A shop must always have at least one owner. Make another user an owner first.",
+  );
+  assert.equal(
+    errorMessage(new ApiError(403, { error: "forbidden" }), "teamUpdate"),
+    "Only a shop owner can change the team.",
+  );
+  for (const code of [
+    "invalid_current_password", "weak_password", "password_unchanged", "user_already_member",
+    "invalid_email", "invalid_role", "user_not_found", "last_owner", "cannot_change_own_access",
+  ]) {
+    const text = errorMessage(new ApiError(400, { error: code }));
+    assertPlain(text);
+    assert.doesNotMatch(text, /Check the details/, `${code} has its own message`);
+  }
+});

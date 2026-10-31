@@ -92,6 +92,7 @@ export async function lookupSession(
        JOIN merchants m ON m.id = mu.merchant_id
       WHERE s.token_hash = $1
         AND s.authenticated = true
+        AND mu.removed_at IS NULL
         AND m.status = 'active'`,
     [tokenHash],
   );

@@ -1,5 +1,6 @@
 import { formatBhd, toFils } from "@filspay/money";
 import type { ApiErrorBody } from "./types.js";
+import { KYC_MAX_FILE_MB } from "./inputRules.js";
 
 /**
  * Every error a person can see in apps/web (merchant dashboard and customer
@@ -60,7 +61,13 @@ export type ErrorContext =
   | "checkoutPay"
   | "webhookCreate"
   | "webhookUpdate"
-  | "webhookReplay";
+  | "webhookReplay"
+  | "businessProfileUpdate"
+  | "apiKeys"
+  | "kycUpload"
+  | "passwordChange"
+  | "teamAdd"
+  | "teamUpdate";
 
 type Message = string | ((body: ApiErrorBody) => string);
 
@@ -165,6 +172,27 @@ const MESSAGES: Record<string, Message> = {
 
   // Payouts
   settlement_batch_not_found: "We could not find this payout.",
+
+  // Settings
+  business_profile_not_found: "This shop has no business profile yet. Contact FilsPay support.",
+  api_key_not_found: "We could not find this API key. It may be revoked already. Refresh the page.",
+  kyc_document_not_found: "We could not find this document. Refresh the page and try again.",
+  invalid_file_type: "This type of file is not accepted. Upload a PDF, JPEG or PNG file.",
+  document_must_be_pdf: "A commercial registration or a bank letter must be a real PDF file. We check the file itself, not only its name.",
+  invalid_image: "We could not read this image. It may be damaged or too big. Try another photo, or a PDF.",
+
+  // Password
+  invalid_current_password: "Your current password is not correct.",
+  weak_password: "Your new password must have 12 to 128 characters.",
+  password_unchanged: "Choose a new password that is different from your current one.",
+
+  // Team
+  user_already_member: "This email already has access to this shop.",
+  invalid_email: "Enter an email address like name@shop.com.",
+  invalid_role: "Choose a role: owner, finance or support.",
+  user_not_found: "We could not find this user. They may have been removed. Refresh the page.",
+  last_owner: "A shop must always have at least one owner. Make another user an owner first.",
+  cannot_change_own_access: "You can't change or remove your own access. Ask another owner to do it.",
 };
 
 /** Words that differ by screen. Checked before MESSAGES. */
@@ -199,8 +227,27 @@ const OVERRIDES: Partial<Record<ErrorContext, Record<string, Message>>> = {
     validation_error: "Check your card details and try again.",
     card_captured_declined: `The bank did not complete this payment. No money was taken. ${TRY_ANOTHER_CARD}`,
   },
+  passwordChange: {
+    invalid_request: "Enter your current password and a new password.",
+    forbidden: "Only a signed-in shop user can change their password.",
+  },
+  teamAdd: {
+    invalid_request: "Enter an email address and choose a role.",
+    forbidden: "Only a shop owner can change the team.",
+  },
+  teamUpdate: {
+    forbidden: "Only a shop owner can change the team.",
+  },
   webhookCreate: {
     invalid_request: "Enter the web address that should receive webhook events.",
+  },
+  // Every API key route, the list too, is owner-only.
+  apiKeys: {
+    forbidden: "Only the shop owner can see and manage API keys.",
+  },
+  kycUpload: {
+    invalid_request: "Choose a document type and one file, then try again.",
+    file_too_large: `This file is too large. The largest file you can upload is ${KYC_MAX_FILE_MB} MB.`,
   },
 };
 

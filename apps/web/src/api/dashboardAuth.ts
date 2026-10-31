@@ -60,3 +60,8 @@ export function logout(): Promise<void> {
 export function me(): Promise<DashboardMe> {
   return request("/v1/auth/me");
 }
+
+/** `204`. Ends the user's other sessions; this one stays signed in. */
+export function changePassword(input: { currentPassword: string; newPassword: string }): Promise<void> {
+  return requestNoContent("/v1/auth/password", { method: "POST", body: JSON.stringify(input) });
+}

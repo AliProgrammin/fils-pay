@@ -47,10 +47,13 @@ export function RequireRole({
 export function RoleGatedPage({
   allow,
   title,
+  message = "You don't have permission to use this page — ask an owner or finance user on your account.",
   children,
 }: {
   allow: MerchantRole[];
   title: string;
+  /** Say who can use it when that is not owner/finance (API keys: owner only). */
+  message?: string;
   children: ReactNode;
 }) {
   return (
@@ -62,8 +65,7 @@ export function RoleGatedPage({
             <h1>{title}</h1>
           </div>
           <p className="dash-error" role="alert">
-            You don&apos;t have permission to use this page — ask an owner or finance
-            user on your account.
+            {message}
           </p>
         </section>
       }

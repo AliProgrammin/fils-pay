@@ -32,3 +32,18 @@ export async function verifyPassword(hash: string, plain: string): Promise<boole
     return false;
   }
 }
+
+/** New-password rules (change password). Signup checks only that a password
+ *  is present; these rules apply to every password a user sets from now on.
+ *  The upper bound stops a huge body from being hashed. */
+export const PASSWORD_MIN_LENGTH = 12;
+export const PASSWORD_MAX_LENGTH = 128;
+
+/** Null when `plain` may be a new password, else the reason. Counts
+ *  characters (code points), not bytes. */
+export function newPasswordProblem(plain: string): string | null {
+  const length = [...plain].length;
+  if (length < PASSWORD_MIN_LENGTH) return `password must be at least ${PASSWORD_MIN_LENGTH} characters`;
+  if (length > PASSWORD_MAX_LENGTH) return `password must be at most ${PASSWORD_MAX_LENGTH} characters`;
+  return null;
+}

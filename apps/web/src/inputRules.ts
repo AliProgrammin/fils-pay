@@ -21,6 +21,11 @@ export const SEARCH_MAX = 100;
 export const EMAIL_MAX = 254;
 /** The API's default OTP_CODE_LENGTH (apps/api/src/config.ts). */
 export const OTP_LENGTH = 6;
+/** The API's default KYC_MAX_FILE_SIZE_BYTES (8 MiB, apps/api/src/config.ts).
+ *  A larger file is refused here before the upload starts; the API's own
+ *  `413 file_too_large` is still the real answer. */
+export const KYC_MAX_FILE_BYTES = 8_388_608;
+export const KYC_MAX_FILE_MB = KYC_MAX_FILE_BYTES / 1_048_576;
 
 /**
  * What the amount box keeps of what was typed or pasted: digits and one dot,
@@ -99,6 +104,22 @@ export function digitsOnly(raw: string, max: number): string {
 /** Null when the code has exactly `length` digits. */
 export function checkOtp(code: string, length: number = OTP_LENGTH): string | null {
   return new RegExp(`^\\d{${length}}$`).test(code) ? null : `Enter the ${length}-digit code`;
+}
+
+/** The API's new-password rules (apps/api/src/auth/passwords.ts). */
+export const PASSWORD_MIN = 12;
+export const PASSWORD_MAX = 128;
+
+/** Null when `next` may be the new password: 12 to 128 characters, not the
+ *  current one, and typed the same twice. Counts characters, not bytes. */
+export function checkNewPassword(next: string, confirm: string, current: string): string | null {
+  const length = [...next].length;
+  if (length === 0) return "Enter a new password";
+  if (length < PASSWORD_MIN) return `Use at least ${PASSWORD_MIN} characters`;
+  if (length > PASSWORD_MAX) return `Use at most ${PASSWORD_MAX} characters`;
+  if (next === current) return "Choose a password that is different from your current one";
+  if (next !== confirm) return "The two new passwords do not match";
+  return null;
 }
 
 /** Null when the text looks like an email address. */

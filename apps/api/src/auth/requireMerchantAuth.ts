@@ -20,6 +20,9 @@ export interface MerchantAuthContext {
    *  looking. A merchant-facing audit trail should surface this when
    *  present, e.g. "viewed by support". */
   impersonatedByAdminUserId?: string;
+  /** Present only when actorType === 'merchant_session': the signed-in
+   *  merchant_users.id. */
+  merchantUserId?: string;
 }
 
 declare module "fastify" {
@@ -53,6 +56,7 @@ export const requireMerchantAuth: preHandlerHookHandler = async (request: Fastif
         actorType: "merchant_session",
         actorId: session.sessionId,
         role: session.role,
+        merchantUserId: session.merchantUserId,
       };
       return;
     }
@@ -161,3 +165,15 @@ export function requireMerchantRole(
     if (!auth.role || !roles.includes(auth.role)) throw new ForbiddenError("forbidden");
   };
 }
+
+/**
+ * Must be chained after requireMerchantAuth. Lets through only a real shop
+ * user's session: an API key has no user behind it, and an admin "view as
+ * merchant" grant is not a shop user. Used by the routes that act on a
+ * person (own password, the shop's team). Answers 403 otherwise.
+ */
+export const requireMerchantSessionUser: preHandlerHookHandler = async (request: FastifyRequest): Promise<void> => {
+  const auth = request.merchantAuth;
+  if (!auth) throw new UnauthorizedError("unauthenticated");
+  if (auth.actorType !== "merchant_session" || !auth.merchantUserId) throw new ForbiddenError("forbidden");
+};

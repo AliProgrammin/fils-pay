@@ -10,6 +10,7 @@ import { healthRoutes } from "./routes/health.js";
 import { authRoutes } from "./routes/auth.js";
 import { businessProfileRoutes } from "./routes/businessProfile.js";
 import { kycRoutes } from "./routes/kyc.js";
+import { teamRoutes } from "./routes/team.js";
 import { apiKeyRoutes } from "./routes/apiKeys.js";
 import { transactionRoutes } from "./routes/transactions.js";
 import { merchantRefundRoutes, refundRoutes } from "./routes/refunds.js";
@@ -62,6 +63,7 @@ export function buildApp(config: Config, pool: Pool, options: BuildAppOptions = 
   app.register(businessProfileRoutes, { prefix: "/v1/merchants" });
   app.register(kycRoutes, { prefix: "/v1/merchants" });
   app.register(apiKeyRoutes, { prefix: "/v1/merchants" });
+  app.register(teamRoutes, { prefix: "/v1/merchants" });
   app.register(transactionRoutes, { prefix: "/v1/transactions" });
   // FP-300 refunds. One handler, two paths: /v1/merchants/:merchantId/refunds
   // (RefundDrawer, initiateMerchantRefund) and /v1/refunds (documented for

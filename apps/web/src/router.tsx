@@ -17,6 +17,12 @@ import { SettlementBatchListPage } from "./pages/settlement/SettlementBatchListP
 import { SettlementBatchDetailPage } from "./pages/settlement/SettlementBatchDetailPage.js";
 import { ReconciliationPage } from "./pages/settlement/ReconciliationPage.js";
 import { OverviewPage } from "./pages/overview/OverviewPage.js";
+import { SettingsLayout } from "./pages/settings/SettingsLayout.js";
+import { BusinessProfilePage } from "./pages/settings/BusinessProfilePage.js";
+import { ApiKeysPage } from "./pages/settings/ApiKeysPage.js";
+import { KycDocumentsPage } from "./pages/settings/KycDocumentsPage.js";
+import { ChangePasswordPage } from "./pages/settings/ChangePasswordPage.js";
+import { TeamPage } from "./pages/settings/TeamPage.js";
 import { NotFoundPage, RouteErrorPage } from "./pages/NotFoundPage.js";
 
 // MK: /refunds route removed until FP-212
@@ -102,6 +108,35 @@ export const router = createBrowserRouter([
           { path: "/dashboard/reconciliation", element: <ReconciliationPage /> },
 
           { path: "/dashboard/overview", element: <OverviewPage /> },
+
+          // Settings: one tab bar (SettingsLayout) over its pages. A new
+          // settings page is one child here plus one row in SettingsLayout.
+          {
+            path: "/dashboard/settings",
+            element: <SettingsLayout />,
+            children: [
+              { index: true, element: <Navigate to="/dashboard/settings/profile" replace /> },
+              { path: "/dashboard/settings/profile", element: <BusinessProfilePage /> },
+              {
+                // Every API key route, the list too, is owner-only server-side.
+                path: "/dashboard/settings/api-keys",
+                element: (
+                  <RoleGatedPage
+                    allow={["owner"]}
+                    title="API keys"
+                    message="Only the shop owner can see and manage API keys."
+                  >
+                    <ApiKeysPage />
+                  </RoleGatedPage>
+                ),
+              },
+              { path: "/dashboard/settings/kyc", element: <KycDocumentsPage /> },
+              // The team list is readable by every role; its writes are
+              // owner-only server-side, and the page hides them from others.
+              { path: "/dashboard/settings/team", element: <TeamPage /> },
+              { path: "/dashboard/settings/password", element: <ChangePasswordPage /> },
+            ],
+          },
         ],
       },
     ],

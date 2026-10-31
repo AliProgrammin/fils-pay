@@ -751,6 +751,7 @@
 .dash-status-captured,
 .dash-status-paid,
 .dash-status-succeeded,
+.dash-status-approved,
 .dash-status-active {
   color: var(--green-dk);
   background: var(--green-lt);
@@ -760,6 +761,8 @@
 .dash-status-partially_captured,
 .dash-status-pending,
 .dash-status-reserved,
+.dash-status-submitted,
+.dash-status-under_review,
 .dash-status-open {
   color: var(--amber);
   background: var(--amber-lt);
@@ -768,6 +771,7 @@
 .dash-status-failed,
 .dash-status-exhausted,
 .dash-status-chargeback,
+.dash-status-rejected,
 .dash-status-declined {
   color: var(--red-dk);
   background: var(--red-lt);
@@ -788,6 +792,7 @@
 .dash-status-voided,
 .dash-status-canceled,
 .dash-status-disabled,
+.dash-status-revoked,
 .dash-status-closed {
   color: var(--muted);
   background: var(--paper2);
@@ -1517,6 +1522,12 @@
   .dash-brand-tag {
     display: none;
   }
+
+  /* Seven links (with Settings) must fit a 1280px screen. */
+  .dash-nav a {
+    padding: 0 0.45rem;
+    letter-spacing: 0.06em;
+  }
 }
 
 /* Narrow header: brand and identity on one row, the nav scrolls below. Kept
@@ -2001,4 +2012,96 @@ input[type="radio"] {
   .dash-identity-text {
     overflow: hidden;
   }
+}
+
+/* ---------- settings ---------- */
+
+/* The tabs above every settings page. They wrap onto a second row on a
+   phone, so every tab, the active one too, is always in view. */
+.dash-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0 0 1.5rem;
+  border-bottom: 2px solid var(--line);
+}
+
+.dash-subnav::-webkit-scrollbar {
+  display: none;
+}
+
+.dash-subnav a {
+  padding: 0.6rem 0.9rem;
+  color: var(--muted);
+  font-family: var(--type);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+}
+
+.dash-subnav a:hover {
+  color: var(--ink);
+}
+
+.dash-subnav a.active {
+  color: var(--ink);
+  border-bottom-color: var(--red);
+}
+
+.dash-subnav a:focus-visible {
+  outline-offset: -3px;
+}
+
+/* A file box looks like the other inputs; its button follows the theme. */
+.dash-form input[type="file"] {
+  min-height: auto;
+  padding: 0.4rem;
+  max-width: 100%;
+}
+
+.dash-form input[type="file"]::file-selector-button {
+  margin-right: 0.75rem;
+  padding: 0.35rem 0.8rem;
+  font-family: var(--body);
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: var(--card);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.dash-form select:focus {
+  border-color: var(--ink);
+}
+
+/* A select inside a table row (team roles). */
+.dash-row-select {
+  min-height: 2rem;
+  padding: 0.2rem 0.4rem;
+  font-family: var(--body);
+  font-size: 0.95rem;
+  color: var(--ink);
+  background: #fffdf8;
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.dash-role-text {
+  font-family: var(--type);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* Long unbroken text (an email) that must wrap on a phone. */
+.dash-wrap-anywhere {
+  overflow-wrap: anywhere;
 }

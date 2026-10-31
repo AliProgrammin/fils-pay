@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   checkAmount,
   checkEmail,
+  checkNewPassword,
   checkHttpsUrl,
   checkOtp,
   checkUuid,
@@ -115,4 +116,13 @@ test("an amount with more than 3 decimals is refused with a clear message, never
   const checked = checkAmount(typed);
   assert.equal(checked.ok, false, "1.2345 BD must not become 1.234 BD");
   assert.match((checked as { message: string }).message, /at most 3 decimals/);
+});
+
+test("checkNewPassword: 12 to 128 characters, differs from the current one, typed twice the same", () => {
+  assert.equal(checkNewPassword("exactly-12ch", "exactly-12ch", "old password!"), null);
+  assert.match(checkNewPassword("", "", "old")!, /new password/i);
+  assert.match(checkNewPassword("short-11ch!", "short-11ch!", "old")!, /12 characters/);
+  assert.match(checkNewPassword("x".repeat(129), "x".repeat(129), "old")!, /128 characters/);
+  assert.match(checkNewPassword("same password", "same password", "same password")!, /different/);
+  assert.match(checkNewPassword("exactly-12ch", "exactly-12cH", "old")!, /do not match/);
 });

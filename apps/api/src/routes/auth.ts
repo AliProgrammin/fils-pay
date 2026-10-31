@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { verifyPassword } from "../auth/passwords.js";
+import { hashPassword, newPasswordProblem, verifyPassword } from "../auth/passwords.js";
+import { requireMerchantAuth, requireMerchantSessionUser } from "../auth/requireMerchantAuth.js";
+import { insertMerchantAuditLog } from "../merchantAudit/log.js";
 import { issueChallenge, verifyOtpCode } from "../auth/otp.js";
 import { requireSession } from "../auth/middleware.js";
 import { sendOtpCode } from "../auth/notifier.js";
@@ -32,6 +34,11 @@ interface LoginBody {
 interface LoginShopsBody {
   email?: string;
   password?: string;
+}
+
+interface ChangePasswordBody {
+  currentPassword?: unknown;
+  newPassword?: unknown;
 }
 
 interface OtpVerifyBody {
@@ -70,7 +77,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       `SELECT mu.id, mu.merchant_id, mu.email, mu.role, mu.password_hash
          FROM merchant_users mu
          JOIN merchants m ON m.id = mu.merchant_id
-        WHERE mu.merchant_id = $1 AND mu.email = $2 AND m.status = 'active'`,
+        WHERE mu.merchant_id = $1 AND mu.email = $2 AND mu.removed_at IS NULL AND m.status = 'active'`,
       [merchantId, email],
     );
     const user = userResult.rows[0];
@@ -143,7 +150,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       `SELECT mu.merchant_id, mu.password_hash, m.display_name
          FROM merchant_users mu
          JOIN merchants m ON m.id = mu.merchant_id
-        WHERE mu.email = $1 AND m.status = 'active'
+        WHERE mu.email = $1 AND mu.removed_at IS NULL AND m.status = 'active'
         ORDER BY mu.created_at, mu.id`,
       [email],
     );
@@ -324,6 +331,69 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
     reply.code(200).send(responseBody);
   });
+
+  /**
+   * POST /v1/auth/password — the signed-in shop user changes their own
+   * password: `{ currentPassword, newPassword }` -> 204. Only a real shop
+   * session may call it (API key or "view as merchant" -> 403). Ends every
+   * OTHER session of this user (pending ones too) and keeps the current one.
+   * The password belongs to this merchant_users row only: the same email in
+   * another shop is a separate login with its own password.
+   */
+  app.post<{ Body: ChangePasswordBody }>(
+    "/password",
+    { preHandler: [requireMerchantAuth, requireMerchantSessionUser] },
+    async (request, reply) => {
+      const auth = request.merchantAuth!;
+      const userId = auth.merchantUserId!;
+      const { currentPassword, newPassword } = request.body ?? {};
+      if (typeof currentPassword !== "string" || typeof newPassword !== "string" || !currentPassword || !newPassword) {
+        throw new BadRequestError("invalid_request", "currentPassword and newPassword are required");
+      }
+
+      const row = await app.db.query<{ password_hash: string }>(
+        `SELECT password_hash FROM merchant_users WHERE id = $1`,
+        [userId],
+      );
+      const oldHash = row.rows[0]?.password_hash;
+      if (!oldHash || !(await verifyPassword(oldHash, currentPassword))) {
+        throw new BadRequestError("invalid_current_password", "the current password is not correct");
+      }
+      const problem = newPasswordProblem(newPassword);
+      if (problem) {
+        throw new BadRequestError("weak_password", problem);
+      }
+      if (newPassword === currentPassword) {
+        throw new BadRequestError("password_unchanged", "the new password must differ from the current one");
+      }
+
+      const newHash = await hashPassword(newPassword, app.config);
+      await withTransaction(app.db, async (client) => {
+        // Compare-and-swap on the hash just verified: a parallel change
+        // between the check and this write makes this one fail, not win.
+        const updated = await client.query(
+          `UPDATE merchant_users SET password_hash = $2, password_updated_at = now()
+            WHERE id = $1 AND password_hash = $3`,
+          [userId, newHash, oldHash],
+        );
+        if (updated.rowCount === 0) {
+          throw new BadRequestError("invalid_current_password", "the current password is not correct");
+        }
+        await client.query(
+          `UPDATE sessions SET revoked_at = now()
+            WHERE merchant_user_id = $1 AND id <> $2 AND revoked_at IS NULL`,
+          [userId, auth.actorId],
+        );
+        await insertMerchantAuditLog(client, {
+          merchantId: auth.merchantId,
+          actorMerchantUserId: userId,
+          action: "password_change",
+          targetMerchantUserId: userId,
+        });
+      });
+      reply.code(204).send();
+    },
+  );
 
   app.get(
     "/me",

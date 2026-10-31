@@ -81,6 +81,21 @@ export interface DashboardMe {
   merchant: { id: string; displayName: string; onboardingStatus: string };
 }
 
+// --- settings: team ---
+/** One row of `GET /v1/merchants/:merchantId/users`. */
+export interface TeamMember {
+  id: string;
+  email: string;
+  role: MerchantRole;
+  createdAt: string;
+}
+
+/** `201` of `POST /v1/merchants/:merchantId/users`: the only response that
+ *  ever carries `initialPassword`. */
+export interface TeamMemberCreated extends TeamMember {
+  initialPassword: string;
+}
+
 // --- transactions ---
 export type TransactionStatus =
   | "authorized"
@@ -341,4 +356,60 @@ export interface TopLinksResponse {
   links: TopLinkDto[];
   readModelAsOf: string;
   live: boolean;
+}
+
+// --- settings ---
+export type BusinessType = "sole_proprietorship" | "llc" | "partnership" | "public_company" | "other";
+
+/** onboarding/businessProfile.ts `BusinessProfile`. */
+export interface BusinessProfileDto {
+  merchantId: string;
+  legalName: string;
+  registrationNumber: string;
+  businessType: BusinessType;
+  country: string;
+  contactEmail: string;
+  contactPhone: string;
+  addressLine1: string;
+  addressLine2: string | null;
+  city: string;
+  postalCode: string | null;
+  updatedAt: string;
+}
+
+/** The PATCH body: only the fields that changed. */
+export type BusinessProfilePatch = Partial<Omit<BusinessProfileDto, "merchantId" | "updatedAt">>;
+
+/** apiKeys/issue.ts `ApiKeySummary`. Never carries the key itself. */
+export interface ApiKeyDto {
+  id: string;
+  prefix: string;
+  label: string | null;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+}
+
+/** `201` from issue — the only response that ever carries `rawKey`. */
+export interface ApiKeyIssueResponse {
+  id: string;
+  prefix: string;
+  rawKey: string;
+  createdAt: string;
+}
+
+export type KycDocumentType = "commercial_registration" | "owner_id" | "proof_of_address" | "bank_letter";
+
+/** onboarding/kyc.ts `KycDocumentSummary`. Metadata only. */
+export interface KycDocumentDto {
+  id: string;
+  documentType: KycDocumentType;
+  fileName: string;
+  mimeType: string;
+  uploadedAt: string;
+}
+
+export interface KycUploadResponse extends KycDocumentDto {
+  onboardingStatus: string;
+  hasThumbnail: boolean;
 }
