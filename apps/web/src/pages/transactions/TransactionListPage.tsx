@@ -12,16 +12,9 @@ import { bahrainDayStartIso, bahrainToday, exclusiveTo, rangeError, rangeLabel }
 import { capitalize } from "../../utils/helpers.js";
 import { SEARCH_MAX } from "../../inputRules.js";
 import type { TransactionDto, TransactionStatus } from "../../types.js";
-
-const STATUSES: TransactionStatus[] = [
-  "authorized",
-  "captured",
-  "partially_captured",
-  "voided",
-  "partially_refunded",
-  "refunded",
-  "chargeback",
-];
+import { SavedFilters } from "./SavedFilters.js";
+import { ExportPanel } from "./ExportPanel.js";
+import { TRANSACTION_STATUSES as STATUSES, type PageFilters } from "./reportFilters.js";
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -100,6 +93,17 @@ export function TransactionListPage() {
     });
   }
 
+  function applySaved(f: PageFilters): void {
+    setSearchInput(f.search);
+    updateParams((params) => {
+      for (const key of ["status", "from", "to", "q"]) params.delete(key);
+      for (const s of f.statuses) params.append("status", s);
+      if (f.from) params.set("from", f.from);
+      if (f.to) params.set("to", f.to);
+      if (f.search) params.set("q", f.search);
+    });
+  }
+
   function clearFilters(): void {
     setSearchInput("");
     updateParams((params) => {
@@ -155,6 +159,12 @@ export function TransactionListPage() {
           </button>
         ) : null}
       </fieldset>
+
+      <SavedFilters
+        current={{ statuses, from, to, search }}
+        hasFilters={hasFilters}
+        onApply={applySaved}
+      />
 
       {list.error && !dateError ? <p className="dash-error" role="alert">{errorMessage(list.error)}</p> : null}
 
@@ -241,6 +251,8 @@ export function TransactionListPage() {
           onSize={list.setSize}
         />
       ) : null}
+
+      <ExportPanel filters={{ statuses, from, to, search }} dateError={dateError} />
     </section>
   );
 }
