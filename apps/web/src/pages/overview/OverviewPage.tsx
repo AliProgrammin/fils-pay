@@ -230,7 +230,7 @@ export function OverviewPage() {
               <tr key={link.id}>
                 <td>{index + 1}</td>
                 <td>
-                  <Link to={`/dashboard/payment-links/${link.id}`}>{dash(link.reference)}</Link>
+                  <Link to={`/dashboard/payment-links/${link.id}`} className="dash-ref" title={link.reference ?? undefined}>{dash(link.reference)}</Link>
                 </td>
                 <td>{dash(link.description)}</td>
                 <td className="dash-num">{bhd(link.amountFils)}</td>

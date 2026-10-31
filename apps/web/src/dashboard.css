@@ -178,6 +178,7 @@
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--red);
+  overflow-wrap: anywhere;
 }
 
 .dash-main h1,
@@ -670,6 +671,16 @@
 
 .dash-table td.dash-nowrap {
   white-space: nowrap;
+}
+
+/* A long reference (up to 255 characters, no spaces) must not stretch the table. */
+.dash-ref {
+  display: inline-block;
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 .dash-table td.dash-empty,

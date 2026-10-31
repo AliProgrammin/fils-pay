@@ -104,7 +104,7 @@ export function PaymentLinkListPage() {
             {links.map((link) => (
               <tr key={link.id}>
                 <td data-label="Reference">
-                  <Link to={`/dashboard/payment-links/${link.id}`}>{dash(link.reference)}</Link>
+                  <Link to={`/dashboard/payment-links/${link.id}`} className="dash-ref" title={link.reference ?? undefined}>{dash(link.reference)}</Link>
                 </td>
                 <td data-label="Description">{dash(link.description)}</td>
                 <td className="dash-num" data-label="Amount">{bhd(link.amountFils)}</td>
