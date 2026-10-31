@@ -1963,13 +1963,14 @@ input[type="radio"] {
 }
 
 /* In list tables the reference sits on one line with its copy button on wide
-   screens, and wraps on narrow ones; it is never cut short. */
+   screens (90rem and up: a bank reference is 40 characters), and wraps on
+   narrower ones; it is never cut short. */
 .dash-table .dash-ref {
   flex-wrap: nowrap;
   gap: 0.5rem;
 }
 
-@media (min-width: 64rem) {
+@media (min-width: 90rem) {
   .dash-table .dash-ref-text {
     white-space: nowrap;
     word-break: normal;
